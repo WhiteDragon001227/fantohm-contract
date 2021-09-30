@@ -7,7 +7,9 @@ const { ethers } = require("hardhat");
 
 async function main() {
 
-    const [deployer, MockDAO] = await ethers.getSigners();
+    let [deployer, MockDAO] = await ethers.getSigners();
+    // FIXME hack
+    MockDAO = deployer;
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     // Initial staking index
