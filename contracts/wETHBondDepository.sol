@@ -2,13 +2,13 @@
 pragma solidity 0.7.5;
 
 interface IOwnable {
-  function policy() external view returns (address);
+    function policy() external view returns (address);
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+    function renounceManagement() external;
+
+    function pushManagement( address newOwner_ ) external;
+
+    function pullManagement() external;
 }
 
 contract Ownable is IOwnable {
@@ -43,7 +43,7 @@ contract Ownable is IOwnable {
         emit OwnershipPushed( _owner, newOwner_ );
         _newOwner = newOwner_;
     }
-    
+
     function pullManagement() public virtual override {
         require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
         emit OwnershipPulled( _owner, _newOwner );
@@ -134,7 +134,7 @@ library Address {
     }
 
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
+        return functionCall(target, data, "Address: low-level call failed");
     }
 
     function functionCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
@@ -261,7 +261,7 @@ abstract contract ERC20 is IERC20 {
 
     // TODO comment actual hash value.
     bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
-    
+
     mapping (address => uint256) internal _balances;
 
     mapping (address => mapping (address => uint256)) internal _allowances;
@@ -269,9 +269,9 @@ abstract contract ERC20 is IERC20 {
     uint256 internal _totalSupply;
 
     string internal _name;
-    
+
     string internal _symbol;
-    
+
     uint8 internal _decimals;
 
     constructor (string memory name_, string memory symbol_, uint8 decimals_) {
@@ -367,7 +367,7 @@ abstract contract ERC20 is IERC20 {
         emit Approval(owner, spender, amount);
     }
 
-  function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
+    function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
 }
 
 interface IERC2612Permit {
@@ -445,7 +445,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
         require(block.timestamp <= deadline, "Permit: expired deadline");
 
         bytes32 hashStruct =
-            keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
+        keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
 
         bytes32 _hash = keccak256(abi.encodePacked(uint16(0x1901), DOMAIN_SEPARATOR, hashStruct));
 
@@ -586,32 +586,32 @@ library FixedPoint {
 
 interface AggregatorV3Interface {
 
-  function decimals() external view returns (uint8);
-  function description() external view returns (string memory);
-  function version() external view returns (uint256);
+    function decimals() external view returns (uint8);
+    function description() external view returns (string memory);
+    function version() external view returns (uint256);
 
-  // getRoundData and latestRoundData should both raise "No data present"
-  // if they do not have data to report, instead of returning unset values
-  // which could be misinterpreted as actual reported values.
-  function getRoundData(uint80 _roundId)
+    // getRoundData and latestRoundData should both raise "No data present"
+    // if they do not have data to report, instead of returning unset values
+    // which could be misinterpreted as actual reported values.
+    function getRoundData(uint80 _roundId)
     external
     view
     returns (
-      uint80 roundId,
-      int256 answer,
-      uint256 startedAt,
-      uint256 updatedAt,
-      uint80 answeredInRound
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
     );
-  function latestRoundData()
+    function latestRoundData()
     external
     view
     returns (
-      uint80 roundId,
-      int256 answer,
-      uint256 startedAt,
-      uint256 updatedAt,
-      uint80 answeredInRound
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
     );
 }
 
@@ -629,7 +629,7 @@ interface IStakingHelper {
     function stake( uint _amount, address _recipient ) external;
 }
 
-contract OlympusBondDepository is Ownable {
+contract FantohmBondDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -691,7 +691,7 @@ contract OlympusBondDepository is Ownable {
         uint pricePaid; // In DAI, for front end viewing
     }
 
-    // Info for incremental adjustments to control variable 
+    // Info for incremental adjustments to control variable
     struct Adjust {
         bool add; // addition or subtraction
         uint rate; // increment
@@ -705,10 +705,10 @@ contract OlympusBondDepository is Ownable {
 
     /* ======== INITIALIZATION ======== */
 
-    constructor ( 
+    constructor (
         address _OHM,
         address _principle,
-        address _treasury, 
+        address _treasury,
         address _DAO,
         address _feed
     ) {
@@ -733,8 +733,8 @@ contract OlympusBondDepository is Ownable {
      *  @param _maxDebt uint
      *  @param _initialDebt uint
      */
-    function initializeBondTerms( 
-        uint _controlVariable, 
+    function initializeBondTerms(
+        uint _controlVariable,
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maxPayout,
@@ -743,11 +743,11 @@ contract OlympusBondDepository is Ownable {
     ) external onlyPolicy() {
         require( currentDebt() == 0, "Debt must be 0 for initialization" );
         terms = Terms ({
-            controlVariable: _controlVariable,
-            vestingTerm: _vestingTerm,
-            minimumPrice: _minimumPrice,
-            maxPayout: _maxPayout,
-            maxDebt: _maxDebt
+        controlVariable: _controlVariable,
+        vestingTerm: _vestingTerm,
+        minimumPrice: _minimumPrice,
+        maxPayout: _maxPayout,
+        maxDebt: _maxDebt
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
@@ -755,7 +755,7 @@ contract OlympusBondDepository is Ownable {
 
 
 
-    
+
     /* ======== POLICY FUNCTIONS ======== */
 
     enum PARAMETER { VESTING, PAYOUT, DEBT }
@@ -783,20 +783,20 @@ contract OlympusBondDepository is Ownable {
      *  @param _target uint
      *  @param _buffer uint
      */
-    function setAdjustment ( 
+    function setAdjustment (
         bool _addition,
-        uint _increment, 
+        uint _increment,
         uint _target,
-        uint _buffer 
+        uint _buffer
     ) external onlyPolicy() {
         require( _increment <= terms.controlVariable.mul( 25 ).div( 1000 ), "Increment too large" );
 
         adjustment = Adjust({
-            add: _addition,
-            rate: _increment,
-            target: _target,
-            buffer: _buffer,
-            lastBlock: block.number
+        add: _addition,
+        rate: _increment,
+        target: _target,
+        buffer: _buffer,
+        lastBlock: block.number
         });
     }
 
@@ -817,7 +817,7 @@ contract OlympusBondDepository is Ownable {
     }
 
 
-    
+
 
     /* ======== USER FUNCTIONS ======== */
 
@@ -828,8 +828,8 @@ contract OlympusBondDepository is Ownable {
      *  @param _depositor address
      *  @return uint
      */
-    function deposit( 
-        uint _amount, 
+    function deposit(
+        uint _amount,
         uint _maxPrice,
         address _depositor
     ) external returns ( uint ) {
@@ -837,7 +837,7 @@ contract OlympusBondDepository is Ownable {
 
         decayDebt();
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
-        
+
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
         uint nativePrice = _bondPrice();
 
@@ -855,16 +855,16 @@ contract OlympusBondDepository is Ownable {
          */
         IERC20( principle ).safeTransferFrom( msg.sender, treasury, _amount );
         ITreasury( treasury ).mintRewards( address(this), payout );
-        
+
         // total debt is increased
-        totalDebt = totalDebt.add( value ); 
-                
+        totalDebt = totalDebt.add( value );
+
         // depositor info is stored
-        bondInfo[ _depositor ] = Bond({ 
-            payout: bondInfo[ _depositor ].payout.add( payout ),
-            vesting: terms.vestingTerm,
-            lastBlock: block.number,
-            pricePaid: priceInUSD
+        bondInfo[ _depositor ] = Bond({
+        payout: bondInfo[ _depositor ].payout.add( payout ),
+        vesting: terms.vestingTerm,
+        lastBlock: block.number,
+        pricePaid: priceInUSD
         });
 
         // indexed events are emitted
@@ -872,16 +872,16 @@ contract OlympusBondDepository is Ownable {
         emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
         adjust(); // control variable is adjusted
-        return payout; 
+        return payout;
     }
 
-    /** 
+    /**
      *  @notice redeem bond for user
      *  @param _recipient address
      *  @param _stake bool
      *  @return uint
-     */ 
-    function redeem( address _recipient, bool _stake ) external returns ( uint ) {        
+     */
+    function redeem( address _recipient, bool _stake ) external returns ( uint ) {
         Bond memory info = bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
@@ -896,10 +896,10 @@ contract OlympusBondDepository is Ownable {
 
             // store updated deposit info
             bondInfo[ _recipient ] = Bond({
-                payout: info.payout.sub( payout ),
-                vesting: info.vesting.sub( block.number.sub( info.lastBlock ) ),
-                lastBlock: block.number,
-                pricePaid: info.pricePaid
+            payout: info.payout.sub( payout ),
+            vesting: info.vesting.sub( block.number.sub( info.lastBlock ) ),
+            lastBlock: block.number,
+            pricePaid: info.pricePaid
             });
 
             emit BondRedeemed( _recipient, payout, bondInfo[ _recipient ].payout );
@@ -909,7 +909,7 @@ contract OlympusBondDepository is Ownable {
 
 
 
-    
+
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
     /**
@@ -991,7 +991,7 @@ contract OlympusBondDepository is Ownable {
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
-    function bondPrice() public view returns ( uint price_ ) {        
+    function bondPrice() public view returns ( uint price_ ) {
         price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
@@ -1005,7 +1005,7 @@ contract OlympusBondDepository is Ownable {
     function _bondPrice() internal returns ( uint price_ ) {
         price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
         if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;        
+            price_ = terms.minimumPrice;
         } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
@@ -1032,10 +1032,10 @@ contract OlympusBondDepository is Ownable {
      *  @notice calculate current ratio of debt to OHM supply
      *  @return debtRatio_ uint
      */
-    function debtRatio() public view returns ( uint debtRatio_ ) {   
+    function debtRatio() public view returns ( uint debtRatio_ ) {
         uint supply = IERC20( OHM ).totalSupply();
-        debtRatio_ = FixedPoint.fraction( 
-            currentDebt().mul( 1e9 ), 
+        debtRatio_ = FixedPoint.fraction(
+            currentDebt().mul( 1e9 ),
             supply
         ).decode112with18().div( 1e18 );
     }

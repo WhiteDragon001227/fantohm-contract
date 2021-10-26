@@ -203,9 +203,9 @@ library SafeMath {
         return sqrrt( mul( multiplier_, payment_ ) );
     }
 
-  function bondingCurve( uint256 supply_, uint256 multiplier_ ) internal pure returns (uint256) {
-      return mul( multiplier_, supply_ );
-  }
+    function bondingCurve( uint256 supply_, uint256 multiplier_ ) internal pure returns (uint256) {
+        return mul( multiplier_, supply_ );
+    }
 }
 
 library Address {
@@ -280,7 +280,7 @@ library Address {
      * _Available since v3.1._
      */
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
+        return functionCall(target, data, "Address: low-level call failed");
     }
 
     /**
@@ -350,12 +350,12 @@ library Address {
         }
     }
 
-  /**
-     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
-     * but performing a static call.
-     *
-     * _Available since v3.3._
-     */
+    /**
+       * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+       * but performing a static call.
+       *
+       * _Available since v3.3._
+       */
     function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
         return functionStaticCall(target, data, "Address: low-level static call failed");
     }
@@ -436,184 +436,184 @@ library Address {
 }
 
 interface IERC20 {
-  /**
-   * @dev Returns the amount of tokens in existence.
-   */
-  function totalSupply() external view returns (uint256);
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
 
-  /**
-   * @dev Returns the amount of tokens owned by `account`.
-   */
-  function balanceOf(address account) external view returns (uint256);
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
 
-  /**
-   * @dev Moves `amount` tokens from the caller's account to `recipient`.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transfer(address recipient, uint256 amount) external returns (bool);
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `recipient`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address recipient, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Returns the remaining number of tokens that `spender` will be
-   * allowed to spend on behalf of `owner` through {transferFrom}. This is
-   * zero by default.
-   *
-   * This value changes when {approve} or {transferFrom} are called.
-   */
-  function allowance(address owner, address spender) external view returns (uint256);
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) external view returns (uint256);
 
-  /**
-   * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * IMPORTANT: Beware that changing an allowance with this method brings the risk
-   * that someone may use both the old and the new allowance by unfortunate
-   * transaction ordering. One possible solution to mitigate this race
-   * condition is to first reduce the spender's allowance to 0 and set the
-   * desired value afterwards:
-   * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-   *
-   * Emits an {Approval} event.
-   */
-  function approve(address spender, uint256 amount) external returns (bool);
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Moves `amount` tokens from `sender` to `recipient` using the
-   * allowance mechanism. `amount` is then deducted from the caller's
-   * allowance.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    /**
+     * @dev Moves `amount` tokens from `sender` to `recipient` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Emitted when `value` tokens are moved from one account (`from`) to
-   * another (`to`).
-   *
-   * Note that `value` may be zero.
-   */
-  event Transfer(address indexed from, address indexed to, uint256 value);
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
 
-  /**
-   * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-   * a call to {approve}. `value` is the new allowance.
-   */
-  event Approval(address indexed owner, address indexed spender, uint256 value);
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
 abstract contract ERC20
-  is 
-    IERC20
-  {
+is
+IERC20
+{
 
-  using SafeMath for uint256;
+    using SafeMath for uint256;
 
-  // TODO comment actual hash value.
-  bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
-    
-  // Present in ERC777
-  mapping (address => uint256) internal _balances;
+    // TODO comment actual hash value.
+    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
 
-  // Present in ERC777
-  mapping (address => mapping (address => uint256)) internal _allowances;
+    // Present in ERC777
+    mapping (address => uint256) internal _balances;
 
-  // Present in ERC777
-  uint256 internal _totalSupply;
+    // Present in ERC777
+    mapping (address => mapping (address => uint256)) internal _allowances;
 
-  // Present in ERC777
-  string internal _name;
-    
-  // Present in ERC777
-  string internal _symbol;
-    
-  // Present in ERC777
-  uint8 internal _decimals;
+    // Present in ERC777
+    uint256 internal _totalSupply;
 
-  /**
-   * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
-   * a default value of 18.
-   *
-   * To select a different value for {decimals}, use {_setupDecimals}.
-   *
-   * All three of these values are immutable: they can only be set once during
-   * construction.
-   */
-  constructor (string memory name_, string memory symbol_, uint8 decimals_) {
-    _name = name_;
-    _symbol = symbol_;
-    _decimals = decimals_;
-  }
+    // Present in ERC777
+    string internal _name;
 
-  /**
-   * @dev Returns the name of the token.
-   */
-  // Present in ERC777
-  function name() public view returns (string memory) {
-    return _name;
-  }
+    // Present in ERC777
+    string internal _symbol;
 
-  /**
-   * @dev Returns the symbol of the token, usually a shorter version of the
-   * name.
-   */
-  // Present in ERC777
-  function symbol() public view returns (string memory) {
-    return _symbol;
-  }
+    // Present in ERC777
+    uint8 internal _decimals;
 
-  /**
-   * @dev Returns the number of decimals used to get its user representation.
-   * For example, if `decimals` equals `2`, a balance of `505` tokens should
-   * be displayed to a user as `5,05` (`505 / 10 ** 2`).
-   *
-   * Tokens usually opt for a value of 18, imitating the relationship between
-   * Ether and Wei. This is the value {ERC20} uses, unless {_setupDecimals} is
-   * called.
-   *
-   * NOTE: This information is only used for _display_ purposes: it in
-   * no way affects any of the arithmetic of the contract, including
-   * {IERC20-balanceOf} and {IERC20-transfer}.
-   */
-  // Present in ERC777
-  function decimals() public view returns (uint8) {
-    return _decimals;
-  }
+    /**
+     * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
+     * a default value of 18.
+     *
+     * To select a different value for {decimals}, use {_setupDecimals}.
+     *
+     * All three of these values are immutable: they can only be set once during
+     * construction.
+     */
+    constructor (string memory name_, string memory symbol_, uint8 decimals_) {
+        _name = name_;
+        _symbol = symbol_;
+        _decimals = decimals_;
+    }
 
-  /**
-   * @dev See {IERC20-totalSupply}.
-   */
-  // Present in ERC777
-  function totalSupply() public view override returns (uint256) {
-    return _totalSupply;
-  }
+    /**
+     * @dev Returns the name of the token.
+     */
+    // Present in ERC777
+    function name() public view returns (string memory) {
+        return _name;
+    }
 
-  /**
-   * @dev See {IERC20-balanceOf}.
-   */
-  // Present in ERC777
-  function balanceOf(address account) public view virtual override returns (uint256) {
-    return _balances[account];
-  }
+    /**
+     * @dev Returns the symbol of the token, usually a shorter version of the
+     * name.
+     */
+    // Present in ERC777
+    function symbol() public view returns (string memory) {
+        return _symbol;
+    }
 
-  /**
-   * @dev See {IERC20-transfer}.
-   *
-   * Requirements:
-   *
-   * - `recipient` cannot be the zero address.
-   * - the caller must have a balance of at least `amount`.
-   */
-  // Overrideen in ERC777
-  // Confirm that this behavior changes 
-  function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
-    _transfer(msg.sender, recipient, amount);
-    return true;
-  }
+    /**
+     * @dev Returns the number of decimals used to get its user representation.
+     * For example, if `decimals` equals `2`, a balance of `505` tokens should
+     * be displayed to a user as `5,05` (`505 / 10 ** 2`).
+     *
+     * Tokens usually opt for a value of 18, imitating the relationship between
+     * Ether and Wei. This is the value {ERC20} uses, unless {_setupDecimals} is
+     * called.
+     *
+     * NOTE: This information is only used for _display_ purposes: it in
+     * no way affects any of the arithmetic of the contract, including
+     * {IERC20-balanceOf} and {IERC20-transfer}.
+     */
+    // Present in ERC777
+    function decimals() public view returns (uint8) {
+        return _decimals;
+    }
+
+    /**
+     * @dev See {IERC20-totalSupply}.
+     */
+    // Present in ERC777
+    function totalSupply() public view override returns (uint256) {
+        return _totalSupply;
+    }
+
+    /**
+     * @dev See {IERC20-balanceOf}.
+     */
+    // Present in ERC777
+    function balanceOf(address account) public view virtual override returns (uint256) {
+        return _balances[account];
+    }
+
+    /**
+     * @dev See {IERC20-transfer}.
+     *
+     * Requirements:
+     *
+     * - `recipient` cannot be the zero address.
+     * - the caller must have a balance of at least `amount`.
+     */
+    // Overrideen in ERC777
+    // Confirm that this behavior changes
+    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
+        _transfer(msg.sender, recipient, amount);
+        return true;
+    }
 
     /**
      * @dev See {IERC20-allowance}.
@@ -692,30 +692,30 @@ abstract contract ERC20
         return true;
     }
 
-  /**
-   * @dev Moves tokens `amount` from `sender` to `recipient`.
-   *
-   * This is internal function is equivalent to {transfer}, and can be used to
-   * e.g. implement automatic token fees, slashing mechanisms, etc.
-   *
-   * Emits a {Transfer} event.
-   *
-   * Requirements:
-   *
-   * - `sender` cannot be the zero address.
-   * - `recipient` cannot be the zero address.
-   * - `sender` must have a balance of at least `amount`.
-   */
-  function _transfer(address sender, address recipient, uint256 amount) internal virtual {
-    require(sender != address(0), "ERC20: transfer from the zero address");
-    require(recipient != address(0), "ERC20: transfer to the zero address");
+    /**
+     * @dev Moves tokens `amount` from `sender` to `recipient`.
+     *
+     * This is internal function is equivalent to {transfer}, and can be used to
+     * e.g. implement automatic token fees, slashing mechanisms, etc.
+     *
+     * Emits a {Transfer} event.
+     *
+     * Requirements:
+     *
+     * - `sender` cannot be the zero address.
+     * - `recipient` cannot be the zero address.
+     * - `sender` must have a balance of at least `amount`.
+     */
+    function _transfer(address sender, address recipient, uint256 amount) internal virtual {
+        require(sender != address(0), "ERC20: transfer from the zero address");
+        require(recipient != address(0), "ERC20: transfer to the zero address");
 
-    _beforeTokenTransfer(sender, recipient, amount);
+        _beforeTokenTransfer(sender, recipient, amount);
 
-    _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
-    _balances[recipient] = _balances[recipient].add(amount);
-    emit Transfer(sender, recipient, amount);
-  }
+        _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
+        _balances[recipient] = _balances[recipient].add(amount);
+        emit Transfer(sender, recipient, amount);
+    }
 
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
      * the total supply.
@@ -791,22 +791,22 @@ abstract contract ERC20
     //     _decimals = decimals_;
     // }
 
-  /**
-   * @dev Hook that is called before any transfer of tokens. This includes
-   * minting and burning.
-   *
-   * Calling conditions:
-   *
-   * - when `from` and `to` are both non-zero, `amount` of ``from``'s tokens
-   * will be to transferred to `to`.
-   * - when `from` is zero, `amount` tokens will be minted for `to`.
-   * - when `to` is zero, `amount` of ``from``'s tokens will be burned.
-   * - `from` and `to` are never both zero.
-   *
-   * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
-   */
-  // Present in ERC777
-  function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
+    /**
+     * @dev Hook that is called before any transfer of tokens. This includes
+     * minting and burning.
+     *
+     * Calling conditions:
+     *
+     * - when `from` and `to` are both non-zero, `amount` of ``from``'s tokens
+     * will be to transferred to `to`.
+     * - when `from` is zero, `amount` tokens will be minted for `to`.
+     * - when `to` is zero, `amount` of ``from``'s tokens will be burned.
+     * - `from` and `to` are never both zero.
+     *
+     * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
+     */
+    // Present in ERC777
+    function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
 }
 
 library Counters {
@@ -894,12 +894,12 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
         }
 
         DOMAIN_SEPARATOR = keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes(name())),
-            keccak256(bytes("1")), // Version
-            chainID,
-            address(this)
-        ));
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(name())),
+                keccak256(bytes("1")), // Version
+                chainID,
+                address(this)
+            ));
     }
 
     /**
@@ -918,7 +918,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
         require(block.timestamp <= deadline, "Permit: expired deadline");
 
         bytes32 hashStruct =
-            keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
+        keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
 
         bytes32 _hash = keccak256(abi.encodePacked(uint16(0x1901), DOMAIN_SEPARATOR, hashStruct));
 
@@ -938,13 +938,13 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
 }
 
 interface IOwnable {
-  function manager() external view returns (address);
+    function manager() external view returns (address);
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+    function renounceManagement() external;
+
+    function pushManagement( address newOwner_ ) external;
+
+    function pullManagement() external;
 }
 
 contract Ownable is IOwnable {
@@ -979,7 +979,7 @@ contract Ownable is IOwnable {
         emit OwnershipPushed( _owner, newOwner_ );
         _newOwner = newOwner_;
     }
-    
+
     function pullManagement() public virtual override {
         require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
         emit OwnershipPulled( _owner, _newOwner );
@@ -987,7 +987,7 @@ contract Ownable is IOwnable {
     }
 }
 
-contract sOlympus is ERC20Permit, Ownable {
+contract sFantohm is ERC20Permit, Ownable {
 
     using SafeMath for uint256;
 
@@ -1031,7 +1031,7 @@ contract sOlympus is ERC20Permit, Ownable {
 
     mapping ( address => mapping ( address => uint256 ) ) private _allowedValue;
 
-    constructor() ERC20("Staked Olympus", "sOHM", 9) ERC20Permit() {
+    constructor() ERC20("Staked Fantohm", "sFHM", 9) ERC20Permit() {
         initializer = msg.sender;
         _totalSupply = INITIAL_FRAGMENTS_SUPPLY;
         _gonsPerFragment = TOTAL_GONS.div(_totalSupply);
@@ -1045,7 +1045,7 @@ contract sOlympus is ERC20Permit, Ownable {
 
         emit Transfer( address(0x0), stakingContract, _totalSupply );
         emit LogStakingContractUpdated( stakingContract_ );
-        
+
         initializer = address(0);
         return true;
     }
@@ -1099,15 +1099,15 @@ contract sOlympus is ERC20Permit, Ownable {
         uint rebasePercent = profit_.mul( 1e18 ).div( previousCirculating_ );
 
         rebases.push( Rebase ( {
-            epoch: epoch_,
-            rebase: rebasePercent, // 18 decimals
-            totalStakedBefore: previousCirculating_,
-            totalStakedAfter: circulatingSupply(),
-            amountRebased: profit_,
-            index: index(),
-            blockNumberOccured: block.number
+        epoch: epoch_,
+        rebase: rebasePercent, // 18 decimals
+        totalStakedBefore: previousCirculating_,
+        totalStakedAfter: circulatingSupply(),
+        amountRebased: profit_,
+        index: index(),
+        blockNumberOccured: block.number
         }));
-        
+
         emit LogSupply( epoch_, block.timestamp, _totalSupply );
         emit LogRebase( epoch_, rebasePercent, index() );
 
@@ -1148,8 +1148,8 @@ contract sOlympus is ERC20Permit, Ownable {
     }
 
     function transferFrom( address from, address to, uint256 value ) public override returns ( bool ) {
-       _allowedValue[ from ][ msg.sender ] = _allowedValue[ from ][ msg.sender ].sub( value );
-       emit Approval( from, msg.sender,  _allowedValue[ from ][ msg.sender ] );
+        _allowedValue[ from ][ msg.sender ] = _allowedValue[ from ][ msg.sender ].sub( value );
+        emit Approval( from, msg.sender,  _allowedValue[ from ][ msg.sender ] );
 
         uint256 gonValue = gonsForBalance( value );
         _gonBalances[ from ] = _gonBalances[from].sub( gonValue );
@@ -1160,9 +1160,9 @@ contract sOlympus is ERC20Permit, Ownable {
     }
 
     function approve( address spender, uint256 value ) public override returns (bool) {
-         _allowedValue[ msg.sender ][ spender ] = value;
-         emit Approval( msg.sender, spender, value );
-         return true;
+        _allowedValue[ msg.sender ][ spender ] = value;
+        emit Approval( msg.sender, spender, value );
+        return true;
     }
 
     // What gets called in a permit

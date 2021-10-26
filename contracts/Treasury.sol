@@ -45,7 +45,7 @@ library SafeMath {
 
 library Address {
 
-  function isContract(address account) internal view returns (bool) {
+    function isContract(address account) internal view returns (bool) {
         // This method relies in extcodesize, which returns 0 for contracts in
         // construction, since the code is only stored at the end of the
         // constructor execution.
@@ -98,13 +98,13 @@ library Address {
 }
 
 interface IOwnable {
-  function manager() external view returns (address);
+    function manager() external view returns (address);
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+    function renounceManagement() external;
+
+    function pushManagement( address newOwner_ ) external;
+
+    function pullManagement() external;
 }
 
 contract Ownable is IOwnable {
@@ -139,7 +139,7 @@ contract Ownable is IOwnable {
         emit OwnershipPushed( _owner, newOwner_ );
         _newOwner = newOwner_;
     }
-    
+
     function pullManagement() public virtual override {
         require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
         emit OwnershipPulled( _owner, _newOwner );
@@ -187,9 +187,9 @@ library SafeERC20 {
 }
 
 interface IERC20Mintable {
-  function mint( uint256 amount_ ) external;
+    function mint( uint256 amount_ ) external;
 
-  function mint( address account_, uint256 ammount_ ) external;
+    function mint( address account_, uint256 ammount_ ) external;
 }
 
 interface IOHMERC20 {
@@ -197,10 +197,10 @@ interface IOHMERC20 {
 }
 
 interface IBondCalculator {
-  function valuation( address pair_, uint amount_ ) external view returns ( uint _value );
+    function valuation( address pair_, uint amount_ ) external view returns ( uint _value );
 }
 
-contract OlympusTreasury is Ownable {
+contract FantohmTreasury is Ownable {
 
     using SafeMath for uint;
     using SafeERC20 for IERC20;
@@ -262,7 +262,7 @@ contract OlympusTreasury is Ownable {
 
     address public sOHM;
     uint public sOHMQueue; // Delays change to sOHM address
-    
+
     uint public totalReserves; // Risk-free value of all assets
     uint public totalDebt;
 
@@ -282,8 +282,8 @@ contract OlympusTreasury is Ownable {
         isReserveToken[ _Frax] = true;
         reserveTokens.push( _Frax );
 
-       isLiquidityToken[ _OHMDAI ] = true;
-       liquidityTokens.push( _OHMDAI );
+        isLiquidityToken[ _OHMDAI ] = true;
+        liquidityTokens.push( _OHMDAI );
 
         blocksNeededForQueue = _blocksNeededForQueue;
     }
@@ -358,7 +358,7 @@ contract OlympusTreasury is Ownable {
         emit ReservesUpdated( totalReserves );
 
         IERC20( _token ).transfer( msg.sender, _amount );
-        
+
         emit CreateDebt( msg.sender, _token, _amount, value );
     }
 
@@ -431,7 +431,7 @@ contract OlympusTreasury is Ownable {
         IERC20Mintable( OHM ).mint( _recipient, _amount );
 
         emit RewardsMinted( msg.sender, _recipient, _amount );
-    } 
+    }
 
     /**
         @notice returns excess reserves not backing tokens
@@ -448,7 +448,7 @@ contract OlympusTreasury is Ownable {
     function auditReserves() external onlyManager() {
         uint reserves;
         for( uint i = 0; i < reserveTokens.length; i++ ) {
-            reserves = reserves.add ( 
+            reserves = reserves.add (
                 valueOf( reserveTokens[ i ], IERC20( reserveTokens[ i ] ).balanceOf( address(this) ) )
             );
         }
@@ -530,7 +530,7 @@ contract OlympusTreasury is Ownable {
             }
             result = !isReserveDepositor[ _address ];
             isReserveDepositor[ _address ] = result;
-            
+
         } else if ( _managing == MANAGING.RESERVESPENDER ) { // 1
             if ( requirements( reserveSpenderQueue, isReserveSpender, _address ) ) {
                 reserveSpenderQueue[ _address ] = 0;
@@ -630,12 +630,12 @@ contract OlympusTreasury is Ownable {
         @param queue_ mapping( address => uint )
         @param status_ mapping( address => bool )
         @param _address address
-        @return bool 
+        @return bool
      */
-    function requirements( 
-        mapping( address => uint ) storage queue_, 
-        mapping( address => bool ) storage status_, 
-        address _address 
+    function requirements(
+        mapping( address => uint ) storage queue_,
+        mapping( address => bool ) storage status_,
+        address _address
     ) internal view returns ( bool ) {
         if ( !status_[ _address ] ) {
             require( queue_[ _address ] != 0, "Must queue" );

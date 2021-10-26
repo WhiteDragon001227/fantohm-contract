@@ -256,10 +256,10 @@ interface IUniswapV2Pair is IUniswapV2ERC20 {
 }
 
 interface IBondingCalculator {
-  function valuation( address pair_, uint amount_ ) external view returns ( uint _value );
+    function valuation( address pair_, uint amount_ ) external view returns ( uint _value );
 }
 
-contract OlympusBondingCalculator is IBondingCalculator {
+contract FantohmBondingCalculator is IBondingCalculator {
 
     using FixedPoint for *;
     using SafeMath for uint;

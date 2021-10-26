@@ -113,74 +113,74 @@ library SafeMath {
 
 interface IERC20 {
     function decimals() external view returns (uint8);
-  /**
-   * @dev Returns the amount of tokens in existence.
-   */
-  function totalSupply() external view returns (uint256);
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
 
-  /**
-   * @dev Returns the amount of tokens owned by `account`.
-   */
-  function balanceOf(address account) external view returns (uint256);
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
 
-  /**
-   * @dev Moves `amount` tokens from the caller's account to `recipient`.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transfer(address recipient, uint256 amount) external returns (bool);
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `recipient`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address recipient, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Returns the remaining number of tokens that `spender` will be
-   * allowed to spend on behalf of `owner` through {transferFrom}. This is
-   * zero by default.
-   *
-   * This value changes when {approve} or {transferFrom} are called.
-   */
-  function allowance(address owner, address spender) external view returns (uint256);
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) external view returns (uint256);
 
-  /**
-   * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * IMPORTANT: Beware that changing an allowance with this method brings the risk
-   * that someone may use both the old and the new allowance by unfortunate
-   * transaction ordering. One possible solution to mitigate this race
-   * condition is to first reduce the spender's allowance to 0 and set the
-   * desired value afterwards:
-   * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-   *
-   * Emits an {Approval} event.
-   */
-  function approve(address spender, uint256 amount) external returns (bool);
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Moves `amount` tokens from `sender` to `recipient` using the
-   * allowance mechanism. `amount` is then deducted from the caller's
-   * allowance.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    /**
+     * @dev Moves `amount` tokens from `sender` to `recipient` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 
-  /**
-   * @dev Emitted when `value` tokens are moved from one account (`from`) to
-   * another (`to`).
-   *
-   * Note that `value` may be zero.
-   */
-  event Transfer(address indexed from, address indexed to, uint256 value);
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
 
-  /**
-   * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-   * a call to {approve}. `value` is the new allowance.
-   */
-  event Approval(address indexed owner, address indexed spender, uint256 value);
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
 library Address {
@@ -255,7 +255,7 @@ library Address {
      * _Available since v3.1._
      */
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
+        return functionCall(target, data, "Address: low-level call failed");
     }
 
     /**
@@ -321,12 +321,12 @@ library Address {
         }
     }
 
-  /**
-     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
-     * but performing a static call.
-     *
-     * _Available since v3.3._
-     */
+    /**
+       * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+       * but performing a static call.
+       *
+       * _Available since v3.3._
+       */
     function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
         return functionStaticCall(target, data, "Address: low-level static call failed");
     }
@@ -466,13 +466,13 @@ library SafeERC20 {
 }
 
 interface IOwnable {
-  function manager() external view returns (address);
+    function manager() external view returns (address);
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+    function renounceManagement() external;
+
+    function pushManagement( address newOwner_ ) external;
+
+    function pullManagement() external;
 }
 
 contract Ownable is IOwnable {
@@ -507,7 +507,7 @@ contract Ownable is IOwnable {
         emit OwnershipPushed( _owner, newOwner_ );
         _newOwner = newOwner_;
     }
-    
+
     function pullManagement() public virtual override {
         require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
         emit OwnershipPulled( _owner, _newOwner );
@@ -525,7 +525,7 @@ interface IsOHM {
     function gonsForBalance( uint amount ) external view returns ( uint );
 
     function balanceForGons( uint gons ) external view returns ( uint );
-    
+
     function index() external view returns ( uint );
 }
 
@@ -537,7 +537,7 @@ interface IDistributor {
     function distribute() external returns ( bool );
 }
 
-contract OlympusStaking is Ownable {
+contract FantohmStaking is Ownable {
 
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -554,16 +554,16 @@ contract OlympusStaking is Ownable {
     Epoch public epoch;
 
     address public distributor;
-    
+
     address public locker;
     uint public totalBonus;
-    
+
     address public warmupContract;
     uint public warmupPeriod;
-    
-    constructor ( 
-        address _OHM, 
-        address _sOHM, 
+
+    constructor (
+        address _OHM,
+        address _sOHM,
         uint _epochLength,
         uint _firstEpochNumber,
         uint _firstEpochBlock
@@ -572,12 +572,12 @@ contract OlympusStaking is Ownable {
         OHM = _OHM;
         require( _sOHM != address(0) );
         sOHM = _sOHM;
-        
+
         epoch = Epoch({
-            length: _epochLength,
-            number: _firstEpochNumber,
-            endBlock: _firstEpochBlock,
-            distribute: 0
+        length: _epochLength,
+        number: _firstEpochNumber,
+        endBlock: _firstEpochBlock,
+        distribute: 0
         });
     }
 
@@ -596,19 +596,19 @@ contract OlympusStaking is Ownable {
      */
     function stake( uint _amount, address _recipient ) external returns ( bool ) {
         rebase();
-        
+
         IERC20( OHM ).safeTransferFrom( msg.sender, address(this), _amount );
 
         Claim memory info = warmupInfo[ _recipient ];
         require( !info.lock, "Deposits for account are locked" );
 
         warmupInfo[ _recipient ] = Claim ({
-            deposit: info.deposit.add( _amount ),
-            gons: info.gons.add( IsOHM( sOHM ).gonsForBalance( _amount ) ),
-            expiry: epoch.number.add( warmupPeriod ),
-            lock: false
+        deposit: info.deposit.add( _amount ),
+        gons: info.gons.add( IsOHM( sOHM ).gonsForBalance( _amount ) ),
+        expiry: epoch.number.add( warmupPeriod ),
+        lock: false
         });
-        
+
         IERC20( sOHM ).safeTransfer( warmupContract, _amount );
         return true;
     }
@@ -674,7 +674,7 @@ contract OlympusStaking is Ownable {
 
             epoch.endBlock = epoch.endBlock.add( epoch.length );
             epoch.number++;
-            
+
             if ( distributor != address(0) ) {
                 IDistributor( distributor ).distribute();
             }
@@ -735,7 +735,7 @@ contract OlympusStaking is Ownable {
             locker = _address;
         }
     }
-    
+
     /**
      * @notice set warmup period for new stakers
      * @param _warmupPeriod uint

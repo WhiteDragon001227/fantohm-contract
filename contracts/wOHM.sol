@@ -307,7 +307,7 @@ library Address {
      * _Available since v3.1._
      */
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
+        return functionCall(target, data, "Address: low-level call failed");
     }
 
     /**
@@ -745,7 +745,7 @@ interface IStaking {
     function index() external view returns ( uint );
 }
 
-contract wOHM is ERC20 {
+contract wFHM is ERC20 {
     using SafeERC20 for ERC20;
     using Address for address;
     using SafeMath for uint;
@@ -763,11 +763,11 @@ contract wOHM is ERC20 {
         sOHM = _sOHM;
     }
 
-        /**
-        @notice stakes OHM and wraps sOHM
-        @param _amount uint
-        @return uint
-     */
+    /**
+    @notice stakes OHM and wraps sOHM
+    @param _amount uint
+    @return uint
+ */
     function wrapFromOHM( uint _amount ) external returns ( uint ) {
         IERC20( OHM ).transferFrom( msg.sender, address(this), _amount );
 
@@ -786,7 +786,7 @@ contract wOHM is ERC20 {
      */
     function unwrapToOHM( uint _amount ) external returns ( uint ) {
         _burn( msg.sender, _amount );
-        
+
         uint value = sOHMValue( _amount );
         IERC20( sOHM ).approve( staking, value ); // unstake sOHM for OHM
         IStaking( staking ).unstake( value, address(this) );
@@ -802,7 +802,7 @@ contract wOHM is ERC20 {
      */
     function wrapFromsOHM( uint _amount ) external returns ( uint ) {
         IERC20( sOHM ).transferFrom( msg.sender, address(this), _amount );
-        
+
         uint value = wOHMValue( _amount );
         _mint( msg.sender, value );
         return value;

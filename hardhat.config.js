@@ -30,8 +30,12 @@ module.exports = {
         accounts: [`${privateKey}`]
      },
     fantom_testnet: {
-	url: `https://rpc.testnet.fantom.network/`,
-	accounts: [`${privateKey}`]
+		url: `https://rpc.testnet.fantom.network/`,
+		accounts: [`${privateKey}`]
+    },
+    fantom: {
+		url: `https://rpc.ftm.tools/`,
+		accounts: [`${privateKey}`]
     },
     hardhat: {
       chainId: 1337
