@@ -285,7 +285,7 @@ interface IERC20 {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract OHMCirculatingSupplyConrtact {
+contract OHMCirculatingSupplyContract {
     using SafeMath for uint;
 
     bool public isInitialized;
