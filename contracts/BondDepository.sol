@@ -950,10 +950,6 @@ contract FantohmBondDepository is Ownable {
         }
     }
 
-    function forceAdjust() external onlyPolicy() {
-        adjust();
-    }
-
     /**
      *  @notice reduce total debt
      */
