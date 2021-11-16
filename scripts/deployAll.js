@@ -82,7 +82,7 @@ async function main() {
     // const treasury = await Treasury.deploy( '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x82f0B8B456c1A451378467398982d4834b6829c1', 0 );
 
     // Deploy bonding calc 0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581
-    // const OlympusBondingCalculator = await ethers.getContractFactory('FantohmBondingCalculator');
+    // const OlympusBondingCalculator = await ethers.getContractFactory('FantohmBondingCalculator2');
     // const olympusBondingCalculator = await OlympusBondingCalculator.deploy( '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286' );
 
     // Deploy staking distributor 0xCD12666f754aCefa1ee5477fA809911bAB915aa0
@@ -106,8 +106,11 @@ async function main() {
     // const stakingHelper = await StakingHelper.deploy('0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2', '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286');
 
     // Deploy MIM bond: 0xD4B8A4E823923Ac6f57E457615a57f41E09B5613
-    // const Depository = await ethers.getContractFactory('FantohmBondDepository');
-    // const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x82f0B8B456c1A451378467398982d4834b6829c1', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', zeroAddress);
+    const Depository = await ethers.getContractFactory('FantohmBondDepository');
+    // MIM const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x82f0B8B456c1A451378467398982d4834b6829c1', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', zeroAddress);
+    // const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', zeroAddress);
+    // LP const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x46622913cE40c54Ec14857f72968d4BAAF963947', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', '0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581');
+    const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0xd77fc9c4074b56ecf80009744391942fbfddd88b', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC', '0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581');
 
     // Deploy Frax bond
     //@dev changed function call to Treasury of 'valueOf' to 'valueOfToken' in BondDepository due to change in Treausry contract
@@ -181,14 +184,28 @@ async function main() {
 
 
     // OHMCirculatingSupplyContract 0xD6034108E056a74a355E6f8425773FBBA548f99E
-    // const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
-    // const supplyContract = await OHMCirculatingSupplyContract.deploy('0x3381e86306145b062cEd14790b01AC5384D23D82');
-    // console.log(supplyContract.address);
+    //const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
+    //const supplyContract = await OHMCirculatingSupplyContract.deploy('0x3381e86306145b062cEd14790b01AC5384D23D82');
+    //console.log(supplyContract.address);
+    
+    // const TestMultisig  = await ethers.getContractFactory('TestMultisig');
+    // const testMultisig = await TestMultisig.deploy();
+    // console.log(testMultisig.address);
+    
+    
+
 
     // // RedeemHelper 0xF709c33F84Da692f76F035e51EE660a456196A67
     // const RedeemHelper = await ethers.getContractFactory('RedeemHelper');
     // const redeemHelper = await RedeemHelper.deploy();
     // console.log(redeemHelper.address);
+
+    // RedeemHelper 0xF709c33F84Da692f76F035e51EE660a456196A67
+    // const TreasuryBalance = await ethers.getContractFactory('TreasuryBalance');
+    // const treasuryBalance = await TreasuryBalance.deploy();
+    // console.log(treasuryBalance.address);
+
+
 
 
     // console.log( "OHM: " + ohm.address );
@@ -202,7 +219,7 @@ async function main() {
     // console.log( "Staking Wawrmup " + stakingWarmup.address);
     // console.log( "Staking Helper " + stakingHelper.address);
     // console.log("MIM Bond: " + depository.address);
-    // console.log("Frax Bond: " + fraxBond.address);
+    console.log("LP Bond: " + depository.address);
 }
 
 main()
