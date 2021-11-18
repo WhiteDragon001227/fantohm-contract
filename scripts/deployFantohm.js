@@ -30,49 +30,41 @@ async function main() {
     // Deploy FHM
     const FHM = await ethers.getContractFactory('FantohmERC20Token');
     const fhm = await FHM.deploy();
-    // const fhm = await FHM.attach('0x82c41E3c65C3B324c4Ea973bb662d2a70bBAc8E2');
     console.log(`Deployed FHM to: ${fhm.address}`);
 
     // Deploy treasury
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.deploy( fhm.address, 0 );
-    // const treasury = await Treasury.attach('0xE23b4C804441AB534faDc601400c77251DFaF3B7');
     console.log(`Deployed Treasury to: ${treasury.address}`);
 
     // Deploy bonding calc
     const FantohmBondingCalculator = await ethers.getContractFactory('FantohmBondingCalculator');
     const fantohmBondingCalculator = await FantohmBondingCalculator.deploy( fhm.address );
-    // const fantohmBondingCalculator = await FantohmBondingCalculator.attach('0x2cdCE5F95eB7E3f4587ECa7d997b16b965b647Df');
     console.log(`Deployed FantohmBondingCalculator to: ${fantohmBondingCalculator.address}`);
 
     // Deploy staking distributor
     const Distributor = await ethers.getContractFactory('Distributor');
     const distributor = await Distributor.deploy(treasury.address, fhm.address, epochLengthInBlocks, firstEpochBlock);
-    // const distributor = await Distributor.attach('0x4Ec3d014fA8dd742b5BDE9825434fEcB6C481c12');
     console.log(`Deployed Distributor to: ${distributor.address}`);
 
     // Deploy sFHM
     const SFHM = await ethers.getContractFactory('sFantohm');
     const sFHM = await SFHM.deploy();
-    // const sFHM = await SFHM.attach('0x212969B3a70102179316E0B4877f9d676F9C821D');
     console.log(`Deployed SFHM to: ${sFHM.address}`);
 
     // Deploy Staking
     const Staking = await ethers.getContractFactory('FantohmStaking');
     const staking = await Staking.deploy( fhm.address, sFHM.address, epochLengthInBlocks, firstEpochNumber, firstEpochBlock );
-    // const staking = await Staking.attach('0x6e9baF05d1acd144DCe250Ba690A01f01D993895');
     console.log(`Deployed Staking to: ${staking.address}`);
 
     // Deploy staking warmpup
     const StakingWarmpup = await ethers.getContractFactory('StakingWarmup');
     const stakingWarmup = await StakingWarmpup.deploy( staking.address, sFHM.address );
-    // const stakingWarmup = await StakingWarmpup.attach('0x8eA1ea7BF1e2570350e47135c9D4b1902571AB50');
     console.log(`Deployed StakingWarmpup to: ${stakingWarmup.address}`);
 
     // Deploy staking helper
     const StakingHelper = await ethers.getContractFactory('StakingHelper');
     const stakingHelper = await StakingHelper.deploy( staking.address, fhm.address );
-    // const stakingHelper = await StakingHelper.attach('0x165020d0680BeF71Db74dc0f282164D842B71502');
     console.log(`Deployed StakingHelper to: ${stakingHelper.address}`);
 
     // Initialize sFHM and set the index
@@ -122,7 +114,6 @@ async function main() {
     // OHMCirculatingSupplyContract
     const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
     const supplyContract = await OHMCirculatingSupplyContract.deploy(deployer.address);
-    // const supplyContract = await OHMCirculatingSupplyContract.attach('0x6617016c6c8bB76898afFbA4cf1D59B31eA71083');
     console.log(`Deployed SupplyContract to: ${supplyContract.address}`);
     await supplyContract.initialize(fhm.address);
     console.log('Initialized OHMCirculatingSupplyContract');
@@ -130,7 +121,6 @@ async function main() {
     // RedeemHelper
     const RedeemHelper = await ethers.getContractFactory('RedeemHelper');
     const redeemHelper = await RedeemHelper.deploy();
-    // const redeemHelper = await RedeemHelper.attach('0x3E70a6Ec0508CAeaf467E324ab9E350BBCa3F25D');
     console.log(`Deployed RedeemHelper to: ${redeemHelper.address}`);
 
     console.log( "DONE!" );
