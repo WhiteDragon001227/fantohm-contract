@@ -4,6 +4,7 @@ cache/
 node_modules
 #Hardhat files
 secrets.json
+data
 
 # Created by https://www.toptal.com/developers/gitignore/api/osx,solidity
 # Edit at https://www.toptal.com/developers/gitignore?templates=osx,solidity
