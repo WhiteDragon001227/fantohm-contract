@@ -1,16 +1,19 @@
-// @dev. This script will deploy this V1.1 of Olympus. It will deploy the whole ecosystem except for the LP tokens and their bonds. 
-// This should be enough of a test environment to learn about and test implementations with the Olympus as of V1.1.
-// Not that the every instance of the Treasury's function 'valueOf' has been changed to 'valueOfToken'... 
-// This solidity function was conflicting w js object property name
-
 const { ethers } = require("hardhat");
 
 async function main() {
 
-    let [deployer, MockDAO] = await ethers.getSigners();
-    // FIXME hack
-    MockDAO = deployer;
+    let [deployer, DAO] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
+    console.log('Deploying contracts with the account: ' + DAO.address);
+
+    // Reserve addresses
+    const reserves = [{
+        name: 'DAI',
+        address: '0x3B5ee34b19aB125D0033Ba620e98B984a38DEc16',
+        bondBCV: '369',
+        depositAmount: '9000000000000000000000000',
+        depositProfit: '8400000000000000',
+    }];
 
     // Initial staking index
     const initialIndex = '7675210820';
@@ -30,17 +33,8 @@ async function main() {
     // Ethereum 0 address, used when toggling changes in treasury
     const zeroAddress = '0x0000000000000000000000000000000000000000';
 
-    // Large number for approval for Frax and DAI
+    // Large number for approval for reserve tokens
     const largeApproval = '100000000000000000000000000000000';
-
-    // Initial mint for Frax and DAI (10,000,000)
-    const initialMint = '10000000000000000000000000';
-
-    // DAI bond BCV
-    const daiBondBCV = '369';
-
-    // Frax bond BCV
-    const fraxBondBCV = '690';
 
     // Bond vesting length in blocks. 33110 ~ 5 days
     const bondVestingLength = '33110';
@@ -60,166 +54,208 @@ async function main() {
     // Initial Bond debt
     const intialBondDebt = '0'
 
-    // Deploy OHM 0x3381e86306145b062ced14790b01ac5384d23d82
-    // const OHM = await ethers.getContractFactory('FantohmERC20Token');
-    // const ohm = await OHM.deploy();
+    // Deploy FHM
+    const FHM = await ethers.getContractFactory('FantohmERC20Token');
+    // const fhm = await FHM.deploy();
+    const fhm = await FHM.attach('0x82c41E3c65C3B324c4Ea973bb662d2a70bBAc8E2');
+    console.log(`Deployed FHM to: ${fhm.address}`);
 
-    // Deploy DAI
-    // const DAI = await ethers.getContractFactory('DAI');
-    // const dai = await DAI.deploy( 0 );
+    // Deploy treasury
+    const Treasury = await ethers.getContractFactory('FantohmTreasury');
+    // const treasury = await Treasury.deploy( fhm.address, 0 );
+    const treasury = await Treasury.attach('0xE23b4C804441AB534faDc601400c77251DFaF3B7');
+    console.log(`Deployed Treasury to: ${treasury.address}`);
 
-    // Deploy Frax
-    // const Frax = await ethers.getContractFactory('FRAX');
-    // const frax = await Frax.deploy( 0 );
+    // Get reserve tokens
+    var reserveTokens = [];
+    for (let i = 0; i < reserves.length; i++) {
+        // Get Reserve Token
+        const ReserveToken = await ethers.getContractFactory('contracts/wOHM.sol:ERC20'); // Doesn't matter which ERC20
+        const reserveToken = await ReserveToken.attach(reserves[i].address);
+        reserveTokens.push(reserveToken);
+    }
 
-    // Deploy 10,000,000 mock DAI and mock Frax
-    // await dai.mint( deployer.address, initialMint );
-    // await frax.mint( deployer.address, initialMint );
+    // Approve reserve tokens spend by treasury
+    for (let i = 0; i < reserveTokens.length; i++) {
+        const reserveToken = reserveTokens[i];
+        // queue and toggle reserved tokens on treasury
+        // await treasury.queue('2', reserveToken.address);
+        console.log(`Queued ${reserves[i].name} as reserve token`);
+        // await treasury.toggle('2', reserveToken.address, zeroAddress);
+        console.log(`Toggled ${reserves[i].name} as reserve token`);
+    };
 
-    // Deploy treasury 0xA3b52d5A6d2f8932a5cD921e09DA840092349D71
-    //@dev changed function in treaury from 'valueOf' to 'valueOfToken'... solidity function was coflicting w js object property name
-    // const Treasury = await ethers.getContractFactory('FantohmTreasury');
-    // const treasury = await Treasury.deploy( '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x82f0B8B456c1A451378467398982d4834b6829c1', 0 );
+    // Deploy bonding calc
+    const FantohmBondingCalculator = await ethers.getContractFactory('FantohmBondingCalculator');
+    // const fantohmBondingCalculator = await FantohmBondingCalculator.deploy( fhm.address );
+    const fantohmBondingCalculator = await FantohmBondingCalculator.attach('0x2cdCE5F95eB7E3f4587ECa7d997b16b965b647Df');
+    console.log(`Deployed FantohmBondingCalculator to: ${fantohmBondingCalculator.address}`);
 
-    // Deploy bonding calc 0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581
-    // const OlympusBondingCalculator = await ethers.getContractFactory('FantohmBondingCalculator2');
-    // const olympusBondingCalculator = await OlympusBondingCalculator.deploy( '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286' );
+    // Deploy staking distributor
+    const Distributor = await ethers.getContractFactory('Distributor');
+    // const distributor = await Distributor.deploy(treasury.address, fhm.address, epochLengthInBlocks, firstEpochBlock);
+    const distributor = await Distributor.attach('0x4Ec3d014fA8dd742b5BDE9825434fEcB6C481c12');
+    console.log(`Deployed Distributor to: ${distributor.address}`);
 
-    // Deploy staking distributor 0xCD12666f754aCefa1ee5477fA809911bAB915aa0
-    // const Distributor = await ethers.getContractFactory('Distributor');
-    // const distributor = await Distributor.deploy('0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', epochLengthInBlocks, firstEpochBlock);
+    // Deploy sFHM
+    const SFHM = await ethers.getContractFactory('sFantohm');
+    // const sFHM = await SFHM.deploy();
+    const sFHM = await SFHM.attach('0x212969B3a70102179316E0B4877f9d676F9C821D');
+    console.log(`Deployed SFHM to: ${sFHM.address}`);
 
-    // Deploy sOHM 0x5E983ff70DE345de15DbDCf0529640F14446cDfa
-    // const SOHM = await ethers.getContractFactory('sFantohm');
-    // const sOHM = await SOHM.deploy();
+    // Deploy Staking
+    const Staking = await ethers.getContractFactory('FantohmStaking');
+    // const staking = await Staking.deploy( fhm.address, sFHM.address, epochLengthInBlocks, firstEpochNumber, firstEpochBlock );
+    const staking = await Staking.attach('0x6e9baF05d1acd144DCe250Ba690A01f01D993895');
+    console.log(`Deployed Staking to: ${staking.address}`);
 
-    // Deploy Staking 0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2
-    // const Staking = await ethers.getContractFactory('FantohmStaking');
-    // const staking = await Staking.deploy( '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x5E983ff70DE345de15DbDCf0529640F14446cDfa', epochLengthInBlocks, firstEpochNumber, firstEpochBlock );
+    // Deploy staking warmpup
+    const StakingWarmpup = await ethers.getContractFactory('StakingWarmup');
+    // const stakingWarmup = await StakingWarmpup.deploy( staking.address, sFHM.address );
+    const stakingWarmup = await StakingWarmpup.attach('0x8eA1ea7BF1e2570350e47135c9D4b1902571AB50');
+    console.log(`Deployed StakingWarmpup to: ${stakingWarmup.address}`);
 
-    // Deploy staking warmpup 0x0265e9fEA16431C84BF3916276cA64102e19b356
-    // const StakingWarmpup = await ethers.getContractFactory('StakingWarmup');
-    // const stakingWarmup = await StakingWarmpup.deploy('0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2', '0x5E983ff70DE345de15DbDCf0529640F14446cDfa');
+    // Deploy staking helper
+    const StakingHelper = await ethers.getContractFactory('StakingHelper');
+    // const stakingHelper = await StakingHelper.deploy( staking.address, fhm.address );
+    const stakingHelper = await StakingHelper.attach('0x165020d0680BeF71Db74dc0f282164D842B71502');
+    console.log(`Deployed StakingHelper to: ${stakingHelper.address}`);
 
-    // Deploy staking helper 0x068e87aa1eABEBBad65378Ede4B5C16E75e5a671
-    // const StakingHelper = await ethers.getContractFactory('StakingHelper');
-    // const stakingHelper = await StakingHelper.deploy('0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2', '0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286');
+    // Deploy bond contracts
+    var bonds = [];
+    for (let i = 0; i < reserves.length; i++) {
+        const reserve = reserves[i];
 
-    // Deploy MIM bond: 0xD4B8A4E823923Ac6f57E457615a57f41E09B5613
-    const Depository = await ethers.getContractFactory('FantohmBondDepository');
-    // MIM const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x82f0B8B456c1A451378467398982d4834b6829c1', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', zeroAddress);
-    // const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', zeroAddress);
-    // LP const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0x46622913cE40c54Ec14857f72968d4BAAF963947', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0xD4aC626A1F87b5955f78FF86237DB055e62D43a0', '0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581');
-    const depository = await Depository.deploy('0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286', '0xd77fc9c4074b56ecf80009744391942fbfddd88b', '0xA3b52d5A6d2f8932a5cD921e09DA840092349D71', '0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC', '0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581');
+        // Deploy Bond
+        const Bond = await ethers.getContractFactory('FantohmBondDepository');
+        // const bond = await Bond.deploy( fhm.address, reserve.address, treasury.address, DAO.address, zeroAddress);
+        const bond = await Bond.attach('0xebF50b1743C3CbF73b70e14808F9aa0a7c60fb79');
+        console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
-    // Deploy Frax bond
-    //@dev changed function call to Treasury of 'valueOf' to 'valueOfToken' in BondDepository due to change in Treausry contract
-    // const FraxBond = await ethers.getContractFactory('MockOlympusBondDepository');
-    // const fraxBond = await FraxBond.deploy(ohm.address, frax.address, treasury.address, MockDAO.address, zeroAddress);
+        // queue and toggle bond reserve depositor
+        // await treasury.queue('0', bond.address);
+        console.log(`Queued ${reserve.name} Bond as reserve depositor`);
+        // await treasury.toggle('0', bond.address, zeroAddress);
+        console.log(`Toggled ${reserve.name} Bond as reserve depositor`);
 
-    // queue and toggle DAI and Frax bond reserve depositor
-    // await treasury.queue('0', daiBond.address);
-    // await treasury.queue('0', fraxBond.address);
-    // await treasury.toggle('0', daiBond.address, zeroAddress);
-    // await treasury.toggle('0', fraxBond.address, zeroAddress);
+        // Set bond terms
+        // await bond.initializeBondTerms(reserve.bondBCV, bondVestingLength, minBondPrice, maxBondPayout, bondFee, maxBondDebt, intialBondDebt);
+        console.log(`Initialized terms for ${reserve.name} Bond`);
 
-    // Set DAI and Frax bond terms
-    // await daiBond.initializeBondTerms(daiBondBCV, bondVestingLength, minBondPrice, maxBondPayout, bondFee, maxBondDebt, intialBondDebt);
-    // await fraxBond.initializeBondTerms(fraxBondBCV, bondVestingLength, minBondPrice, maxBondPayout, bondFee, maxBondDebt, intialBondDebt);
+        // Set staking for bond
+        // await bond.setStaking(staking.address, stakingHelper.address);
+        console.log(`Set Staking for ${reserve.name} Bond`);
 
-    // Set staking for DAI and Frax bond
-    // await daiBond.setStaking(staking.address, stakingHelper.address);
-    // await fraxBond.setStaking(staking.address, stakingHelper.address);
+        bonds.push(bond);
+    };
 
-    // Initialize sOHM and set the index
-    // await sOHM.initialize(staking.address);
-    // await sOHM.setIndex(initialIndex);
+    // Initialize sFHM and set the index
+    // await sFHM.initialize(staking.address);
+    console.log('Initialized sFHM');
+    // await sFHM.setIndex(initialIndex);
+    console.log('Set index for sFHM');
 
     // set distributor contract and warmup contract
     // await staking.setContract('0', distributor.address);
+    console.log('Set contract for staking for distributor');
     // await staking.setContract('1', stakingWarmup.address);
+    console.log('Set contract for staking for stakingWarmup');
 
-    // Set treasury for OHM token
-    // await ohm.setVault(treasury.address);
+    // Set treasury for FHM token
+    // await fhm.setVault(treasury.address);
+    console.log('Set vault for fhm');
 
     // Add staking contract as distributor recipient
     // await distributor.addRecipient(staking.address, initialRewardRate);
+    console.log('Added recipient for distributor');
 
     // queue and toggle reward manager
     // await treasury.queue('8', distributor.address);
+    console.log('Queued distributor as reward manager for treasury');
     // await treasury.toggle('8', distributor.address, zeroAddress);
+    console.log('Toggled distributor as reward manager for treasury');
 
     // queue and toggle deployer reserve depositor
     // await treasury.queue('0', deployer.address);
+    console.log('Queued deployer as reserve depositor for treasury');
     // await treasury.toggle('0', deployer.address, zeroAddress);
+    console.log('Toggled deployer as reserve depositor for treasury');
 
     // queue and toggle liquidity depositor
     // await treasury.queue('4', deployer.address, );
+    console.log('Queued deployer as liquidity depositor for treasury');
     // await treasury.toggle('4', deployer.address, zeroAddress);
+    console.log('Toggled deployer as liquidity depositor for treasury');
 
-    // Approve the treasury to spend DAI and Frax
-    // await dai.approve(treasury.address, largeApproval );
-    // await frax.approve(treasury.address, largeApproval );
+    // Approve reserve tokens spend by treasury
+    for (let i = 0; i < reserveTokens.length; i++) {
+        // Approve the treasury to spend deployer's reserve tokens
+        // await reserveTokens[i].approve(treasury.address, largeApproval );
+        console.log(`Approved treasury to spend deployer ${reserves[i].name}`);
 
-    // Approve dai and frax bonds to spend deployer's DAI and Frax
-    // await dai.approve(daiBond.address, largeApproval );
-    // await frax.approve(fraxBond.address, largeApproval );
+        // Approve bonds to spend deployer's reserve tokens
+        // await reserveTokens[i].approve(bonds[i].address, largeApproval );
+        console.log(`Approved bond to spend deployer ${reserves[i].name}`);
+    };
 
-    // Approve staking and staking helper contact to spend deployer's OHM
-    // await ohm.approve(staking.address, largeApproval);
-    // await ohm.approve(stakingHelper.address, largeApproval);
+    // Approve staking and staking helper contact to spend deployer's FHM
+    // await fhm.approve(staking.address, largeApproval);
+    console.log('Approved staking to spend deployer FHM');
+    // await fhm.approve(stakingHelper.address, largeApproval);
+    console.log('Approved stakingHelper to spend deployer FHM');
 
-    // Deposit 9,000,000 DAI to treasury, 600,000 OHM gets minted to deployer and 8,400,000 are in treasury as excesss reserves
-    // await treasury.deposit('9000000000000000000000000', dai.address, '8400000000000000');
+    // Approve reserve tokens spend by treasury
+    for (let i = 0; i < reserves.length; i++) {
+        // Deposit reserve tokens to treasury, minting some FHM to deployer and depositProfit kept in treasury as excesss reserves
+        // await treasury.deposit(reserves[i].depositAmount, reserveTokens[i].address, reserves[i].depositProfit);
+        console.log(`Deposited ${reserves[i].name} into treasury`);
+    };
 
-    // Deposit 5,000,000 Frax to treasury, all is profit and goes as excess reserves
-    // await treasury.deposit('5000000000000000000000000', frax.address, '5000000000000000');
-
-    // Stake OHM through helper
+    // Stake FHM through helper
     // await stakingHelper.stake('100000000000');
 
-    // Bond 1,000 OHM and Frax in each of their bonds
-    // await daiBond.deposit('1000000000000000000000', '60000', deployer.address );
-    // await fraxBond.deposit('1000000000000000000000', '60000', deployer.address );
+    console.log('Staked FHM');
 
+    // Bond 1,000 FHM in each bond
+    for (let i = 0; i < bonds.length; i++) {
+        // await bonds[i].deposit('1000000000000000000000', '60000', deployer.address );
+        console.log(`Deposited from deployer to Bond address: ${bonds[i].address}`);
+    };
 
-    // OHMCirculatingSupplyContract 0xD6034108E056a74a355E6f8425773FBBA548f99E
-    //const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
-    //const supplyContract = await OHMCirculatingSupplyContract.deploy('0x3381e86306145b062cEd14790b01AC5384D23D82');
-    //console.log(supplyContract.address);
-    
-    // const TestMultisig  = await ethers.getContractFactory('TestMultisig');
-    // const testMultisig = await TestMultisig.deploy();
-    // console.log(testMultisig.address);
-    
-    
+    // OHMCirculatingSupplyContract
+    const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
+    // const supplyContract = await OHMCirculatingSupplyContract.deploy(deployer.address);
+    const supplyContract = await OHMCirculatingSupplyContract.attach('0x6617016c6c8bB76898afFbA4cf1D59B31eA71083');
+    console.log(`Deployed SupplyContract to: ${supplyContract.address}`);
+    // await supplyContract.initialize(fhm.address);
+    console.log('Initialized OHMCirculatingSupplyContract');
 
-
-    // // RedeemHelper 0xF709c33F84Da692f76F035e51EE660a456196A67
-    // const RedeemHelper = await ethers.getContractFactory('RedeemHelper');
+    // RedeemHelper
+    const RedeemHelper = await ethers.getContractFactory('RedeemHelper');
     // const redeemHelper = await RedeemHelper.deploy();
-    // console.log(redeemHelper.address);
+    const redeemHelper = await RedeemHelper.attach('0x3E70a6Ec0508CAeaf467E324ab9E350BBCa3F25D');
+    console.log(`Deployed RedeemHelper to: ${redeemHelper.address}`);
 
-    // RedeemHelper 0xF709c33F84Da692f76F035e51EE660a456196A67
-    // const TreasuryBalance = await ethers.getContractFactory('TreasuryBalance');
-    // const treasuryBalance = await TreasuryBalance.deploy();
-    // console.log(treasuryBalance.address);
-
-
-
-
-    // console.log( "OHM: " + ohm.address );
-    // console.log( "DAI: " + dai.address );
-    // console.log( "Frax: " + frax.address );
-    // console.log( "Treasury: " + treasury.address );
-    // console.log( "Calc: " + olympusBondingCalculator.address );
-    // console.log( "Staking: " + staking.address );
-    // console.log( "sOHM: " + sOHM.address );
-    // console.log( "Distributor " + distributor.address);
-    // console.log( "Staking Wawrmup " + stakingWarmup.address);
-    // console.log( "Staking Helper " + stakingHelper.address);
-    // console.log("MIM Bond: " + depository.address);
-    console.log("LP Bond: " + depository.address);
+    console.log( "DONE!" );
+    console.log( "----------------------------------------" );
+    console.log( "----------------------------------------" );
+    console.log(`DAI_ADDRESS: "${reserveTokens[0].address}",`);
+    console.log(`OHM_ADDRESS: "${fhm.address}",`);
+    console.log(`STAKING_ADDRESS: "${staking.address}",`);
+    console.log(`STAKING_HELPER_ADDRESS: "${stakingHelper.address}",`);
+    console.log(`SOHM_ADDRESS: "${sFHM.address}",`);
+    console.log(`DISTRIBUTOR_ADDRESS: "${distributor.address}",`);
+    console.log(`BONDINGCALC_ADDRESS: "${fantohmBondingCalculator.address}",`);
+    console.log(`CIRCULATING_SUPPLY_ADDRESS: "${supplyContract.address}",`);
+    console.log(`TREASURY_ADDRESS: "${treasury.address}",`);
+    console.log(`REDEEM_HELPER_ADDRESS: "${redeemHelper.address}",`);
+    console.log(`DAO_ADDRESS: "${DAO.address}",`);
+    console.log(`OLD_STAKING_ADDRESS: "${zeroAddress}",`);
+    console.log(`OLD_SOHM_ADDRESS: "${zeroAddress}",`);
+    console.log(`MIGRATE_ADDRESS: "${zeroAddress}",`);
+    console.log(`PT_TOKEN_ADDRESS: "${zeroAddress}",`);
+    console.log(`PT_PRIZE_POOL_ADDRESS: "${zeroAddress}",`);
+    console.log(`PT_PRIZE_STRATEGY_ADDRESS: "${zeroAddress}",`);
 }
 
 main()
