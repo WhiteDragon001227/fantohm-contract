@@ -9,7 +9,7 @@ async function main() {
     // Reserve addresses
     const reserves = [{
         name: 'DAI',
-        address: '0x3B5ee34b19aB125D0033Ba620e98B984a38DEc16',
+        address: '0x3D4f1706E2ef0E7Eb817DcEb815eCE6fadd37E04',
         bondBCV: '369',
         depositAmount: '9000000000000000000000000',
         depositProfit: '8400000000000000',
@@ -40,22 +40,24 @@ async function main() {
     const intialBondDebt = '0';
 
     // FHM address
-    const fhmAddress = '';
+    const fhmAddress = '0x29a3f7E3E4925FC576d77b115E4F7327307bf018';
 
     // Treasury address
-    const treasuryAddress = '';
+    const treasuryAddress = '0xcAa0EB441b18976EE4Dc3915c5dFb2124EDC69a4';
 
     // Staking address
-    const stakingAddress = '';
+    const stakingAddress = '0x1E79020Edb8872bd90fA73781b97862Da6f0D45e';
 
     // Staking helper address
-    const stakingHelperAddress = '';
+    const stakingHelperAddress = '0x0bB56b553cc2Ff6A24aAbD67758D5aE0840AE560';
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
 
     // Get reserve tokens
     for (let i = 0; i < reserves.length; i++) {
+        const reserve = reserves[i];
+
         // Get Reserve Token
         const ReserveToken = await ethers.getContractFactory('contracts/wOHM.sol:ERC20'); // Doesn't matter which ERC20
         const reserveToken = await ReserveToken.attach(reserve.address);
@@ -101,8 +103,12 @@ async function main() {
         console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
         // DONE
-        console.log(`${reserve.name}: "${reserveTokens[0].address}",`);
+        console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
     }
+
+    // Stake FHM through helper
+    await stakingHelper.stake('100000000000');
+    console.log('Staked FHM');
 }
 
 main()

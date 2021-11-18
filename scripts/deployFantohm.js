@@ -119,10 +119,6 @@ async function main() {
     await fhm.approve(stakingHelper.address, largeApproval);
     console.log('Approved stakingHelper to spend deployer FHM');
 
-    // Stake FHM through helper
-    await stakingHelper.stake('100000000000');
-    console.log('Staked FHM');
-
     // OHMCirculatingSupplyContract
     const OHMCirculatingSupplyContract = await ethers.getContractFactory('OHMCirculatingSupplyContract');
     const supplyContract = await OHMCirculatingSupplyContract.deploy(deployer.address);
