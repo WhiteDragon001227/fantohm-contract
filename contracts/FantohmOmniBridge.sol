@@ -138,7 +138,7 @@ contract FantohmOmniBridge is Ownable {
 
     address public immutable treasury;
     address public immutable nativeFHM;
-    address[] public immutable bridgesFHM;
+    address[] public bridgesFHM;
 
     constructor ( address _treasury, address _nativeFHM ) {
         require( _treasury != address(0) );
@@ -157,7 +157,7 @@ contract FantohmOmniBridge is Ownable {
         bridgesFHM[ _index ] = address(0);
     }
 
-    function isBridgeContract( address _bridgeFHM ) private returns (bool) {
+    function isBridgeContract( address _bridgeFHM ) private view returns (bool) {
         for( uint i = 0; i < bridgesFHM.length; i++ ) {
             if ( bridgesFHM[i] != address(0) ) {
                 if ( bridgesFHM[i] == _bridgeFHM ) return true;
@@ -183,13 +183,8 @@ contract FantohmOmniBridge is Ownable {
         IERC20( _bridgeFHM ).transfer( msg.sender, _amount );
     }
 
-    /**
-    *  @notice allow anyone to send lost tokens (excluding principle or OHM) to the DAO
-    *  @return bool
-    */
     function recoverLostToken( address _token ) external onlyManager {
         require( _token != nativeFHM );
-        IERC20( _token ).safeTransfer( msg.sender, IERC20( _token ).balanceOf( address(this) ) );
-        return true;
+        IERC20( _token ).transfer( msg.sender, IERC20( _token ).balanceOf( address(this) ) );
     }
 }
