@@ -1,5 +1,5 @@
 require("@nomiclabs/hardhat-waffle");
-const { alchemyApiKey, privateKey, etherscanApiKey, alchemyApiKeyProd } = require('./secrets.json');
+const { alchemyApiKey, privateKey, daoPrivateKey, etherscanApiKey, alchemyApiKeyProd } = require('./secrets.json');
 require('@nomiclabs/hardhat-ethers');
 require("@nomiclabs/hardhat-etherscan");
 require('@symblox/hardhat-abi-gen');
@@ -22,43 +22,49 @@ task("accounts", "Prints the list of accounts", async () => {
  */
 module.exports = {
   networks: {
-     rinkeby: {
-       url: `https://eth-rinkeby.alchemyapi.io/v2/${alchemyApiKey}`,
-        accounts: [`${privateKey}`]
-     },
+    rinkeby: {
+      url: `https://eth-rinkeby.alchemyapi.io/v2/${alchemyApiKey}`,
+      accounts: [`${privateKey}`]
+    },
     mainnet: {
-       url: `https://eth-mainnet.alchemyapi.io/v2/${alchemyApiKeyProd}`,
-        accounts: [`${privateKey}`]
-     },
+      url: `https://eth-mainnet.alchemyapi.io/v2/${alchemyApiKeyProd}`,
+      accounts: [`${privateKey}`]
+    },
     fantom_testnet: {
-		url: `https://rpc.testnet.fantom.network/`,
-		accounts: [`${privateKey}`]
+      url: `https://rpc.testnet.fantom.network/`,
+      accounts: [`${privateKey}`]
     },
     fantom: {
-		url: `https://rpc.ftm.tools/`,
-		accounts: [`${privateKey}`]
+      url: `https://rpc.ftm.tools/`,
+      accounts: [`${privateKey}`]
+    },
+    moonbase_testnet: {
+      url: `https://rpc.testnet.moonbeam.network`,
+      accounts: [`${privateKey}`, `${daoPrivateKey}`],
+      gas: 2100000,
+      gasPrice: 8000000000
     },
     hardhat: {
-      chainId: 1337
+      chainId: 1287
     },
   },
   solidity: {
     version: "0.7.5",
     settings: {
-	optimizer: {
-    	    enabled: true,
-    	    runs: 200
-        }
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
     }
   },
-etherscan: {
+  etherscan: {
     apiKey: `${etherscanApiKey}`
-},
-	abiExporter: {
-		path: './data/abi',
-		clear: true,
-		flat: true,
-		spacing: 2
-	}
+  },
+  abiExporter: {
+    path: './data/abi',
+    clear: true,
+    flat: true,
+    spacing: 2
+  }
 };
 

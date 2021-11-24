@@ -268,14 +268,10 @@ contract FantohmTreasury is Ownable {
 
     constructor (
         address _OHM,
-        address _DAI,
         uint _blocksNeededForQueue
     ) {
         require( _OHM != address(0) );
         OHM = _OHM;
-
-        isReserveToken[ _DAI ] = true;
-        reserveTokens.push( _DAI );
 
         blocksNeededForQueue = _blocksNeededForQueue;
     }
