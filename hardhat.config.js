@@ -38,15 +38,21 @@ module.exports = {
       url: `https://rpc.ftm.tools/`,
       accounts: [`${privateKey}`]
     },
+    moonriver: {
+      url: `https://rpc.moonriver.moonbeam.network`,
+      accounts: [`${privateKey}`],
+      chainId: 1285,
+    },
     moonbase_testnet: {
       url: `https://rpc.testnet.moonbeam.network`,
-      accounts: [`${privateKey}`, `${daoPrivateKey}`],
-      gas: 2100000,
-      gasPrice: 8000000000
+      accounts: [`${privateKey}`],
+      chainId: 1287,
+      // gas: 2100000,
+      // gasPrice: 8000000000
     },
-    hardhat: {
-      chainId: 1287
-    },
+    // hardhat: {
+    //   chainId: 1287
+    // },
   },
   solidity: {
     version: "0.7.5",

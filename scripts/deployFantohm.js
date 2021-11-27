@@ -4,7 +4,7 @@ async function main() {
 
     let [deployer, DAO] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
-    console.log('Deploying contracts with the account: ' + DAO.address);
+    // console.log('Deploying contracts with the account: ' + DAO.address);
 
     // Initial staking index
     const initialIndex = '7675210820';
@@ -135,7 +135,7 @@ async function main() {
     console.log(`CIRCULATING_SUPPLY_ADDRESS: "${supplyContract.address}",`);
     console.log(`TREASURY_ADDRESS: "${treasury.address}",`);
     console.log(`REDEEM_HELPER_ADDRESS: "${redeemHelper.address}",`);
-    console.log(`DAO_ADDRESS: "${DAO.address}",`);
+    // console.log(`DAO_ADDRESS: "${DAO.address}",`);
     console.log(`OLD_STAKING_ADDRESS: "${zeroAddress}",`);
     console.log(`OLD_SOHM_ADDRESS: "${zeroAddress}",`);
     console.log(`MIGRATE_ADDRESS: "${zeroAddress}",`);
