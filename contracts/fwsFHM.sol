@@ -827,7 +827,7 @@ contract fwsFHM is ERC20 {
         @return uint
      */
     function sFHMValue( uint _amount ) public view returns ( uint ) {
-        return _amount.mul( IStaking( staking ).index() ).div( 10 ** decimals() );
+        return _amount.mul( IStaking( staking ).index().div(17) ).div( 10 ** decimals() );
     }
 
     /**
@@ -836,7 +836,7 @@ contract fwsFHM is ERC20 {
         @return uint
      */
     function wsFHMValue( uint _amount ) public view returns ( uint ) {
-        return _amount.mul( 10 ** decimals() ).div( IStaking( staking ).index() );
+        return _amount.mul( 10 ** decimals() ).div( IStaking( staking ).index().div(17) );
     }
 
 }
