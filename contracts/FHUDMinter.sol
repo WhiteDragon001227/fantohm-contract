@@ -64,6 +64,10 @@ contract FHUDMinter is Ownable, AccessControl {
         }
     }
 
+    function getFhmAmount(uint256 stableCoinAmount, uint256 marketPrice) public view returns (uint256) {
+        return stableCoinAmount.div(marketPrice.div(10**2)).div(10**9);
+    }
+
     /**
      * stableCoinAmount - 18 decimals
      * minimalTokenPrice - 2 decimals
@@ -76,7 +80,7 @@ contract FHUDMinter is Ownable, AccessControl {
         uint256 marketPrice = getMarketPrice();
         require(marketPrice >= minimalTokenPrice, "Slip page not met");
 
-        uint256 fhmAmount = stableCoinAmount.div(marketPrice.div(10**2)).div(10**9);
+        uint256 fhmAmount = getFhmAmount(stableCoinAmount, marketPrice);
         IBurnable(fhmAddress).burnFrom(msg.sender, fhmAmount);
         IMintable(fhudAddress).mint(msg.sender, stableCoinAmount);
 
@@ -84,7 +88,7 @@ contract FHUDMinter is Ownable, AccessControl {
 
     }
 
-    function setFmhAddress(address _fhmAddress) external virtual onlyOwner {
+    function setFhmAddress(address _fhmAddress) external virtual onlyOwner {
         fhmAddress = _fhmAddress;
     }
 
