@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 
 pragma solidity 0.7.5;
 
@@ -41,6 +41,7 @@ contract FHUDMinter is Ownable, AccessControl {
 
     event FHUDMinted(
         uint256 timestamp,
+        address minter,
         uint256 fhmAmountBurnt,
         uint256 fhudAmountMinted
     );
@@ -84,7 +85,7 @@ contract FHUDMinter is Ownable, AccessControl {
         IBurnable(fhmAddress).burnFrom(msg.sender, fhmAmount);
         IMintable(fhudAddress).mint(msg.sender, stableCoinAmount);
 
-        emit FHUDMinted(block.timestamp, fhmAmount, stableCoinAmount);
+        emit FHUDMinted(block.timestamp, msg.sender, fhmAmount, stableCoinAmount);
 
     }
 
