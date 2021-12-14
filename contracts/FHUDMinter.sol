@@ -73,8 +73,8 @@ contract FHUDMinter is Ownable, AccessControl {
      * stableCoinAmount - 18 decimals
      * minimalTokenPrice - 2 decimals
      */
-    // 10,000 usd / 244.44 usd/fhm
-    // 10,000.000,000,000,000,000,000 / 24444
+    // 10,000 usd / 100.00 usd/fhm
+    // 10,000.000,000,000,000,000,000 / 100.00
     function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external virtual {
         require(hasRole(MINTER_ROLE, _msgSender()), "FHUDMinter: must have minter role to mint");
 
