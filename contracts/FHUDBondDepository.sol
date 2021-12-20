@@ -586,6 +586,7 @@ library FixedPoint {
 
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
+    function manage( address _token, uint _amount ) external;
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
 }
 
@@ -604,7 +605,7 @@ interface IStakingHelper {
 }
 
 interface IFHUDMinter {
-    function getMarketPrice() public view returns (uint256);
+    function getMarketPrice() external view returns (uint256);
     function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external;
 }
 
@@ -635,9 +636,6 @@ contract FHUDBondDepository is Ownable {
     address public immutable treasury; // mints OHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable FHUDMinter;
-
-    bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
-    address public immutable bondCalculator; // calculates value of LP tokens
 
     address public staking; // to auto-stake payout
     address public stakingHelper; // to stake and claim if no staking warmup
@@ -698,8 +696,8 @@ contract FHUDBondDepository is Ownable {
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
-        require( _FHM != address(0) );
-        FHM = _FHM;
+        require( _sFHM != address(0) );
+        sFHM = _sFHM;
         require( _FHUD != address(0) );
         FHUD = _FHUD;
         require( _treasury != address(0) );
@@ -708,9 +706,6 @@ contract FHUDBondDepository is Ownable {
         DAO = _DAO;
         require( _FHUDMinter != address(0) );
         FHUDMinter = _FHUDMinter;
-        // bondCalculator should be address(0) if not LP bond
-        bondCalculator = address(0);
-        isLiquidityBond = false;
     }
 
     /**
@@ -821,44 +816,49 @@ contract FHUDBondDepository is Ownable {
     function depositStaked(
         uint _amount,
         uint _maxPrice,
-        address _depositor
+        address _depositor,
+        address stableReserveAddress
     ) external returns ( uint ) {
         // 1. transfer staked tokens and unstake
-        IERC20(sFHM).safeTransferFrom( msg.sender, address(this), _amount);
-        IStaking(staking).unstake(_amount, true);
+        IERC20( sFHM ).safeTransferFrom( msg.sender, address(this), _amount );
+        IStaking( staking ).unstake( _amount, true );
 
-        return doDeposit(_amount, _maxPrice, _depositor);
+        return depositFHM( _amount, _maxPrice, _depositor, stableReserveAddress );
     }
 
     function depositNative(
         uint _amount,
         uint _maxPrice,
-        address _depositor
+        address _depositor,
+        address stableReserveAddress
     ) external returns ( uint ) {
         // 1. transfer native tokens
-        IERC20(FHM).safeTransferFrom(msg.sender, address(this), _amount);
-        return doDeposit(_amount, _maxPrice, _depositor);
+        IERC20( FHM ).safeTransferFrom( msg.sender, address(this), _amount );
+
+        return depositFHM( _amount, _maxPrice, _depositor, stableReserveAddress );
     }
 
-    function doDeposit(
+    function depositFHM(
         uint _amount,
         uint _maxPrice,
-        address _depositor
+        address _depositor,
+        address stableReserveAddress
     ) private returns ( uint ) {
         // 2. mint FHUD based on market price
-        uint price = IFHUDMinter(FHUDMInter).getMarketPrice();
-        uint stableCoinAmount = _amount.mul(price.div(10**2));
+        uint price = IFHUDMinter( FHUDMinter ).getMarketPrice();
+        uint stableCoinAmount = _amount.mul( price.div( 10**2 ) );
 
-        if (IERC20(FHM).allowance(address(this), FHUDMInter) < _amount) {
-            IERC20(FHM).approve(FHUDMInter, LARGE_VALUE);
-        }
-        IFHUDMinter.mint(stableCoinAmount, price);
+        IERC20( FHM ).approve( FHUDMinter, _amount );
+        IFHUDMinter( FHUDMinter ).mint( stableCoinAmount, price );
 
         // 3. use FHUD to deposit to long term bond
-        if (IERC20(FHUD).allowance(address(this), treasury) < stableCoinAmount) {
-            IERC20(FHUD).approve(treasury, LARGE_VALUE);
-        }
-        return deposit(stableCoinAmount, _maxPrice, _depositor);
+        uint retVal = deposit( stableCoinAmount, _maxPrice, _depositor );
+
+        // 4. change DAI for FHUD
+        ITreasury( treasury ).manage( stableReserveAddress, stableCoinAmount );
+        IERC20( stableReserveAddress ).transfer( DAO, stableCoinAmount );
+
+        return retVal;
     }
 
     /**
@@ -894,11 +894,11 @@ contract FHUDBondDepository is Ownable {
         uint profit = value.sub( payout ).sub( fee );
 
         /**
-            principle is transferred in
+            principle was transferred in depositStaked() depositNative()
             approved and
             deposited into the treasury, returning (_amount - profit) OHM
          */
-        IERC20(FHUD).safeTransferFrom( msg.sender, address(this), _amount );
+        // IERC20(FHUD).safeTransferFrom( msg.sender, address(this), _amount );
         IERC20(FHUD).approve( address( treasury ), _amount );
         ITreasury( treasury ).deposit( _amount, FHUD, profit );
 
@@ -1066,11 +1066,7 @@ contract FHUDBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        if( isLiquidityBond ) {
-            price_ = bondPrice().mul( IBondCalculator( bondCalculator ).markdown(FHUD) ).div( 100 );
-        } else {
-            price_ = bondPrice().mul( 10 ** IERC20(FHUD).decimals() ).div( 100 );
-        }
+        price_ = bondPrice().mul( 10 ** IERC20(FHUD).decimals() ).div( 100 );
     }
 
 
@@ -1091,11 +1087,7 @@ contract FHUDBondDepository is Ownable {
      *  @return uint
      */
     function standardizedDebtRatio() external view returns ( uint ) {
-        if ( isLiquidityBond ) {
-            return debtRatio().mul( IBondCalculator( bondCalculator ).markdown(FHUD) ).div( 1e9 );
-        } else {
-            return debtRatio();
-        }
+        return debtRatio();
     }
 
     /**
