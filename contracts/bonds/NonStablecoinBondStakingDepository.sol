@@ -616,20 +616,22 @@ interface AggregatorV3Interface {
 }
 
 interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
+    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
     function mintRewards( address _recipient, uint _amount ) external;
 }
 
+interface IsFHM {
+    function balanceForGons( uint gons ) external view returns ( uint );
+    function gonsForBalance( uint amount ) external view returns ( uint );
+}
+
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
+    function claim( address _recipient ) external;
 }
 
-interface IStakingHelper {
-    function stake( uint _amount, address _recipient ) external;
-}
-
-contract NonStablecoinBondDepository is Ownable {
+contract NonStablecoinBondStakingDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -650,21 +652,20 @@ contract NonStablecoinBondDepository is Ownable {
 
     /* ======== STATE VARIABLES ======== */
 
-    address public immutable OHM; // token given as payment for bond
+    address public immutable FHM; // reward from treasury which is staked for the time of the bond
+    address public immutable sFHM; // token given as payment for bond
     address public immutable principle; // token used to create bond
-    address public immutable treasury; // mints OHM when receives principle
+    address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
 
     AggregatorV3Interface internal priceFeed;
 
     address public staking; // to auto-stake payout
-    address public stakingHelper; // to stake and claim if no staking warmup
-    bool public useHelper;
 
     Terms public terms; // stores terms for new bonds
     Adjust public adjustment; // stores adjustment to BCV data
 
-    mapping( address => Bond ) public bondInfo; // stores bond information for depositors
+    mapping( address => Bond ) public _bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
@@ -685,7 +686,8 @@ contract NonStablecoinBondDepository is Ownable {
 
     // Info for bond holder
     struct Bond {
-        uint payout; // OHM remaining to be paid
+        uint gonsPayout; // sFHM remaining to be paid
+        uint fhmPayout; // FHM payout in time of creation
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
@@ -706,14 +708,17 @@ contract NonStablecoinBondDepository is Ownable {
     /* ======== INITIALIZATION ======== */
 
     constructor (
-        address _OHM,
+        address _FHM,
+        address _sFHM,
         address _principle,
         address _treasury,
         address _DAO,
         address _feed
     ) {
-        require( _OHM != address(0) );
-        OHM = _OHM;
+        require( _FHM != address(0) );
+        FHM = _FHM;
+        require( _sFHM != address(0) );
+        sFHM = _sFHM;
         require( _principle != address(0) );
         principle = _principle;
         require( _treasury != address(0) );
@@ -741,7 +746,6 @@ contract NonStablecoinBondDepository is Ownable {
         uint _maxDebt,
         uint _initialDebt
     ) external onlyPolicy() {
-//        require( currentDebt() == 0, "Debt must be 0 for initialization" );
         terms = Terms ({
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
@@ -766,7 +770,7 @@ contract NonStablecoinBondDepository is Ownable {
      */
     function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
         if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 36 hours" );
+            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
             terms.vestingTerm = _input;
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
@@ -791,8 +795,6 @@ contract NonStablecoinBondDepository is Ownable {
         uint _target,
         uint _buffer
     ) external onlyPolicy() {
-//        require( _increment <= terms.controlVariable.mul( 25 ).div( 1000 ), "Increment too large" );
-
         adjustment = Adjust({
         add: _addition,
         rate: _increment,
@@ -803,23 +805,13 @@ contract NonStablecoinBondDepository is Ownable {
     }
 
     /**
-     *  @notice set contract for auto stake
+      *  @notice set contract for auto stake
      *  @param _staking address
-     *  @param _helper bool
      */
-    function setStaking( address _staking, bool _helper ) external onlyPolicy() {
+    function setStaking( address _staking ) external onlyPolicy() {
         require( _staking != address(0) );
-        if ( _helper ) {
-            useHelper = true;
-            stakingHelper = _staking;
-        } else {
-            useHelper = false;
-            staking = _staking;
-        }
+        staking = _staking;
     }
-
-
-
 
     /* ======== USER FUNCTIONS ======== */
 
@@ -861,9 +853,15 @@ contract NonStablecoinBondDepository is Ownable {
         // total debt is increased
         totalDebt = totalDebt.add( value );
 
+        IERC20( FHM ).approve( staking, payout );
+        IStaking( staking ).stake( payout, address(this) );
+        IStaking( staking ).claim( address(this) );
+        uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
+
         // depositor info is stored
-        bondInfo[ _depositor ] = Bond({
-        payout: bondInfo[ _depositor ].payout.add( payout ),
+        _bondInfo[ _depositor ] = Bond({
+        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
+        fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD
@@ -884,56 +882,21 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return uint
      */
     function redeem( address _recipient, bool _stake ) external returns ( uint ) {
-        Bond memory info = bondInfo[ _recipient ];
+        Bond memory info = _bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
-        if ( percentVested >= 10000 ) { // if fully vested
-            delete bondInfo[ _recipient ]; // delete user info
-            emit BondRedeemed( _recipient, info.payout, 0 ); // emit bond data
-            return stakeOrSend( _recipient, _stake, info.payout ); // pay user everything due
-
-        } else { // if unfinished
-            // calculate payout vested
-            uint payout = info.payout.mul( percentVested ).div( 10000 );
-
-            // store updated deposit info
-            bondInfo[ _recipient ] = Bond({
-            payout: info.payout.sub( payout ),
-            vesting: info.vesting.sub( block.number.sub( info.lastBlock ) ),
-            lastBlock: block.number,
-            pricePaid: info.pricePaid
-            });
-
-            emit BondRedeemed( _recipient, payout, bondInfo[ _recipient ].payout );
-            return stakeOrSend( _recipient, _stake, payout );
-        }
+        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        delete _bondInfo[ _recipient ]; // delete user info
+        uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
+        emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
+        IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
+        return _amount;
     }
 
 
 
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
-
-    /**
-     *  @notice allow user to stake payout automatically
-     *  @param _stake bool
-     *  @param _amount uint
-     *  @return uint
-     */
-    function stakeOrSend( address _recipient, bool _stake, uint _amount ) internal returns ( uint ) {
-        if ( !_stake ) { // if user does not want to stake
-            IERC20( OHM ).transfer( _recipient, _amount ); // send payout
-        } else { // if user wants to stake
-            if ( useHelper ) { // use if staking warmup is 0
-                IERC20( OHM ).approve( stakingHelper, _amount );
-                IStakingHelper( stakingHelper ).stake( _amount, _recipient );
-            } else {
-                IERC20( OHM ).approve( staking, _amount );
-                IStaking( staking ).stake( _amount, _recipient );
-            }
-        }
-        return _amount;
-    }
 
     /**
      *  @notice makes incremental adjustment to control variable
@@ -976,7 +939,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( OHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20( FHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1035,7 +998,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( OHM ).totalSupply();
+        uint supply = IERC20( FHM ).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1077,7 +1040,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return percentVested_ uint
      */
     function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = bondInfo[ _depositor ];
+        Bond memory bond = _bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1089,18 +1052,18 @@ contract NonStablecoinBondDepository is Ownable {
     }
 
     /**
-     *  @notice calculate amount of OHM available for claim by depositor
+     *  @notice calculate amount of FHM available for claim by depositor
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        uint payout = bondInfo[ _depositor ].payout;
+        uint payout = IsFHM( sFHM ).balanceForGons( _bondInfo[ _depositor ].gonsPayout );
 
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
         } else {
-            pendingPayout_ = payout.mul( percentVested ).div( 10000 );
+            pendingPayout_ = 0;
         }
     }
 
@@ -1110,11 +1073,12 @@ contract NonStablecoinBondDepository is Ownable {
     /* ======= AUXILLIARY ======= */
 
     /**
-     *  @notice allow anyone to send lost tokens (excluding principle or OHM) to the DAO
+     *  @notice allow anyone to send lost tokens (excluding principle or FHM) to the DAO
      *  @return bool
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
-        require( _token != OHM );
+        require( _token != FHM);
+        require( _token != sFHM);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;

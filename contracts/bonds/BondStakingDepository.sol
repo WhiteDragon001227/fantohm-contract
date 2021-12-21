@@ -748,7 +748,7 @@ contract FantohmBondStakingDepository is Ownable {
      */
     function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
         if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 3 hours" );
+            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
             terms.vestingTerm = _input;
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
@@ -851,7 +851,7 @@ contract FantohmBondStakingDepository is Ownable {
 
         // depositor info is stored
         _bondInfo[ _depositor ] = Bond({
-        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakeGons ),
+        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
         fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
         vesting: terms.vestingTerm,
         lastBlock: block.number,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
+// Contract logic @ line 607
+
 interface IOwnable {
     function policy() external view returns (address);
 
@@ -586,8 +588,8 @@ library FixedPoint {
 
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
-    function manage( address _token, uint _amount ) external;
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
+    function mintRewards( address _to, uint _amount ) external;
 }
 
 interface IBondCalculator {
@@ -597,20 +599,44 @@ interface IBondCalculator {
 
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
-    function unstake( uint _amount, bool _trigger ) external;
 }
 
 interface IStakingHelper {
     function stake( uint _amount, address _recipient ) external;
 }
 
-interface IFHUDMinter {
-    function getMarketPrice() external view returns (uint256);
-    function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external;
+interface AggregatorV3Interface {
+
+    function decimals() external view returns (uint8);
+    function description() external view returns (string memory);
+    function version() external view returns (uint256);
+
+    // getRoundData and latestRoundData should both raise "No data present"
+    // if they do not have data to report, instead of returning unset values
+    // which could be misinterpreted as actual reported values.
+    function getRoundData(uint80 _roundId)
+    external
+    view
+    returns (
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    );
+    function latestRoundData()
+    external
+    view
+    returns (
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    );
 }
 
-//contract FHUDBondDepository is Ownable {
-contract XYZBondDepository is Ownable {
+contract NonStablecoinLpBondDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -631,12 +657,13 @@ contract XYZBondDepository is Ownable {
 
     /* ======== STATE VARIABLES ======== */
 
-    address public immutable FHM; // token given as payment for bond
-    address public immutable sFHM;
-    address public immutable FHUD; // token used to create bond
+    address public immutable OHM; // token given as payment for bond
+    address public immutable principle; // token used to create bond
     address public immutable treasury; // mints OHM when receives principle
-    address public immutable DAO; // receives profit share from bond
-    address public immutable FHUDMinter; // minting FHUD for burning FHM
+
+    address public immutable bondCalculator; // calculates value of LP tokens
+
+    AggregatorV3Interface internal priceFeed;
 
     address public staking; // to auto-stake payout
     address public stakingHelper; // to stake and claim if no staking warmup
@@ -649,7 +676,7 @@ contract XYZBondDepository is Ownable {
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
-    uint private constant LARGE_VALUE = 100000000000000000000000000000000;
+
 
 
 
@@ -661,7 +688,6 @@ contract XYZBondDepository is Ownable {
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
 
@@ -688,25 +714,21 @@ contract XYZBondDepository is Ownable {
     /* ======== INITIALIZATION ======== */
 
     constructor (
-        address _FHM,
-        address _sFHM,
-        address _FHUD,
+        address _OHM,
+        address _principle,
         address _treasury,
-        address _DAO,
-        address _FHUDMinter
+        address _bondCalculator,
+        address _feed
     ) {
-        require( _FHM != address(0) );
-        FHM = _FHM;
-        require( _sFHM != address(0) );
-        sFHM = _sFHM;
-        require( _FHUD != address(0) );
-        FHUD = _FHUD;
+        require( _OHM != address(0) );
+        OHM = _OHM;
+        require( _principle != address(0) );
+        principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
-        require( _DAO != address(0) );
-        DAO = _DAO;
-        require( _FHUDMinter != address(0) );
-        FHUDMinter = _FHUDMinter;
+        // bondCalculator should be address(0) if not LP bond
+        bondCalculator = _bondCalculator;
+        priceFeed = AggregatorV3Interface( _feed );
     }
 
     /**
@@ -715,7 +737,6 @@ contract XYZBondDepository is Ownable {
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maxPayout uint
-     *  @param _fee uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
      */
@@ -724,17 +745,14 @@ contract XYZBondDepository is Ownable {
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maxPayout,
-        uint _fee,
         uint _maxDebt,
         uint _initialDebt
     ) external onlyPolicy() {
-//        require( terms.controlVariable == 0, "Bonds must be initialized from 0" );
         terms = Terms ({
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
         maxPayout: _maxPayout,
-        fee: _fee,
         maxDebt: _maxDebt
         });
         totalDebt = _initialDebt;
@@ -746,7 +764,7 @@ contract XYZBondDepository is Ownable {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
+    enum PARAMETER { VESTING, PAYOUT, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -754,17 +772,14 @@ contract XYZBondDepository is Ownable {
      */
     function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
         if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 36 hours" );
+            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
             terms.vestingTerm = _input;
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
             terms.maxPayout = _input;
-        } else if ( _parameter == PARAMETER.FEE ) { // 2
-            require( _input <= 10000, "DAO fee cannot exceed payout" );
-            terms.fee = _input;
         } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
-        }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
+        } else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
             terms.minimumPrice = _input;
         }
     }
@@ -814,50 +829,6 @@ contract XYZBondDepository is Ownable {
 
     /* ======== USER FUNCTIONS ======== */
 
-    function depositStaked(
-        uint _amount,
-        uint _maxPrice,
-        address _depositor,
-        address _stableReserveAddress
-    ) external returns ( uint ) {
-        // 1. transfer staked tokens and unstake
-        IERC20( sFHM ).safeTransferFrom( msg.sender, address(this), _amount );
-        IStaking( staking ).unstake( _amount, true );
-
-        return depositFHM( _amount, _maxPrice, _depositor, _stableReserveAddress);
-    }
-
-    function depositNative(
-        uint _amount,
-        uint _maxPrice,
-        address _depositor,
-        address _stableReserveAddress
-    ) external returns ( uint ) {
-        // 1. transfer native tokens
-        IERC20( FHM ).safeTransferFrom( msg.sender, address(this), _amount );
-
-        return depositFHM( _amount, _maxPrice, _depositor, _stableReserveAddress);
-    }
-
-    function depositFHM(
-        uint _amount,
-        uint _maxPrice,
-        address _depositor,
-        address _stableReserveAddress
-    ) private returns ( uint ) {
-        require( IERC20( _stableReserveAddress ).balanceOf( treasury ) >= _amount, "Not enough stables" );
-
-        // 2. mint FHUD based on market price
-        uint price = IFHUDMinter( FHUDMinter ).getMarketPrice();
-        uint stableCoinAmount = _amount.mul( price.div( 10**2 ) );
-
-        IERC20( FHM ).approve( FHUDMinter, _amount );
-        IFHUDMinter( FHUDMinter ).mint( stableCoinAmount, price );
-
-        // 3. use FHUD to deposit to long term bond
-        return deposit( stableCoinAmount, _maxPrice, _depositor );
-    }
-
     /**
      *  @notice deposit bond
      *  @param _amount uint
@@ -869,7 +840,7 @@ contract XYZBondDepository is Ownable {
         uint _amount,
         uint _maxPrice,
         address _depositor
-    ) public returns ( uint ) {
+    ) external returns ( uint ) {
         require( _depositor != address(0), "Invalid address" );
 
         decayDebt();
@@ -880,27 +851,18 @@ contract XYZBondDepository is Ownable {
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( FHUD, _amount );
+        uint value = ITreasury( treasury ).valueOf( principle, _amount );
         uint payout = payoutFor( value ); // payout to bonder is computed
 
         require( payout >= 10000000, "Bond too small" ); // must be > 0.01 OHM ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
 
-        // profits are calculated
-        uint fee = payout.mul( terms.fee ).div( 10000 );
-        uint profit = value.sub( payout ).sub( fee );
-
         /**
-            principle was transferred in depositStaked() depositNative()
-            approved and
-            deposited into the treasury, returning (_amount - profit) OHM
+            asset carries risk and is not minted against
+            asset transfered to treasury and rewards minted as payout
          */
-        IERC20(FHUD).approve( address( treasury ), _amount );
-        ITreasury( treasury ).deposit( _amount, FHUD, profit );
-
-        if ( fee != 0 ) { // fee is transferred to dao
-            IERC20(FHM).safeTransfer( DAO, fee );
-        }
+        IERC20( principle ).safeTransferFrom( msg.sender, treasury, _amount );
+        ITreasury( treasury ).mintRewards( address(this), payout );
 
         // total debt is increased
         totalDebt = totalDebt.add( value );
@@ -966,13 +928,13 @@ contract XYZBondDepository is Ownable {
      */
     function stakeOrSend( address _recipient, bool _stake, uint _amount ) internal returns ( uint ) {
         if ( !_stake ) { // if user does not want to stake
-            IERC20(FHM).transfer( _recipient, _amount ); // send payout
+            IERC20( OHM ).transfer( _recipient, _amount ); // send payout
         } else { // if user wants to stake
             if ( useHelper ) { // use if staking warmup is 0
-                IERC20(FHM).approve( stakingHelper, _amount );
+                IERC20( OHM ).approve( stakingHelper, _amount );
                 IStakingHelper( stakingHelper ).stake( _amount, _recipient );
             } else {
-                IERC20(FHM).approve( staking, _amount );
+                IERC20( OHM ).approve( staking, _amount );
                 IStaking( staking ).stake( _amount, _recipient );
             }
         }
@@ -1020,7 +982,7 @@ contract XYZBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20( OHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1029,16 +991,15 @@ contract XYZBondDepository is Ownable {
      *  @return uint
      */
     function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e14 );
     }
-
 
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         }
@@ -1049,7 +1010,7 @@ contract XYZBondDepository is Ownable {
      *  @return price_ uint
      */
     function _bondPrice() internal returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         } else if ( terms.minimumPrice != 0 ) {
@@ -1058,11 +1019,22 @@ contract XYZBondDepository is Ownable {
     }
 
     /**
+     *  @notice get asset price from chainlink
+     */
+    function assetPrice() public view returns (int) {
+        ( , int price, , , ) = priceFeed.latestRoundData();
+        return price;
+    }
+
+    /**
      *  @notice converts bond price to DAI value
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20(FHUD).decimals() ).div( 100 );
+        price_ = bondPrice()
+        .mul( IBondCalculator( bondCalculator ).markdown( principle ) )
+        .mul( uint( assetPrice() ) )
+        .div( 1e12 );
     }
 
 
@@ -1071,10 +1043,9 @@ contract XYZBondDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20(FHM).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
-            supply
+            IERC20( OHM ).totalSupply()
         ).decode112with18().div( 1e18 );
     }
 
@@ -1083,7 +1054,7 @@ contract XYZBondDepository is Ownable {
      *  @return uint
      */
     function standardizedDebtRatio() external view returns ( uint ) {
-        return debtRatio();
+        return debtRatio().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 1e9 );
     }
 
     /**
@@ -1140,9 +1111,6 @@ contract XYZBondDepository is Ownable {
         }
     }
 
-
-
-
     /* ======= AUXILLIARY ======= */
 
     /**
@@ -1150,9 +1118,9 @@ contract XYZBondDepository is Ownable {
      *  @return bool
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
-        require( _token != FHM);
-        require( _token != FHUD);
-        IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
+        require( _token != OHM );
+        require( _token != principle );
+        IERC20( _token ).safeTransfer( msg.sender, IERC20( _token ).balanceOf( address(this) ) );
         return true;
     }
 }
