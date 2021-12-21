@@ -609,7 +609,8 @@ interface IFHUDMinter {
     function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external;
 }
 
-contract FHUDBondDepository is Ownable {
+//contract FHUDBondDepository is Ownable {
+contract XYZBondDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -635,7 +636,7 @@ contract FHUDBondDepository is Ownable {
     address public immutable FHUD; // token used to create bond
     address public immutable treasury; // mints OHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable FHUDMinter;
+    address public immutable FHUDMinter; // minting FHUD for burning FHM
 
     address public staking; // to auto-stake payout
     address public stakingHelper; // to stake and claim if no staking warmup
@@ -817,33 +818,35 @@ contract FHUDBondDepository is Ownable {
         uint _amount,
         uint _maxPrice,
         address _depositor,
-        address stableReserveAddress
+        address _stableReserveAddress
     ) external returns ( uint ) {
         // 1. transfer staked tokens and unstake
         IERC20( sFHM ).safeTransferFrom( msg.sender, address(this), _amount );
         IStaking( staking ).unstake( _amount, true );
 
-        return depositFHM( _amount, _maxPrice, _depositor, stableReserveAddress );
+        return depositFHM( _amount, _maxPrice, _depositor, _stableReserveAddress);
     }
 
     function depositNative(
         uint _amount,
         uint _maxPrice,
         address _depositor,
-        address stableReserveAddress
+        address _stableReserveAddress
     ) external returns ( uint ) {
         // 1. transfer native tokens
         IERC20( FHM ).safeTransferFrom( msg.sender, address(this), _amount );
 
-        return depositFHM( _amount, _maxPrice, _depositor, stableReserveAddress );
+        return depositFHM( _amount, _maxPrice, _depositor, _stableReserveAddress);
     }
 
     function depositFHM(
         uint _amount,
         uint _maxPrice,
         address _depositor,
-        address stableReserveAddress
+        address _stableReserveAddress
     ) private returns ( uint ) {
+        require( IERC20( _stableReserveAddress ).balanceOf( treasury ) >= _amount, "Not enough stables" );
+
         // 2. mint FHUD based on market price
         uint price = IFHUDMinter( FHUDMinter ).getMarketPrice();
         uint stableCoinAmount = _amount.mul( price.div( 10**2 ) );
@@ -852,13 +855,7 @@ contract FHUDBondDepository is Ownable {
         IFHUDMinter( FHUDMinter ).mint( stableCoinAmount, price );
 
         // 3. use FHUD to deposit to long term bond
-        uint retVal = deposit( stableCoinAmount, _maxPrice, _depositor );
-
-        // 4. change DAI for FHUD
-        ITreasury( treasury ).manage( stableReserveAddress, stableCoinAmount );
-        IERC20( stableReserveAddress ).transfer( DAO, stableCoinAmount );
-
-        return retVal;
+        return deposit( stableCoinAmount, _maxPrice, _depositor );
     }
 
     /**
@@ -898,7 +895,6 @@ contract FHUDBondDepository is Ownable {
             approved and
             deposited into the treasury, returning (_amount - profit) OHM
          */
-        // IERC20(FHUD).safeTransferFrom( msg.sender, address(this), _amount );
         IERC20(FHUD).approve( address( treasury ), _amount );
         ITreasury( treasury ).deposit( _amount, FHUD, profit );
 
