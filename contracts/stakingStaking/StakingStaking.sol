@@ -573,47 +573,6 @@ library FullMath {
     }
 }
 
-library FixedPoint {
-
-    struct uq112x112 {
-        uint224 _x;
-    }
-
-    struct uq144x112 {
-        uint256 _x;
-    }
-
-    uint8 private constant RESOLUTION = 112;
-    uint256 private constant Q112 = 0x10000000000000000000000000000;
-    uint256 private constant Q224 = 0x100000000000000000000000000000000000000000000000000000000;
-    uint256 private constant LOWER_MASK = 0xffffffffffffffffffffffffffff; // decimal of UQ*x112 (lower 112 bits)
-
-    function decode(uq112x112 memory self) internal pure returns (uint112) {
-        return uint112(self._x >> RESOLUTION);
-    }
-
-    function decode112with18(uq112x112 memory self) internal pure returns (uint) {
-
-        return uint(self._x) / 5192296858534827;
-    }
-
-    function fraction(uint256 numerator, uint256 denominator) internal pure returns (uq112x112 memory) {
-        require(denominator > 0, 'FixedPoint::fraction: division by zero');
-        if (numerator == 0) return FixedPoint.uq112x112(0);
-
-        if (numerator <= uint144(- 1)) {
-            uint256 result = (numerator << RESOLUTION) / denominator;
-            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
-            return uq112x112(uint224(result));
-        } else {
-            uint256 result = FullMath.mulDiv(numerator, Q112, denominator);
-            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
-            return uq112x112(uint224(result));
-        }
-    }
-}
-
-
 /**
  * @dev Contract module that helps prevent reentrant calls to a function.
  *
@@ -679,58 +638,13 @@ interface IsFHM {
     function gonsForBalance(uint amount) external view returns (uint);
 }
 
-interface IStaking {
-    function stake(uint _amount, address _recipient) external returns (bool);
-
-    function claim(address _recipient) external;
+interface IRewardsHolder {
+    function newTick() external;
 }
 
-contract RewardsHolder is Ownable, ReentrancyGuard {
-
-    using FixedPoint for *;
-    using SafeERC20 for IERC20;
-    using SafeMath for uint;
-
-    address public immutable sFHM;
-    address public stakingStaking;
-
-    // when was last sample transfer of rewards
-    uint public lastSampleBlockNumber;
-    // once for how many blocks is next sample made
-    uint public blocksPerSample;
-
-    event RewardSample(uint indexed timestamp, uint indexed blockNumber, uint indexed gonsRewards, uint sfhmRewards);
-
-    constructor(address _sFHM) {
-        sFHM = _sFHM;
-    }
-
-    function init(address _stakingStaking, uint _blocksPerSample) external onlyPolicy {
-        stakingStaking = _stakingStaking;
-        blocksPerSample = _blocksPerSample;
-    }
-
-    function newTick() public nonReentrant {
-        // not doing anything, waiting and gathering rewards
-        if (lastSampleBlockNumber.add(blocksPerSample) > block.number) return;
-
-        // perform new sample, remember staking pool supply back then
-        uint sfhmRewards = IERC20(sFHM).balanceOf(address(this));
-        uint gonsRewards = IsFHM(sFHM).gonsForBalance(sfhmRewards);
-        IERC20(sFHM).approve(stakingStaking, sfhmRewards);
-        StakingStaking(stakingStaking).newSample(sfhmRewards);
-        lastSampleBlockNumber = block.number;
-
-        emit RewardSample(block.timestamp, block.number, gonsRewards, sfhmRewards);
-    }
-}
-
-// FIXME fee
 // FIXME voting token
-// emergency exit
 contract StakingStaking is Ownable, ReentrancyGuard {
 
-    using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
 
@@ -752,6 +666,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     bool public disableContracts;
     bool public pauseNewStakes;
     bool public useWhitelist;
+    bool public enableEmergencyWithdraw;
     bool private initCalled;
 
     // data structure holding info about all stakers
@@ -781,30 +696,37 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
     SampleInfo[] public rewardSamples;
 
+    //
+    // ----------- events -----------
+    //
+
     event StakingDeposited(address indexed wallet, uint gonsStaked, uint sfhmStaked, uint lastStakeBlockNumber);
-    event StakingWithdraw(address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint unstakeBlock);
-    event RewardSampled(uint indexed blockNumber, uint indexed blockTimestamp, uint gonsRewarded, uint sfhmRewarded);
+    event StakingWithdraw(address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint gonsTransferred, uint sfhmTransferred, uint unstakeBlock);
+    event RewardSampled(uint blockNumber, uint blockTimestamp, uint gonsRewarded, uint sfhmRewarded);
     event RewardClaimed(address indexed wallet, uint indexed startClaimIndex, uint indexed lastClaimIndex, uint gonsClaimed, uint sfhmClaimed);
+    event EmergencyTokenRecovered(address indexed token, address indexed recipient, uint amount);
+    event EmergencyRewardsWithdraw(address indexed recipient, uint gonsRewarded, uint sfhmRewarded);
+    event EmergencyEthRecovered(address indexed recipient, uint amount);
 
     constructor(address _sFHM) {
         sFHM = _sFHM;
         initCalled = false;
     }
 
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes) public onlyPolicy nonReentrant {
-        _rewardsHolder = _rewardsHolder;
+    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyPolicy {
+        rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
         claimPageSize = _claimPageSize;
         disableContracts = _disableContracts;
         useWhitelist = _useWhitelist;
         pauseNewStakes = _pauseNewStakes;
+        enableEmergencyWithdraw = _enableEmergencyWithdraw;
 
-        if (!initCalled) {
-            newSample(0);
-            initCalled = true;
-        }
-
+//        if (!initCalled) {
+//            newSample(0);
+//            initCalled = true;
+//        }
     }
 
     function modifyWhitelist(address user, bool add) external {
@@ -841,7 +763,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot stake if not claimed everything");
 
         // erc20 transfer of staked tokens
-        IERC20(sFHM).transferFrom(msg.sender, address(this), _amount);
+        IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
         uint gonsToStake = gonsForBalance(_amount);
         uint sfhmToStake = balanceForGons(gonsToStake);
 
@@ -875,12 +797,35 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     }
 
     //
+    // Return user balance
+    // 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable
+    //
+    function getBalance(address _user) public view returns (uint, uint, uint, uint) {
+        UserInfo storage info = userInfo[_user];
+
+        uint gonsWithdrawable = getWithdrawableBalance(_user, info.lastStakeBlockNumber, info.gonsStaked);
+        uint sfhmWithdrawable = balanceForGons(gonsWithdrawable);
+
+        return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable);
+    }
+
+
+    function getWithdrawableBalance(address _user, uint lastStakeBlockNumber, uint _gons) private view returns (uint) {
+        uint gonsWithdrawable = _gons;
+        if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
+            uint fee = _gons.mul(unstakeFee).div(10 ** 5);
+            gonsWithdrawable = gonsWithdrawable.sub(fee);
+        }
+        return gonsWithdrawable;
+    }
+
+    //
     // Rewards holder accumulated enough balance during its period to create new sample
     // Record our current staking TVL
     //
-    function newSample(uint _balance) public nonReentrant {
+    function newSample(uint _balance) public {
         // transfer balance from rewards holder
-        IERC20(sFHM).transferFrom(rewardsHolder, address(this), _balance);
+        if (_balance > 0) IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _balance);
         uint gonsRewarded = gonsForBalance(_balance);
         uint sfhmRewarded = balanceForGons(gonsRewarded);
 
@@ -926,6 +871,9 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     //
     function doClaim(uint _claimPageSize) private {
         checkBefore(false);
+
+        // clock new tick
+//        IRewardsHolder(rewardsHolder).newTick();
 
         // new user cannot claim anything
         if (userInfo[msg.sender].lastClaimIndex == 0 || userInfo[msg.sender].gonsStaked == 0) return;
@@ -978,10 +926,11 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
 
         uint gonsToUnstake = gonsForBalance(_amount);
+        uint gonsTransferring = getWithdrawableBalance(msg.sender, userInfo[msg.sender].lastStakeBlockNumber, gonsToUnstake);
         // cannot unstake what is not mine
         require(gonsToUnstake <= userInfo[msg.sender].gonsStaked, "Not enough tokens to unstake");
         // and more than we have
-        require(gonsToUnstake <= gonsStaking, "Unstaking more than in pool");
+        require(gonsTransferring <= gonsStaking, "Unstaking more than in pool");
 
         userInfo[msg.sender].gonsStaked = userInfo[msg.sender].gonsStaked.sub(gonsToUnstake);
         if (userInfo[msg.sender].gonsStaked == 0) {
@@ -993,14 +942,83 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         }
 
         // remove it from total balance
-        gonsStaking = gonsStaking.sub(gonsToUnstake);
+        gonsStaking = gonsStaking.sub(gonsTransferring);
         sfhmStaking = balanceForGons(gonsStaking);
 
         // actual erc20 transfer
-        IERC20(sFHM).transfer(msg.sender, _amount);
+        uint sfhmTransferring = balanceForGons(gonsTransferring);
+        IERC20(sFHM).safeTransfer(msg.sender, sfhmTransferring);
 
         // and record in history
-        emit StakingWithdraw(msg.sender, gonsToUnstake, _amount, block.number);
+        emit StakingWithdraw(msg.sender, gonsToUnstake, balanceForGons(gonsToUnstake), gonsTransferring, sfhmTransferring, block.number);
+    }
+
+    //
+    // ----------- emergency functions -----------
+    //
+
+    //
+    // emergency withdraw of user holding
+    //
+    function emergencyWithdraw() external {
+        require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
+
+        uint gonsToWithdraw = userInfo[msg.sender].gonsStaked;
+        uint amount = balanceForGons(gonsToWithdraw);
+        require(amount > 0, "Cannot withdraw empty wallet");
+
+        // clear the data
+        delete userInfo[msg.sender];
+
+        // repair total values
+        gonsStaking = gonsStaking.sub(gonsToWithdraw);
+        sfhmStaking = balanceForGons(gonsStaking);
+
+        // erc20 transfer
+        IERC20(sFHM).safeTransfer(msg.sender, amount);
+
+        // and record in history
+        emit StakingWithdraw(msg.sender, gonsToWithdraw, amount, gonsToWithdraw, amount, block.number);
+    }
+
+    function emergencyWithdrawRewards() external onlyPolicy {
+        require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
+
+        // repair total values
+        uint sfhmAmount = balanceForGons(gonsPendingClaim);
+        gonsPendingClaim = 0;
+        sfhmPendingClaim = 0;
+
+        // erc20 transfer
+        address recipient = msg.sender;
+        IERC20(sFHM).safeTransfer(recipient, sfhmAmount);
+
+        emit EmergencyRewardsWithdraw(recipient, gonsPendingClaim, sfhmAmount);
+    }
+
+    //
+    // Been able to recover any token which is sent to contract by mistake
+    //
+    function emergencyRecoverToken(address token) external virtual onlyPolicy {
+        require(token != sFHM);
+
+        address recipient = policy();
+        uint amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(recipient, amount);
+
+        emit EmergencyTokenRecovered(token, recipient, amount);
+    }
+
+    //
+    // Been able to recover any ftm/movr token sent to contract by mistake
+    //
+    function emergencyRecoverEth() external virtual onlyPolicy {
+        address recipient = policy();
+        uint amount = address(this).balance;
+
+        payable(recipient).transfer(amount);
+
+        emit EmergencyEthRecovered(recipient, amount);
     }
 
 }
