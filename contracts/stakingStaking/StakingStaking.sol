@@ -6,7 +6,7 @@ interface IOwnable {
 
     function renounceManagement() external;
 
-    function pushManagement( address newOwner_ ) external;
+    function pushManagement(address newOwner_) external;
 
     function pullManagement() external;
 }
@@ -21,7 +21,7 @@ contract Ownable is IOwnable {
 
     constructor () {
         _owner = msg.sender;
-        emit OwnershipPushed( address(0), _owner );
+        emit OwnershipPushed(address(0), _owner);
     }
 
     function policy() public view override returns (address) {
@@ -29,24 +29,24 @@ contract Ownable is IOwnable {
     }
 
     modifier onlyPolicy() {
-        require( _owner == msg.sender, "Ownable: caller is not the owner" );
+        require(_owner == msg.sender, "Ownable: caller is not the owner");
         _;
     }
 
     function renounceManagement() public virtual override onlyPolicy() {
-        emit OwnershipPushed( _owner, address(0) );
+        emit OwnershipPushed(_owner, address(0));
         _owner = address(0);
     }
 
-    function pushManagement( address newOwner_ ) public virtual override onlyPolicy() {
-        require( newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed( _owner, newOwner_ );
+    function pushManagement(address newOwner_) public virtual override onlyPolicy() {
+        require(newOwner_ != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipPushed(_owner, newOwner_);
         _newOwner = newOwner_;
     }
 
     function pullManagement() public virtual override {
-        require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled( _owner, _newOwner );
+        require(msg.sender == _newOwner, "Ownable: must be new owner to pull");
+        emit OwnershipPulled(_owner, _newOwner);
         _owner = _newOwner;
     }
 }
@@ -104,10 +104,10 @@ library SafeMath {
     function sqrrt(uint256 a) internal pure returns (uint c) {
         if (a > 3) {
             c = a;
-            uint b = add( div( a, 2), 1 );
+            uint b = add(div(a, 2), 1);
             while (b < c) {
                 c = b;
-                b = div( add( div( a, b ), b), 2 );
+                b = div(add(div(a, b), b), 2);
             }
         } else if (a != 0) {
             c = 1;
@@ -150,7 +150,7 @@ library Address {
 
         uint256 size;
         // solhint-disable-next-line no-inline-assembly
-        assembly { size := extcodesize(account) }
+        assembly {size := extcodesize(account)}
         return size > 0;
     }
 
@@ -158,7 +158,7 @@ library Address {
         require(address(this).balance >= amount, "Address: insufficient balance");
 
         // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
-        (bool success, ) = recipient.call{ value: amount }("");
+        (bool success,) = recipient.call{value : amount}("");
         require(success, "Address: unable to send value, recipient may have reverted");
     }
 
@@ -179,7 +179,7 @@ library Address {
         require(isContract(target), "Address: call to non-contract");
 
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: value }(data);
+        (bool success, bytes memory returndata) = target.call{value : value}(data);
         return _verifyCallResult(success, returndata, errorMessage);
     }
 
@@ -187,7 +187,7 @@ library Address {
         require(isContract(target), "Address: call to non-contract");
 
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: weiValue }(data);
+        (bool success, bytes memory returndata) = target.call{value : weiValue}(data);
         if (success) {
             return returndata;
         } else {
@@ -230,7 +230,7 @@ library Address {
         return _verifyCallResult(success, returndata, errorMessage);
     }
 
-    function _verifyCallResult(bool success, bytes memory returndata, string memory errorMessage) private pure returns(bytes memory) {
+    function _verifyCallResult(bool success, bytes memory returndata, string memory errorMessage) private pure returns (bytes memory) {
         if (success) {
             return returndata;
         } else {
@@ -246,7 +246,7 @@ library Address {
         }
     }
 
-    function addressToString(address _address) internal pure returns(string memory) {
+    function addressToString(address _address) internal pure returns (string memory) {
         bytes32 _bytes = bytes32(uint256(_address));
         bytes memory HEX = "0123456789abcdef";
         bytes memory _addr = new bytes(42);
@@ -254,9 +254,9 @@ library Address {
         _addr[0] = '0';
         _addr[1] = 'x';
 
-        for(uint256 i = 0; i < 20; i++) {
-            _addr[2+i*2] = HEX[uint8(_bytes[i + 12] >> 4)];
-            _addr[3+i*2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
+        for (uint256 i = 0; i < 20; i++) {
+            _addr[2 + i * 2] = HEX[uint8(_bytes[i + 12] >> 4)];
+            _addr[3 + i * 2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
         }
 
         return string(_addr);
@@ -289,11 +289,11 @@ abstract contract ERC20 is IERC20 {
     using SafeMath for uint256;
 
     // TODO comment actual hash value.
-    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
+    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256("ERC20Token");
 
-    mapping (address => uint256) internal _balances;
+    mapping(address => uint256) internal _balances;
 
-    mapping (address => mapping (address => uint256)) internal _allowances;
+    mapping(address => mapping(address => uint256)) internal _allowances;
 
     uint256 internal _totalSupply;
 
@@ -372,10 +372,10 @@ abstract contract ERC20 is IERC20 {
 
     function _mint(address account_, uint256 ammount_) internal virtual {
         require(account_ != address(0), "ERC20: mint to the zero address");
-        _beforeTokenTransfer(address( this ), account_, ammount_);
+        _beforeTokenTransfer(address(this), account_, ammount_);
         _totalSupply = _totalSupply.add(ammount_);
         _balances[account_] = _balances[account_].add(ammount_);
-        emit Transfer(address( this ), account_, ammount_);
+        emit Transfer(address(this), account_, ammount_);
     }
 
     function _burn(address account, uint256 amount) internal virtual {
@@ -396,7 +396,7 @@ abstract contract ERC20 is IERC20 {
         emit Approval(owner, spender, amount);
     }
 
-    function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
+    function _beforeTokenTransfer(address from_, address to_, uint256 amount_) internal virtual {}
 }
 
 interface IERC2612Permit {
@@ -523,7 +523,7 @@ library SafeERC20 {
     function _callOptionalReturn(IERC20 token, bytes memory data) private {
 
         bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
-        if (returndata.length > 0) { // Return data is optional
+        if (returndata.length > 0) {// Return data is optional
             // solhint-disable-next-line max-line-length
             require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
         }
@@ -532,7 +532,7 @@ library SafeERC20 {
 
 library FullMath {
     function fullMul(uint256 x, uint256 y) private pure returns (uint256 l, uint256 h) {
-        uint256 mm = mulmod(x, y, uint256(-1));
+        uint256 mm = mulmod(x, y, uint256(- 1));
         l = x * y;
         h = mm - l;
         if (mm < l) h -= 1;
@@ -543,10 +543,10 @@ library FullMath {
         uint256 h,
         uint256 d
     ) private pure returns (uint256) {
-        uint256 pow2 = d & -d;
+        uint256 pow2 = d & - d;
         d /= pow2;
         l /= pow2;
-        l += h * ((-pow2) / pow2 + 1);
+        l += h * ((- pow2) / pow2 + 1);
         uint256 r = 1;
         r *= 2 - d * r;
         r *= 2 - d * r;
@@ -601,13 +601,13 @@ library FixedPoint {
         require(denominator > 0, 'FixedPoint::fraction: division by zero');
         if (numerator == 0) return FixedPoint.uq112x112(0);
 
-        if (numerator <= uint144(-1)) {
+        if (numerator <= uint144(- 1)) {
             uint256 result = (numerator << RESOLUTION) / denominator;
-            require(result <= uint224(-1), 'FixedPoint::fraction: overflow');
+            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
             return uq112x112(uint224(result));
         } else {
             uint256 result = FullMath.mulDiv(numerator, Q112, denominator);
-            require(result <= uint224(-1), 'FixedPoint::fraction: overflow');
+            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
             return uq112x112(uint224(result));
         }
     }
@@ -674,13 +674,15 @@ abstract contract ReentrancyGuard {
 }
 
 interface IsFHM {
-    function balanceForGons( uint gons ) external view returns ( uint );
-    function gonsForBalance( uint amount ) external view returns ( uint );
+    function balanceForGons(uint gons) external view returns (uint);
+
+    function gonsForBalance(uint amount) external view returns (uint);
 }
 
 interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
-    function claim( address _recipient ) external;
+    function stake(uint _amount, address _recipient) external returns (bool);
+
+    function claim(address _recipient) external;
 }
 
 contract RewardsHolder is Ownable, ReentrancyGuard {
@@ -697,7 +699,7 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
     // once for how many blocks is next sample made
     uint public blocksPerSample;
 
-    event RewardSample( uint indexed timestamp, uint indexed blockNumber, uint indexed gonsRewards, uint sfhmRewards );
+    event RewardSample(uint indexed timestamp, uint indexed blockNumber, uint indexed gonsRewards, uint sfhmRewards);
 
     constructor(address _sFHM) {
         sFHM = _sFHM;
@@ -710,20 +712,23 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
 
     function newTick() public nonReentrant {
         // not doing anything, waiting and gathering rewards
-        if ( lastSampleBlockNumber.add(blocksPerSample) > block.number ) return;
+        if (lastSampleBlockNumber.add(blocksPerSample) > block.number) return;
 
         // perform new sample, remember staking pool supply back then
-        uint sfhmRewards = IERC20( sFHM ).balanceOf( address(this) );
-        uint gonsRewards = IsFHM( sFHM ).gonsForBalance( sfhmRewards );
-        IERC20( sFHM ).approve( stakingStaking, sfhmRewards );
-        StakingStaking( stakingStaking ).newSample( sfhmRewards );
+        uint sfhmRewards = IERC20(sFHM).balanceOf(address(this));
+        uint gonsRewards = IsFHM(sFHM).gonsForBalance(sfhmRewards);
+        IERC20(sFHM).approve(stakingStaking, sfhmRewards);
+        StakingStaking(stakingStaking).newSample(sfhmRewards);
         lastSampleBlockNumber = block.number;
 
-        emit RewardSample( block.timestamp, block.number, gonsRewards, sfhmRewards );
+        emit RewardSample(block.timestamp, block.number, gonsRewards, sfhmRewards);
     }
 }
 
-contract StakingStaking is Ownable {
+// FIXME fee
+// FIXME voting token
+// emergency exit
+contract StakingStaking is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -745,22 +750,18 @@ contract StakingStaking is Ownable {
     uint public sfhmPendingClaim;
 
     bool public disableContracts;
+    bool public pauseNewStakes;
     bool public useWhitelist;
-    mapping(address => bool) public whitelist;
+    bool private initCalled;
 
     // data structure holding info about all stakers
     struct UserInfo {
-        uint gonsStaked; // absolute number of gons user is staking
+        uint gonsStaked; // absolute number of gons user is staking or rewarded
         uint sfhmStaked; // staked tokens mapping in time of gons write
-        uint gonsRewarded; // absolute number of gons user is pending to withdraw
-        uint sfhmRewarded; // staked tokens mapping in time of gons write
 
         uint lastStakeBlockNumber; // time of last stake from which is counting noFeeDuration
-        // FIXME maybe not needed
-        uint lastClaimBlockNumber; // time of last rewards claim
         uint lastClaimIndex; // index in rewardSamples last claimed
     }
-    mapping(address => UserInfo) public userInfos;
 
     // data structure holding info about all rewards gathered during time
     struct SampleInfo {
@@ -770,126 +771,236 @@ contract StakingStaking is Ownable {
         uint totalGonsRewarded; // absolute number of gons transferred during newSample
         uint totalSfhmRewarded; // staked tokens mapping in time of gons write
 
-        uint gonsCirculatingSupply; // gons supply staking contract is holding from which rewards will be dispersed
-        uint sfhmCirculatingSupply; // staked tokens mapping in time of gons write
+        uint gonsTvl; // gons supply staking contract is holding from which rewards will be dispersed
+        uint sfhmTvl; // staked tokens mapping in time of gons write
     }
+
+    mapping(address => bool) public whitelist;
+
+    mapping(address => UserInfo) public userInfo;
+
     SampleInfo[] public rewardSamples;
 
-    event StakingDeposited( address indexed wallet, uint gonsStaked, uint sfhmStaked, uint lastDepositBlock, uint noFeeUnlockBlock );
-    event StakingWithdraw( address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint unstakeBlock );
-    event RewardSample( address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint unstakeBlock );
+    event StakingDeposited(address indexed wallet, uint gonsStaked, uint sfhmStaked, uint lastStakeBlockNumber);
+    event StakingWithdraw(address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint unstakeBlock);
+    event RewardSampled(uint indexed blockNumber, uint indexed blockTimestamp, uint gonsRewarded, uint sfhmRewarded);
+    event RewardClaimed(address indexed wallet, uint indexed startClaimIndex, uint indexed lastClaimIndex, uint gonsClaimed, uint sfhmClaimed);
 
-    constructor(address _sFHM, uint _noFeeBlocks, uint _unstakeFee, bool _disableContracts) {
+    constructor(address _sFHM) {
         sFHM = _sFHM;
-        init( _noFeeBlocks, _unstakeFee, _disableContracts );
-
-        // get rid of index 0, so lastClaimIndex 0 means never claimed
-        newSample(0);
+        initCalled = false;
     }
 
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist) public onlyPolicy {
+    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes) public onlyPolicy nonReentrant {
         _rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
         claimPageSize = _claimPageSize;
         disableContracts = _disableContracts;
         useWhitelist = _useWhitelist;
+        pauseNewStakes = _pauseNewStakes;
+
+        if (!initCalled) {
+            newSample(0);
+            initCalled = true;
+        }
+
     }
 
     function modifyWhitelist(address user, bool add) external {
         if (add) {
-            require( !whitelist[user], "Already in whitelist" );
+            require(!whitelist[user], "Already in whitelist");
             whitelist[user] = true;
         } else {
-            require( whitelist[user], "Not in whitelist" );
+            require(whitelist[user], "Not in whitelist");
             delete whitelist[user];
         }
     }
 
-    function checkBefore() private {
-        if ( disableContracts ) require( msg.sender == tx.origin, "Contracts are not allowed here" );
+    //
+    // fail fast stake/unstake for well known conditions
+    //
+    function checkBefore(bool stake) private {
+        // whether to disable contracts to call staking pool
+        if (disableContracts) require(msg.sender == tx.origin, "Contracts are not allowed here");
+
+        // temporary disable new stakes, but allow to call claim and unstake
+        require(!(pauseNewStakes && stake), "New staking is paused!");
+
+        // allow only whitelisted contracts
+        if (useWhitelist) require(whitelist[msg.sender], "User isn't in whitelist!");
     }
 
-    function stake(uint _amount) external {
-        checkBefore();
+    //
+    // Insert _amount to the pool, add to your share, need to claim everything before new stake
+    //
+    function stake(uint _amount) external nonReentrant {
+        doClaim(claimPageSize);
 
-        // claim with old data
-        claim();
+        // unsure that user claim everything before stake again
+        require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot stake if not claimed everything");
 
-        IERC20( sFHM ).transferFrom( msg.sender, address(this), _amount );
-        uint gonsToStake = IsFHM( sFHM ).gonsForBalance( _amount );
-        uint lastClaimBlockNumber = rewardSamples[rewardSamples.length - 1].blockNumber;
+        // erc20 transfer of staked tokens
+        IERC20(sFHM).transferFrom(msg.sender, address(this), _amount);
+        uint gonsToStake = gonsForBalance(_amount);
+        uint sfhmToStake = balanceForGons(gonsToStake);
 
+        uint gonsStaked = userInfo[msg.sender].gonsStaked.add(gonsToStake);
+        uint sfhmStaked = balanceForGons(gonsStaked);
+
+        // persist it
         userInfo[msg.sender] = UserInfo({
-            gonsStaked: userInfo[msg.sender].gonsStaked.add( gonsToStake ),
-            sfhmStaked: userInfo[msg.sender].sfhmStaked.add( _amount ),
-            lastStakeBlockNumber: block.number,
-            lastClaimIndex: rewardSamples.length - 1,
-            lastClaimBlockNumber: lastClaimBlockNumber
-        });
-        gonsStaking = gonsStaking.add( gonsToStake );
-        sfhmStaking = sfhmStaking.add( _amount );
+        gonsStaked : gonsStaked,
+        sfhmStaked : sfhmStaked,
+        lastStakeBlockNumber : block.number,
 
-        emit StakingDeposited( msg.sender,
+        // don't touch the rest
+        lastClaimIndex : userInfo[msg.sender].lastClaimIndex
+        });
+        gonsStaking = gonsStaking.add(gonsToStake);
+        sfhmStaking = sfhmStaking.add(sfhmToStake);
+
+        // and record in history
+        emit StakingDeposited(msg.sender,
             userInfo[msg.sender].gonsStaked,
             userInfo[msg.sender].sfhmStaked,
-            userInfo[msg.sender].lastDepositBlock,
-            userInfo[msg.sender].noFeeUnlockBlock );
+            userInfo[msg.sender].lastStakeBlockNumber);
     }
 
-    function newSample(uint _balance) public {
-        IERC20( sFHM ).transferFrom( rewardsHolder, _balance );
+    //
+    // Return current TVL of staking contract
+    //
+    function getTvl() public view returns (uint, uint) {
+        return (gonsStaking.add(gonsPendingClaim), sfhmStaking.add(sfhmPendingClaim));
+    }
 
-        uint gonsRewarded = IsFHM( sFHM ).gonsForBalance( _balance );
+    //
+    // Rewards holder accumulated enough balance during its period to create new sample
+    // Record our current staking TVL
+    //
+    function newSample(uint _balance) public nonReentrant {
+        // transfer balance from rewards holder
+        IERC20(sFHM).transferFrom(rewardsHolder, address(this), _balance);
+        uint gonsRewarded = gonsForBalance(_balance);
+        uint sfhmRewarded = balanceForGons(gonsRewarded);
+
+        // count current TVL
+        (uint gonsTvl,uint sfhmTvl) = getTvl();
 
         rewardSamples.push(SampleInfo({
-            blockNumber: block.number,
-            timestamp: block.timestamp,
+        // remember time data
+        blockNumber : block.number,
+        timestamp : block.timestamp,
 
-            totalGonsRewarded: gonsRewarded,
-            totalSfhmRewarded: _balance
+        // rewards size
+        totalGonsRewarded : gonsRewarded,
+        totalSfhmRewarded : sfhmRewarded,
+
+        // holders snapshot
+        gonsTvl : gonsTvl,
+        sfhmTvl : sfhmTvl
         }));
 
-        emit RewardSample();
+        // count total value to be claimed
+        gonsPendingClaim = gonsPendingClaim.add(gonsRewarded);
+        sfhmPendingClaim = balanceForGons(gonsPendingClaim);
 
+        // and record in history
+        emit RewardSampled(block.number, block.timestamp, gonsRewarded, sfhmRewarded);
     }
 
-    function claim() public {
-        uint length = Math.min(claimPageSize, rewardSamples.length);
-        for ( uint i = userInfo[msg.sender].lastClaimIndex; i < length; i++ ) {
-            if ( rewardSamples[i].blockNumber <= userInfo[msg.sender].lastClaimBlockNumber ) continue;
+    function balanceForGons(uint gons) private view returns (uint) {
+        return IsFHM(sFHM).balanceForGons(gons);
+    }
 
-            rewardSamples[i].gonsCirculatingSupply
+    function gonsForBalance(uint balance) private view returns (uint) {
+        return IsFHM(sFHM).gonsForBalance(balance);
+    }
+
+    function claim(uint _claimPageSize) external nonReentrant {
+        doClaim(_claimPageSize);
+    }
+
+    //
+    // Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
+    //
+    function doClaim(uint _claimPageSize) private {
+        checkBefore(false);
+
+        // new user cannot claim anything
+        if (userInfo[msg.sender].lastClaimIndex == 0 || userInfo[msg.sender].gonsStaked == 0) return;
+
+        uint indexStart = userInfo[msg.sender].lastClaimIndex;
+        require(indexStart < rewardSamples.length, "Start index is not valid");
+        // last item already claimed
+        if (indexStart == rewardSamples.length - 1) return;
+
+        // page size is either _claimPageSize or the rest
+        uint length = Math.min(_claimPageSize, rewardSamples.length - indexStart);
+
+        // count what to claim this batch
+        uint gonsBefore = userInfo[msg.sender].gonsStaked;
+        uint totalClaimed = 0;
+        uint lastClaimIndex = indexStart;
+        for (uint i = indexStart; i < length; i++) {
+            uint currentGons = gonsBefore.add(totalClaimed);
+            uint csGons = rewardSamples[i].gonsTvl;
+            uint realShare = Math.min(currentGons, csGons);
+            totalClaimed = totalClaimed.add(csGons.div(realShare));
+            lastClaimIndex = i;
         }
 
+        // persist it
+        uint gonsStaked = userInfo[msg.sender].gonsStaked.add(totalClaimed);
+        userInfo[msg.sender] = UserInfo({
+        lastClaimIndex : lastClaimIndex,
+        gonsStaked : gonsStaked,
+        sfhmStaked : balanceForGons(gonsStaked),
+        lastStakeBlockNumber : userInfo[msg.sender].lastStakeBlockNumber
+        });
+
+        // remove it from total balance
+        gonsPendingClaim = gonsPendingClaim.sub(totalClaimed);
+        sfhmPendingClaim = balanceForGons(gonsPendingClaim);
+
+        // and record in history
+        emit RewardClaimed(msg.sender, indexStart, lastClaimIndex, totalClaimed, balanceForGons(totalClaimed));
     }
 
-    function getNoFeeUnlockBlock( address user ) external view returns (uint){
-        return userInfo[ user ].noFeeUnlockBlock;
-    }
+    //
+    // Unstake _amount from staking pool. Automatically call claim.
+    //
+    function unstake(uint _amount) external nonReentrant {
+        // auto claim before unstake
+        doClaim(claimPageSize);
 
-    function getRewards( address user ) public view returns (uint) {
-        uint maxRewards = IERC20( sFHM ).balanceOf( stakingStakingPool );
+        // unsure that user claim everything before unstaking
+        require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
 
-        return StakingStakingPool( stakingStakingPool ).getRewards(userInfo[ msg.sender ]);
-    }
+        uint gonsToUnstake = gonsForBalance(_amount);
+        // cannot unstake what is not mine
+        require(gonsToUnstake <= userInfo[msg.sender].gonsStaked, "Not enough tokens to unstake");
+        // and more than we have
+        require(gonsToUnstake <= gonsStaking, "Unstaking more than in pool");
 
-    function unstake(uint _amount) external {
-        checkBefore();
+        userInfo[msg.sender].gonsStaked = userInfo[msg.sender].gonsStaked.sub(gonsToUnstake);
+        if (userInfo[msg.sender].gonsStaked == 0) {
+            // if unstaking everything just delete whole record
+            delete userInfo[msg.sender];
+        } else {
+            // otherwise get info about staking tokens
+            userInfo[msg.sender].sfhmStaked = balanceForGons(userInfo[msg.sender].gonsStaked);
+        }
 
-        uint gonsToUnstake = IsFHM( sFHM ).gonsForBalance( _amount );
-        require(gonsToUnstake <= userInfo[ msg.sender ].gonsStaked, "Not enought tokens to unstake" );
-
+        // remove it from total balance
         gonsStaking = gonsStaking.sub(gonsToUnstake);
-        userInfo[ msg.sender ].gonsStaked = userInfo[ msg.sender ].gonsStaked.sub(gonsToUnstake);
+        sfhmStaking = balanceForGons(gonsStaking);
 
-        if ( userInfo[ msg.sender ].gonsStaked == 0 ) {
-            delete userInfo[ msg.sender ];
-        }
+        // actual erc20 transfer
+        IERC20(sFHM).transfer(msg.sender, _amount);
 
-        IERC20( sFHM ).transfer( msg.sender , _amount );
-
-        emit StakingWithdraw( msg.sender, gonsToUnstake, _amount, block.number );
+        // and record in history
+        emit StakingWithdraw(msg.sender, gonsToUnstake, _amount, block.number);
     }
 
 }
