@@ -16,7 +16,7 @@ async function main() {
 
     await rewardsHolder.init(`${stakingStaking.address}`, 2);
 
-    await stakingStaking.init(`${rewardsHolder.address}`, 20, 3000, 100, false, false, false, true);
+    await stakingStaking.init(`${rewardsHolder.address}`, 200, 3000, 100, false, false, false, true);
 
 }
 

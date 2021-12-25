@@ -723,10 +723,10 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         pauseNewStakes = _pauseNewStakes;
         enableEmergencyWithdraw = _enableEmergencyWithdraw;
 
-//        if (!initCalled) {
-//            newSample(0);
-//            initCalled = true;
-//        }
+        if (!initCalled) {
+            newSample(0);
+            initCalled = true;
+        }
     }
 
     function modifyWhitelist(address user, bool add) external {
@@ -813,7 +813,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     function getWithdrawableBalance(address _user, uint lastStakeBlockNumber, uint _gons) private view returns (uint) {
         uint gonsWithdrawable = _gons;
         if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
-            uint fee = _gons.mul(unstakeFee).div(10 ** 5);
+            uint fee = _gons.mul(unstakeFee).div(10 ** 4);
             gonsWithdrawable = gonsWithdrawable.sub(fee);
         }
         return gonsWithdrawable;
@@ -873,33 +873,32 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         checkBefore(false);
 
         // clock new tick
-//        IRewardsHolder(rewardsHolder).newTick();
+        IRewardsHolder(rewardsHolder).newTick();
 
-        // new user cannot claim anything
-        if (userInfo[msg.sender].lastClaimIndex == 0 || userInfo[msg.sender].gonsStaked == 0) return;
-
-        uint indexStart = userInfo[msg.sender].lastClaimIndex;
-        require(indexStart < rewardSamples.length, "Start index is not valid");
+        uint lastClaimIndex = userInfo[msg.sender].lastClaimIndex;
         // last item already claimed
-        if (indexStart == rewardSamples.length - 1) return;
+        if (lastClaimIndex == rewardSamples.length - 1) return;
 
         // page size is either _claimPageSize or the rest
-        uint length = Math.min(_claimPageSize, rewardSamples.length - indexStart);
+        uint startIndex = lastClaimIndex + 1;
+        uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
 
-        // count what to claim this batch
-        uint gonsBefore = userInfo[msg.sender].gonsStaked;
-        uint totalClaimed = 0;
-        uint lastClaimIndex = indexStart;
-        for (uint i = indexStart; i < length; i++) {
-            uint currentGons = gonsBefore.add(totalClaimed);
-            uint csGons = rewardSamples[i].gonsTvl;
-            uint realShare = Math.min(currentGons, csGons);
-            totalClaimed = totalClaimed.add(csGons.div(realShare));
+        // start claiming with gons staking previously
+        uint gonsStaked = userInfo[msg.sender].gonsStaked;
+        uint totalClaimedGons = 0;
+        for (uint i = startIndex; i <= endIndex; i++) {
+            // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
+            if (gonsStaked > 0) {
+                uint gonsShare = rewardSamples[i].gonsTvl.div(gonsStaked);
+                uint gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
+
+                totalClaimedGons = totalClaimedGons.add(gonsClaimed);
+            }
             lastClaimIndex = i;
         }
 
         // persist it
-        uint gonsStaked = userInfo[msg.sender].gonsStaked.add(totalClaimed);
+        gonsStaked = gonsStaked.add(totalClaimedGons);
         userInfo[msg.sender] = UserInfo({
         lastClaimIndex : lastClaimIndex,
         gonsStaked : gonsStaked,
@@ -908,11 +907,11 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         });
 
         // remove it from total balance
-        gonsPendingClaim = gonsPendingClaim.sub(totalClaimed);
+        gonsPendingClaim = gonsPendingClaim.sub(totalClaimedGons);
         sfhmPendingClaim = balanceForGons(gonsPendingClaim);
 
         // and record in history
-        emit RewardClaimed(msg.sender, indexStart, lastClaimIndex, totalClaimed, balanceForGons(totalClaimed));
+        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, totalClaimedGons, balanceForGons(totalClaimedGons));
     }
 
     //
