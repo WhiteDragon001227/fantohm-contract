@@ -9,9 +9,8 @@ async function main() {
     const rewardsHolder = await RewardsHolder.deploy("0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5");
     console.log(`Deployed rewardsHolder to: ${rewardsHolder.address}`);
 
-    // FHUDMinter
     const StakingStaking = await ethers.getContractFactory('StakingStaking');
-    const stakingStaking = await StakingStaking.deploy("0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5");
+    const stakingStaking = await StakingStaking.deploy("0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5", `${deployer.address}`);
     console.log(`Deployed StakingStaking to: ${stakingStaking.address}`);
 
     await rewardsHolder.init(`${stakingStaking.address}`, 2);

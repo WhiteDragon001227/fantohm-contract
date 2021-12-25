@@ -649,6 +649,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     using SafeMath for uint;
 
     address public immutable sFHM;
+    address public immutable DAO;
     address public rewardsHolder;
     uint public noFeeBlocks; // 30 days in blocks
     uint public unstakeFee; // 100 means 1%
@@ -708,8 +709,9 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     event EmergencyRewardsWithdraw(address indexed recipient, uint gonsRewarded, uint sfhmRewarded);
     event EmergencyEthRecovered(address indexed recipient, uint amount);
 
-    constructor(address _sFHM) {
+    constructor(address _sFHM, address _DAO) {
         sFHM = _sFHM;
+        DAO = _DAO;
         initCalled = false;
     }
 
@@ -890,7 +892,10 @@ contract StakingStaking is Ownable, ReentrancyGuard {
             // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
             if (gonsStaked > 0) {
                 uint gonsShare = rewardSamples[i].gonsTvl.div(gonsStaked);
-                uint gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
+                uint gonsClaimed = 0;
+                if (gonsShare > 0) {
+                    gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
+                }
 
                 totalClaimedGons = totalClaimedGons.add(gonsClaimed);
             }
@@ -941,12 +946,17 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         }
 
         // remove it from total balance
-        gonsStaking = gonsStaking.sub(gonsTransferring);
+        gonsStaking = gonsStaking.sub(gonsToUnstake);
         sfhmStaking = balanceForGons(gonsStaking);
 
         // actual erc20 transfer
         uint sfhmTransferring = balanceForGons(gonsTransferring);
         IERC20(sFHM).safeTransfer(msg.sender, sfhmTransferring);
+
+        // and send fee to DAO
+        uint gonsFee = gonsToUnstake.sub(gonsTransferring);
+        uint sfhmFee = balanceForGons(gonsFee);
+        IERC20(sFHM).safeTransfer(DAO, sfhmFee);
 
         // and record in history
         emit StakingWithdraw(msg.sender, gonsToUnstake, balanceForGons(gonsToUnstake), gonsTransferring, sfhmTransferring, block.number);
@@ -989,10 +999,9 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         sfhmPendingClaim = 0;
 
         // erc20 transfer
-        address recipient = msg.sender;
-        IERC20(sFHM).safeTransfer(recipient, sfhmAmount);
+        IERC20(sFHM).safeTransfer(DAO, sfhmAmount);
 
-        emit EmergencyRewardsWithdraw(recipient, gonsPendingClaim, sfhmAmount);
+        emit EmergencyRewardsWithdraw(DAO, gonsPendingClaim, sfhmAmount);
     }
 
     //
@@ -1001,23 +1010,21 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     function emergencyRecoverToken(address token) external virtual onlyPolicy {
         require(token != sFHM);
 
-        address recipient = policy();
         uint amount = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransfer(recipient, amount);
+        IERC20(token).safeTransfer(DAO, amount);
 
-        emit EmergencyTokenRecovered(token, recipient, amount);
+        emit EmergencyTokenRecovered(token, DAO, amount);
     }
 
     //
     // Been able to recover any ftm/movr token sent to contract by mistake
     //
     function emergencyRecoverEth() external virtual onlyPolicy {
-        address recipient = policy();
         uint amount = address(this).balance;
 
-        payable(recipient).transfer(amount);
+        payable(DAO).transfer(amount);
 
-        emit EmergencyEthRecovered(recipient, amount);
+        emit EmergencyEthRecovered(DAO, amount);
     }
 
 }
