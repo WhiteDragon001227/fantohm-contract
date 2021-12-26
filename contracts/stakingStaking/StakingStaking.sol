@@ -767,6 +767,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // erc20 transfer of staked tokens
         IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
         uint gonsToStake = gonsForBalance(_amount);
+        // FIXME remove
         uint sfhmToStake = balanceForGons(gonsToStake);
 
         uint gonsStaked = userInfo[msg.sender].gonsStaked.add(gonsToStake);
@@ -776,13 +777,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         userInfo[msg.sender] = UserInfo({
         gonsStaked : gonsStaked,
         sfhmStaked : sfhmStaked,
-        lastStakeBlockNumber : block.number,
 
+        lastStakeBlockNumber : block.number,
         // don't touch the rest
         lastClaimIndex : userInfo[msg.sender].lastClaimIndex
         });
         gonsStaking = gonsStaking.add(gonsToStake);
-        sfhmStaking = sfhmStaking.add(sfhmToStake);
+        sfhmStaking = balanceForGons(gonsStaking);
 
         // and record in history
         emit StakingDeposited(msg.sender,
@@ -811,7 +812,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable);
     }
 
-
+    // FIXME remove _user
     function getWithdrawableBalance(address _user, uint lastStakeBlockNumber, uint _gons) private view returns (uint) {
         uint gonsWithdrawable = _gons;
         if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
@@ -881,33 +882,42 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // last item already claimed
         if (lastClaimIndex == rewardSamples.length - 1) return;
 
-        // page size is either _claimPageSize or the rest
-        uint startIndex = lastClaimIndex + 1;
-        uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
-
         // start claiming with gons staking previously
         uint gonsStaked = userInfo[msg.sender].gonsStaked;
         uint totalClaimedGons = 0;
-        for (uint i = startIndex; i <= endIndex; i++) {
-            // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
-            if (gonsStaked > 0) {
-                uint gonsShare = rewardSamples[i].gonsTvl.div(gonsStaked);
-                uint gonsClaimed = 0;
-                if (gonsShare > 0) {
-                    gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
-                }
+        uint startIndex = lastClaimIndex + 1;
 
-                totalClaimedGons = totalClaimedGons.add(gonsClaimed);
+        // new user considered as claimed last sample
+        if (userInfo[msg.sender].lastStakeBlockNumber == 0) {
+            lastClaimIndex = rewardSamples.length - 1;
+        } else {
+            // page size is either _claimPageSize or the rest
+            uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
+
+            for (uint i = startIndex; i <= endIndex; i++) {
+                lastClaimIndex = i;
+
+                // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
+                if (gonsStaked > 0) {
+                    uint gonsShare = rewardSamples[i].gonsTvl.div(gonsStaked);
+                    uint gonsClaimed = 0;
+                    if (gonsShare > 0) {
+                        gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
+                    }
+
+                    totalClaimedGons = totalClaimedGons.add(gonsClaimed);
+                }
             }
-            lastClaimIndex = i;
         }
 
         // persist it
         gonsStaked = gonsStaked.add(totalClaimedGons);
         userInfo[msg.sender] = UserInfo({
-        lastClaimIndex : lastClaimIndex,
         gonsStaked : gonsStaked,
         sfhmStaked : balanceForGons(gonsStaked),
+
+        lastClaimIndex : lastClaimIndex,
+        // don't touch the rest
         lastStakeBlockNumber : userInfo[msg.sender].lastStakeBlockNumber
         });
 

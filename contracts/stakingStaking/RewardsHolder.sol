@@ -320,6 +320,12 @@ interface IsFHM {
     function gonsForBalance(uint amount) external view returns (uint);
 }
 
+interface IStaking {
+    function stake(uint _amount, address _recipient) external returns (bool);
+
+    function claim(address _recipient) external;
+}
+
 interface IStakingStaking {
     function newSample(uint _balance) external;
 }
@@ -327,7 +333,9 @@ interface IStakingStaking {
 contract RewardsHolder is Ownable, ReentrancyGuard {
     using SafeMath for uint;
 
+    address public immutable FHM;
     address public immutable sFHM;
+    address public immutable staking;
     address public stakingStaking;
 
     // when was last sample transfer of rewards
@@ -337,8 +345,10 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
 
     event RewardSample(uint timestamp, uint blockNumber, uint gonsRewards, uint sfhmRewards);
 
-    constructor(address _sFHM) {
+    constructor(address _FHM, address _sFHM, address _staking) {
+        FHM = _FHM;
         sFHM = _sFHM;
+        staking = _staking;
     }
 
     function init(address _stakingStaking, uint _blocksPerSample) external onlyPolicy {
@@ -346,17 +356,33 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
         blocksPerSample = _blocksPerSample;
     }
 
+    function stake() private {
+        uint fhmRewards = IERC20(FHM).balanceOf(address(this));
+        if (fhmRewards == 0) return;
+
+        IERC20(FHM).approve(staking, fhmRewards);
+        IStaking(staking).stake(fhmRewards, address(this));
+        IStaking(staking).claim(address(this));
+    }
+
     function newTick() public {
+        stake();
+
         // not doing anything, waiting and gathering rewards
         if (lastSampleBlockNumber.add(blocksPerSample) > block.number) return;
 
         // perform new sample, remember staking pool supply back then
+
+        // call new sample to transfer rewards
         uint sfhmRewards = IERC20(sFHM).balanceOf(address(this));
         uint gonsRewards = IsFHM(sFHM).gonsForBalance(sfhmRewards);
         IERC20(sFHM).approve(stakingStaking, sfhmRewards);
         IStakingStaking(stakingStaking).newSample(sfhmRewards);
+
+        // remember last sample block
         lastSampleBlockNumber = block.number;
 
+        // and record in history
         emit RewardSample(block.timestamp, block.number, gonsRewards, sfhmRewards);
     }
 }
