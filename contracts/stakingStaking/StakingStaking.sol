@@ -643,8 +643,6 @@ interface IRewardsHolder {
 }
 
 // FIXME test rebase
-// claim logic doesnt work with mul div
-// last claim doesnt work because of missing gons
 // FIXME emergency withdraw doesnt work
 // FIXME voting token
 contract StakingStaking is Ownable, ReentrancyGuard {
@@ -921,11 +919,11 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
                 // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
                 if (gonsStaked > 0) {
-                    (uint gonsShare, uint sfhmShare) = gonsDiv(rewardSamples[i].gonsTvl, gonsStaked);
                     uint gonsClaimed = 0;
                     uint sfhmClaimed = 0;
-                    if (gonsShare > 0) {
-                        (gonsClaimed, sfhmClaimed) = gonsDiv(rewardSamples[i].totalGonsRewarded, gonsShare);
+                    if (rewardSamples[i].gonsTvl > 0) {
+                        (uint gonsUnit, uint sfhmUnit) = gonsDiv(rewardSamples[i].totalGonsRewarded, rewardSamples[i].gonsTvl);
+                        (gonsClaimed, sfhmClaimed) = gonsMul(gonsUnit, gonsStaked);
                     }
 
                     (totalClaimedGons, totalClaimedSfhm) = gonsAdd(totalClaimedGons, gonsClaimed);
@@ -944,6 +942,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         lastStakeBlockNumber : info.lastStakeBlockNumber
         });
 
+        (gonsStaking, sfhmStaking) = gonsAdd(gonsStaking, totalClaimedGons);
         // remove it from total balance if is not last one
         if (gonsPendingClaim >= totalClaimedGons) {
             (gonsPendingClaim, sfhmPendingClaim) = gonsSub(gonsPendingClaim, totalClaimedGons);
