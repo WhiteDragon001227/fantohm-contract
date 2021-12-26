@@ -642,6 +642,10 @@ interface IRewardsHolder {
     function newTick() external;
 }
 
+// FIXME test rebase
+// claim logic doesnt work with mul div
+// last claim doesnt work because of missing gons
+// FIXME emergency withdraw doesnt work
 // FIXME voting token
 contract StakingStaking is Ownable, ReentrancyGuard {
 
@@ -756,6 +760,30 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     }
 
     //
+    // --- operations of 2 gons by converting into balance, doing operation and converting again to gons with its balance in unionm ---
+    //
+
+    function gonsAdd(uint gonsA, uint gonsB) private view returns (uint, uint) {
+        uint balance = balanceForGons(gonsA).add(balanceForGons(gonsB));
+        return (gonsForBalance(balance), balance);
+    }
+
+    function gonsSub(uint gonsA, uint gonsB) private view returns (uint, uint) {
+        uint balance = balanceForGons(gonsA).sub(balanceForGons(gonsB));
+        return (gonsForBalance(balance), balance);
+    }
+
+    function gonsDiv(uint gonsA, uint gonsB) private view returns (uint, uint) {
+        uint balance = balanceForGons(gonsA).div(balanceForGons(gonsB));
+        return (gonsForBalance(balance), balance);
+    }
+
+    function gonsMul(uint gonsA, uint gonsB) private view returns (uint, uint) {
+        uint balance = balanceForGons(gonsA).mul(balanceForGons(gonsB));
+        return (gonsForBalance(balance), balance);
+    }
+
+    //
     // Insert _amount to the pool, add to your share, need to claim everything before new stake
     //
     function stake(uint _amount) external nonReentrant {
@@ -767,11 +795,8 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // erc20 transfer of staked tokens
         IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
         uint gonsToStake = gonsForBalance(_amount);
-        // FIXME remove
-        uint sfhmToStake = balanceForGons(gonsToStake);
 
-        uint gonsStaked = userInfo[msg.sender].gonsStaked.add(gonsToStake);
-        uint sfhmStaked = balanceForGons(gonsStaked);
+        (uint gonsStaked,uint sfhmStaked) = gonsAdd(userInfo[msg.sender].gonsStaked, gonsToStake);
 
         // persist it
         userInfo[msg.sender] = UserInfo({
@@ -782,8 +807,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // don't touch the rest
         lastClaimIndex : userInfo[msg.sender].lastClaimIndex
         });
-        gonsStaking = gonsStaking.add(gonsToStake);
-        sfhmStaking = balanceForGons(gonsStaking);
+        (gonsStaking, sfhmStaking) = gonsAdd(gonsStaking, gonsToStake);
 
         // and record in history
         emit StakingDeposited(msg.sender,
@@ -796,7 +820,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     // Return current TVL of staking contract
     //
     function getTvl() public view returns (uint, uint) {
-        return (gonsStaking.add(gonsPendingClaim), sfhmStaking.add(sfhmPendingClaim));
+        return gonsAdd(gonsStaking, gonsPendingClaim);
     }
 
     //
@@ -806,20 +830,18 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     function getBalance(address _user) public view returns (uint, uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
-        uint gonsWithdrawable = getWithdrawableBalance(_user, info.lastStakeBlockNumber, info.gonsStaked);
-        uint sfhmWithdrawable = balanceForGons(gonsWithdrawable);
+        (uint gonsWithdrawable, uint sfhmWithdrawable) = getWithdrawableBalance(info.lastStakeBlockNumber, info.gonsStaked);
 
         return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable);
     }
 
-    // FIXME remove _user
-    function getWithdrawableBalance(address _user, uint lastStakeBlockNumber, uint _gons) private view returns (uint) {
-        uint gonsWithdrawable = _gons;
+    function getWithdrawableBalance(uint lastStakeBlockNumber, uint _gons) private view returns (uint, uint) {
+        uint balanceWithdrawable = balanceForGons(_gons);
         if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
-            uint fee = _gons.mul(unstakeFee).div(10 ** 4);
-            gonsWithdrawable = gonsWithdrawable.sub(fee);
+            uint fee = balanceWithdrawable.mul(unstakeFee).div(10 ** 4);
+            balanceWithdrawable = balanceWithdrawable.sub(fee);
         }
-        return gonsWithdrawable;
+        return (gonsForBalance(balanceWithdrawable), balanceWithdrawable);
     }
 
     //
@@ -832,9 +854,6 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         uint gonsRewarded = gonsForBalance(_balance);
         uint sfhmRewarded = balanceForGons(gonsRewarded);
 
-        // count current TVL
-        (uint gonsTvl,uint sfhmTvl) = getTvl();
-
         rewardSamples.push(SampleInfo({
         // remember time data
         blockNumber : block.number,
@@ -844,14 +863,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         totalGonsRewarded : gonsRewarded,
         totalSfhmRewarded : sfhmRewarded,
 
-        // holders snapshot
-        gonsTvl : gonsTvl,
-        sfhmTvl : sfhmTvl
+        // holders snapshot based only on staking gons, not claimable gons
+        gonsTvl : gonsStaking,
+        sfhmTvl : sfhmStaking
         }));
 
         // count total value to be claimed
-        gonsPendingClaim = gonsPendingClaim.add(gonsRewarded);
-        sfhmPendingClaim = balanceForGons(gonsPendingClaim);
+        (gonsPendingClaim, sfhmPendingClaim) = gonsAdd(gonsPendingClaim, gonsRewarded);
 
         // and record in history
         emit RewardSampled(block.number, block.timestamp, gonsRewarded, sfhmRewarded);
@@ -878,17 +896,21 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // clock new tick
         IRewardsHolder(rewardsHolder).newTick();
 
-        uint lastClaimIndex = userInfo[msg.sender].lastClaimIndex;
+        UserInfo storage info = userInfo[msg.sender];
+
+        uint lastClaimIndex = info.lastClaimIndex;
         // last item already claimed
         if (lastClaimIndex == rewardSamples.length - 1) return;
 
         // start claiming with gons staking previously
-        uint gonsStaked = userInfo[msg.sender].gonsStaked;
+        uint gonsStaked = info.gonsStaked;
+        uint sfhmStaked = info.sfhmStaked;
         uint totalClaimedGons = 0;
+        uint totalClaimedSfhm = 0;
         uint startIndex = lastClaimIndex + 1;
 
         // new user considered as claimed last sample
-        if (userInfo[msg.sender].lastStakeBlockNumber == 0) {
+        if (info.lastStakeBlockNumber == 0) {
             lastClaimIndex = rewardSamples.length - 1;
         } else {
             // page size is either _claimPageSize or the rest
@@ -899,34 +921,40 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
                 // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
                 if (gonsStaked > 0) {
-                    uint gonsShare = rewardSamples[i].gonsTvl.div(gonsStaked);
+                    (uint gonsShare, uint sfhmShare) = gonsDiv(rewardSamples[i].gonsTvl, gonsStaked);
                     uint gonsClaimed = 0;
+                    uint sfhmClaimed = 0;
                     if (gonsShare > 0) {
-                        gonsClaimed = rewardSamples[i].totalGonsRewarded.div(gonsShare);
+                        (gonsClaimed, sfhmClaimed) = gonsDiv(rewardSamples[i].totalGonsRewarded, gonsShare);
                     }
 
-                    totalClaimedGons = totalClaimedGons.add(gonsClaimed);
+                    (totalClaimedGons, totalClaimedSfhm) = gonsAdd(totalClaimedGons, gonsClaimed);
                 }
             }
         }
 
         // persist it
-        gonsStaked = gonsStaked.add(totalClaimedGons);
+        (gonsStaked, sfhmStaked) = gonsAdd(gonsStaked, totalClaimedGons);
         userInfo[msg.sender] = UserInfo({
         gonsStaked : gonsStaked,
-        sfhmStaked : balanceForGons(gonsStaked),
+        sfhmStaked : sfhmStaked,
 
         lastClaimIndex : lastClaimIndex,
         // don't touch the rest
-        lastStakeBlockNumber : userInfo[msg.sender].lastStakeBlockNumber
+        lastStakeBlockNumber : info.lastStakeBlockNumber
         });
 
-        // remove it from total balance
-        gonsPendingClaim = gonsPendingClaim.sub(totalClaimedGons);
-        sfhmPendingClaim = balanceForGons(gonsPendingClaim);
+        // remove it from total balance if is not last one
+        if (gonsPendingClaim >= totalClaimedGons) {
+            (gonsPendingClaim, sfhmPendingClaim) = gonsSub(gonsPendingClaim, totalClaimedGons);
+        } else  {
+            // sfhm balance of last one is the same, so gons should be rounded
+            require(balanceForGons(gonsPendingClaim) == totalClaimedSfhm, "Last user claiming needs balance");
+            (gonsPendingClaim, sfhmPendingClaim) = (0, 0);
+        }
 
         // and record in history
-        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, totalClaimedGons, balanceForGons(totalClaimedGons));
+        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, totalClaimedGons, totalClaimedSfhm);
     }
 
     //
@@ -936,36 +964,38 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // auto claim before unstake
         doClaim(claimPageSize);
 
+        UserInfo storage info = userInfo[msg.sender];
+
         // unsure that user claim everything before unstaking
-        require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
+        require(info.lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
 
         uint gonsToUnstake = gonsForBalance(_amount);
-        uint gonsTransferring = getWithdrawableBalance(msg.sender, userInfo[msg.sender].lastStakeBlockNumber, gonsToUnstake);
+        (uint gonsTransferring, uint sfhmTransferring) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToUnstake);
         // cannot unstake what is not mine
-        require(gonsToUnstake <= userInfo[msg.sender].gonsStaked, "Not enough tokens to unstake");
+        require(gonsToUnstake <= info.gonsStaked, "Not enough tokens to unstake");
         // and more than we have
         require(gonsTransferring <= gonsStaking, "Unstaking more than in pool");
 
-        userInfo[msg.sender].gonsStaked = userInfo[msg.sender].gonsStaked.sub(gonsToUnstake);
-        if (userInfo[msg.sender].gonsStaked == 0) {
+        (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToUnstake);
+        if (info.gonsStaked == 0) {
             // if unstaking everything just delete whole record
             delete userInfo[msg.sender];
-        } else {
-            // otherwise get info about staking tokens
-            userInfo[msg.sender].sfhmStaked = balanceForGons(userInfo[msg.sender].gonsStaked);
         }
 
         // remove it from total balance
-        gonsStaking = gonsStaking.sub(gonsToUnstake);
-        sfhmStaking = balanceForGons(gonsStaking);
+        if (gonsStaking >= gonsToUnstake) {
+            (gonsStaking, sfhmStaking) = gonsSub(gonsStaking, gonsToUnstake);
+        } else {
+            // sfhm balance of last one is the same, so gons should be rounded
+            require(balanceForGons(gonsStaking) == balanceForGons(gonsToUnstake), "Last user unstake needs balance");
+            (gonsStaking, sfhmStaking) = (0, 0);
+        }
 
         // actual erc20 transfer
-        uint sfhmTransferring = balanceForGons(gonsTransferring);
         IERC20(sFHM).safeTransfer(msg.sender, sfhmTransferring);
 
         // and send fee to DAO
-        uint gonsFee = gonsToUnstake.sub(gonsTransferring);
-        uint sfhmFee = balanceForGons(gonsFee);
+        (uint gonsFee,uint sfhmFee) = gonsSub(gonsToUnstake, gonsTransferring);
         IERC20(sFHM).safeTransfer(DAO, sfhmFee);
 
         // and record in history
@@ -984,14 +1014,18 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
         uint gonsToWithdraw = userInfo[msg.sender].gonsStaked;
         uint amount = balanceForGons(gonsToWithdraw);
-        require(amount > 0, "Cannot withdraw empty wallet");
 
         // clear the data
         delete userInfo[msg.sender];
 
         // repair total values
-        gonsStaking = gonsStaking.sub(gonsToWithdraw);
-        sfhmStaking = balanceForGons(gonsStaking);
+        if (gonsStaking >= gonsToWithdraw) {
+            (gonsStaking, sfhmStaking) = gonsSub(gonsStaking, gonsToWithdraw);
+        } else {
+            // sfhm balance of last one is the same, so gons should be rounded
+            require(balanceForGons(gonsStaking) == balanceForGons(gonsToWithdraw), "Last user emergency withdraw needs balance");
+            (gonsStaking, sfhmStaking) = (0, 0);
+        }
 
         // erc20 transfer
         IERC20(sFHM).safeTransfer(msg.sender, amount);
