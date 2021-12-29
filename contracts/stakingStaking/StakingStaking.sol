@@ -642,8 +642,8 @@ interface IRewardsHolder {
     function newTick() external;
 }
 
+// FIXME what about integer division rest? to whom to send and how?
 // FIXME test rebase
-// FIXME emergency withdraw doesnt work
 // FIXME voting token
 contract StakingStaking is Ownable, ReentrancyGuard {
 
@@ -658,13 +658,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     uint public claimPageSize; // maximum iteration threshold
 
     // actual number of gons staking, which is user staking pool
-    uint public gonsStaking;
+    uint public totalGonsStaking;
     // staked token mapping in time of gons write
-    uint public sfhmStaking;
+    uint public totalSfhmStaking;
     // actual number of gons transferred during sample ticks which were not claimed to any user, which is rewards pool
-    uint public gonsPendingClaim;
+    uint public totalGonsPendingClaim;
     // staked token mapping in time of gons write
-    uint public sfhmPendingClaim;
+    uint public totalSfhmPendingClaim;
 
     bool public disableContracts;
     bool public pauseNewStakes;
@@ -717,6 +717,15 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         initCalled = false;
     }
 
+    //
+    // suggested values:
+    // _noFeeBlocks - 30 days in blocks
+    // _unstakeFee - 3000 aka 30%
+    // _claimPageSize - 100/1000
+    // _disableContracts - true
+    // _useWhitelist - false (we can set it when we will test on production)
+    // _pauseNewStakes - false (you can set as some emergency leave precaution)
+    // _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
     function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyPolicy {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
@@ -805,7 +814,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // don't touch the rest
         lastClaimIndex : userInfo[msg.sender].lastClaimIndex
         });
-        (gonsStaking, sfhmStaking) = gonsAdd(gonsStaking, gonsToStake);
+        (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
 
         // and record in history
         emit StakingDeposited(msg.sender,
@@ -817,15 +826,15 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     //
     // Return current TVL of staking contract
     //
-    function getTvl() public view returns (uint, uint) {
-        return gonsAdd(gonsStaking, gonsPendingClaim);
+    function totalValueLocked() public view returns (uint, uint) {
+        return gonsAdd(totalGonsStaking, totalGonsPendingClaim);
     }
 
     //
     // Return user balance
     // 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable
     //
-    function getBalance(address _user) public view returns (uint, uint, uint, uint) {
+    function userBalance(address _user) public view returns (uint, uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
         (uint gonsWithdrawable, uint sfhmWithdrawable) = getWithdrawableBalance(info.lastStakeBlockNumber, info.gonsStaked);
@@ -852,6 +861,8 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         uint gonsRewarded = gonsForBalance(_balance);
         uint sfhmRewarded = balanceForGons(gonsRewarded);
 
+        (uint gonsTvl, uint sfhmTvl) = totalValueLocked();
+
         rewardSamples.push(SampleInfo({
         // remember time data
         blockNumber : block.number,
@@ -861,13 +872,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         totalGonsRewarded : gonsRewarded,
         totalSfhmRewarded : sfhmRewarded,
 
-        // holders snapshot based only on staking gons, not claimable gons
-        gonsTvl : gonsStaking,
-        sfhmTvl : sfhmStaking
+        // holders snapshot based on staking and pending claim gons
+        gonsTvl : gonsTvl,
+        sfhmTvl : sfhmTvl
         }));
 
         // count total value to be claimed
-        (gonsPendingClaim, sfhmPendingClaim) = gonsAdd(gonsPendingClaim, gonsRewarded);
+        (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsAdd(totalGonsPendingClaim, gonsRewarded);
 
         // and record in history
         emit RewardSampled(block.number, block.timestamp, gonsRewarded, sfhmRewarded);
@@ -903,8 +914,8 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // start claiming with gons staking previously
         uint gonsStaked = info.gonsStaked;
         uint sfhmStaked = info.sfhmStaked;
-        uint totalClaimedGons = 0;
-        uint totalClaimedSfhm = 0;
+        uint allGonsClaimed = 0;
+        uint allSfhmClaimed = 0;
         uint startIndex = lastClaimIndex + 1;
 
         // new user considered as claimed last sample
@@ -917,22 +928,24 @@ contract StakingStaking is Ownable, ReentrancyGuard {
             for (uint i = startIndex; i <= endIndex; i++) {
                 lastClaimIndex = i;
 
-                // compute share from current TVL, which means not yet claimed rewards are not counted to the APY
+                // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
                 if (gonsStaked > 0) {
                     uint gonsClaimed = 0;
                     uint sfhmClaimed = 0;
                     if (rewardSamples[i].gonsTvl > 0) {
-                        (uint gonsUnit, uint sfhmUnit) = gonsDiv(rewardSamples[i].totalGonsRewarded, rewardSamples[i].gonsTvl);
-                        (gonsClaimed, sfhmClaimed) = gonsMul(gonsUnit, gonsStaked);
+                        // 40 * 10 / 20000
+                        (uint gonsShare, uint sfhmShare) = gonsAdd(gonsStaked, allGonsClaimed);
+                        (uint gons, uint sfhm) = gonsMul(rewardSamples[i].totalGonsRewarded, gonsShare);
+                        (gonsClaimed, sfhmClaimed) = gonsDiv(gons, rewardSamples[i].gonsTvl);
                     }
 
-                    (totalClaimedGons, totalClaimedSfhm) = gonsAdd(totalClaimedGons, gonsClaimed);
+                    (allGonsClaimed, allSfhmClaimed) = gonsAdd(allGonsClaimed, gonsClaimed);
                 }
             }
         }
 
         // persist it
-        (gonsStaked, sfhmStaked) = gonsAdd(gonsStaked, totalClaimedGons);
+        (gonsStaked, sfhmStaked) = gonsAdd(gonsStaked, allGonsClaimed);
         userInfo[msg.sender] = UserInfo({
         gonsStaked : gonsStaked,
         sfhmStaked : sfhmStaked,
@@ -942,18 +955,18 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         lastStakeBlockNumber : info.lastStakeBlockNumber
         });
 
-        (gonsStaking, sfhmStaking) = gonsAdd(gonsStaking, totalClaimedGons);
+        (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, allGonsClaimed);
         // remove it from total balance if is not last one
-        if (gonsPendingClaim >= totalClaimedGons) {
-            (gonsPendingClaim, sfhmPendingClaim) = gonsSub(gonsPendingClaim, totalClaimedGons);
+        if (totalGonsPendingClaim >= allGonsClaimed) {
+            (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsSub(totalGonsPendingClaim, allGonsClaimed);
         } else  {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(gonsPendingClaim) == totalClaimedSfhm, "Last user claiming needs balance");
-            (gonsPendingClaim, sfhmPendingClaim) = (0, 0);
+            require(balanceForGons(totalGonsPendingClaim) == allSfhmClaimed, "Last user claiming needs balance");
+            (totalGonsPendingClaim, totalSfhmPendingClaim) = (0, 0);
         }
 
         // and record in history
-        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, totalClaimedGons, totalClaimedSfhm);
+        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, allGonsClaimed, allSfhmClaimed);
     }
 
     //
@@ -973,7 +986,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         // cannot unstake what is not mine
         require(gonsToUnstake <= info.gonsStaked, "Not enough tokens to unstake");
         // and more than we have
-        require(gonsTransferring <= gonsStaking, "Unstaking more than in pool");
+        require(gonsTransferring <= totalGonsStaking, "Unstaking more than in pool");
 
         (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToUnstake);
         if (info.gonsStaked == 0) {
@@ -982,12 +995,12 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         }
 
         // remove it from total balance
-        if (gonsStaking >= gonsToUnstake) {
-            (gonsStaking, sfhmStaking) = gonsSub(gonsStaking, gonsToUnstake);
+        if (totalGonsStaking >= gonsToUnstake) {
+            (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToUnstake);
         } else {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(gonsStaking) == balanceForGons(gonsToUnstake), "Last user unstake needs balance");
-            (gonsStaking, sfhmStaking) = (0, 0);
+            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToUnstake), "Last user unstake needs balance");
+            (totalGonsStaking, totalSfhmStaking) = (0, 0);
         }
 
         // actual erc20 transfer
@@ -1018,12 +1031,12 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         delete userInfo[msg.sender];
 
         // repair total values
-        if (gonsStaking >= gonsToWithdraw) {
-            (gonsStaking, sfhmStaking) = gonsSub(gonsStaking, gonsToWithdraw);
+        if (totalGonsStaking >= gonsToWithdraw) {
+            (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToWithdraw);
         } else {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(gonsStaking) == balanceForGons(gonsToWithdraw), "Last user emergency withdraw needs balance");
-            (gonsStaking, sfhmStaking) = (0, 0);
+            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToWithdraw), "Last user emergency withdraw needs balance");
+            (totalGonsStaking, totalSfhmStaking) = (0, 0);
         }
 
         // erc20 transfer
@@ -1037,14 +1050,14 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
 
         // repair total values
-        uint sfhmAmount = balanceForGons(gonsPendingClaim);
-        gonsPendingClaim = 0;
-        sfhmPendingClaim = 0;
+        uint sfhmAmount = balanceForGons(totalGonsPendingClaim);
+        totalGonsPendingClaim = 0;
+        totalSfhmPendingClaim = 0;
 
         // erc20 transfer
         IERC20(sFHM).safeTransfer(DAO, sfhmAmount);
 
-        emit EmergencyRewardsWithdraw(DAO, gonsPendingClaim, sfhmAmount);
+        emit EmergencyRewardsWithdraw(DAO, totalGonsPendingClaim, sfhmAmount);
     }
 
     //
