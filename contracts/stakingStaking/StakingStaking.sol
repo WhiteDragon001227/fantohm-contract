@@ -1,636 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
-interface IOwnable {
-    function policy() external view returns (address);
-
-    function renounceManagement() external;
-
-    function pushManagement(address newOwner_) external;
-
-    function pullManagement() external;
-}
-
-contract Ownable is IOwnable {
-
-    address internal _owner;
-    address internal _newOwner;
-
-    event OwnershipPushed(address indexed previousOwner, address indexed newOwner);
-    event OwnershipPulled(address indexed previousOwner, address indexed newOwner);
-
-    constructor () {
-        _owner = msg.sender;
-        emit OwnershipPushed(address(0), _owner);
-    }
-
-    function policy() public view override returns (address) {
-        return _owner;
-    }
-
-    modifier onlyPolicy() {
-        require(_owner == msg.sender, "Ownable: caller is not the owner");
-        _;
-    }
-
-    function renounceManagement() public virtual override onlyPolicy() {
-        emit OwnershipPushed(_owner, address(0));
-        _owner = address(0);
-    }
-
-    function pushManagement(address newOwner_) public virtual override onlyPolicy() {
-        require(newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed(_owner, newOwner_);
-        _newOwner = newOwner_;
-    }
-
-    function pullManagement() public virtual override {
-        require(msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled(_owner, _newOwner);
-        _owner = _newOwner;
-    }
-}
-
-library SafeMath {
-
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a + b;
-        require(c >= a, "SafeMath: addition overflow");
-
-        return c;
-    }
-
-    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-        return sub(a, b, "SafeMath: subtraction overflow");
-    }
-
-    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b <= a, errorMessage);
-        uint256 c = a - b;
-
-        return c;
-    }
-
-    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-        if (a == 0) {
-            return 0;
-        }
-
-        uint256 c = a * b;
-        require(c / a == b, "SafeMath: multiplication overflow");
-
-        return c;
-    }
-
-    function div(uint256 a, uint256 b) internal pure returns (uint256) {
-        return div(a, b, "SafeMath: division by zero");
-    }
-
-    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b > 0, errorMessage);
-        uint256 c = a / b;
-        return c;
-    }
-
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        return mod(a, b, "SafeMath: modulo by zero");
-    }
-
-    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b != 0, errorMessage);
-        return a % b;
-    }
-
-    function sqrrt(uint256 a) internal pure returns (uint c) {
-        if (a > 3) {
-            c = a;
-            uint b = add(div(a, 2), 1);
-            while (b < c) {
-                c = b;
-                b = div(add(div(a, b), b), 2);
-            }
-        } else if (a != 0) {
-            c = 1;
-        }
-    }
-}
-
-/**
- * @dev Standard math utilities missing in the Solidity language.
- */
-library Math {
-    /**
-     * @dev Returns the largest of two numbers.
-     */
-    function max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a >= b ? a : b;
-    }
-
-    /**
-     * @dev Returns the smallest of two numbers.
-     */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    /**
-     * @dev Returns the average of two numbers. The result is rounded towards
-     * zero.
-     */
-    function average(uint256 a, uint256 b) internal pure returns (uint256) {
-        // (a + b) / 2 can overflow, so we distribute
-        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
-    }
-}
-
-
-library Address {
-
-    function isContract(address account) internal view returns (bool) {
-
-        uint256 size;
-        // solhint-disable-next-line no-inline-assembly
-        assembly {size := extcodesize(account)}
-        return size > 0;
-    }
-
-    function sendValue(address payable recipient, uint256 amount) internal {
-        require(address(this).balance >= amount, "Address: insufficient balance");
-
-        // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
-        (bool success,) = recipient.call{value : amount}("");
-        require(success, "Address: unable to send value, recipient may have reverted");
-    }
-
-    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-        return functionCall(target, data, "Address: low-level call failed");
-    }
-
-    function functionCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
-        return _functionCallWithValue(target, data, 0, errorMessage);
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
-        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value, string memory errorMessage) internal returns (bytes memory) {
-        require(address(this).balance >= value, "Address: insufficient balance for call");
-        require(isContract(target), "Address: call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{value : value}(data);
-        return _verifyCallResult(success, returndata, errorMessage);
-    }
-
-    function _functionCallWithValue(address target, bytes memory data, uint256 weiValue, string memory errorMessage) private returns (bytes memory) {
-        require(isContract(target), "Address: call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{value : weiValue}(data);
-        if (success) {
-            return returndata;
-        } else {
-            // Look for revert reason and bubble it up if present
-            if (returndata.length > 0) {
-                // The easiest way to bubble the revert reason is using memory via assembly
-
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    let returndata_size := mload(returndata)
-                    revert(add(32, returndata), returndata_size)
-                }
-            } else {
-                revert(errorMessage);
-            }
-        }
-    }
-
-    function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
-        return functionStaticCall(target, data, "Address: low-level static call failed");
-    }
-
-    function functionStaticCall(address target, bytes memory data, string memory errorMessage) internal view returns (bytes memory) {
-        require(isContract(target), "Address: static call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.staticcall(data);
-        return _verifyCallResult(success, returndata, errorMessage);
-    }
-
-    function functionDelegateCall(address target, bytes memory data) internal returns (bytes memory) {
-        return functionDelegateCall(target, data, "Address: low-level delegate call failed");
-    }
-
-    function functionDelegateCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
-        require(isContract(target), "Address: delegate call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.delegatecall(data);
-        return _verifyCallResult(success, returndata, errorMessage);
-    }
-
-    function _verifyCallResult(bool success, bytes memory returndata, string memory errorMessage) private pure returns (bytes memory) {
-        if (success) {
-            return returndata;
-        } else {
-            if (returndata.length > 0) {
-
-                assembly {
-                    let returndata_size := mload(returndata)
-                    revert(add(32, returndata), returndata_size)
-                }
-            } else {
-                revert(errorMessage);
-            }
-        }
-    }
-
-    function addressToString(address _address) internal pure returns (string memory) {
-        bytes32 _bytes = bytes32(uint256(_address));
-        bytes memory HEX = "0123456789abcdef";
-        bytes memory _addr = new bytes(42);
-
-        _addr[0] = '0';
-        _addr[1] = 'x';
-
-        for (uint256 i = 0; i < 20; i++) {
-            _addr[2 + i * 2] = HEX[uint8(_bytes[i + 12] >> 4)];
-            _addr[3 + i * 2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
-        }
-
-        return string(_addr);
-
-    }
-}
-
-interface IERC20 {
-    function decimals() external view returns (uint8);
-
-    function totalSupply() external view returns (uint256);
-
-    function balanceOf(address account) external view returns (uint256);
-
-    function transfer(address recipient, uint256 amount) external returns (bool);
-
-    function allowance(address owner, address spender) external view returns (uint256);
-
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-
-    event Transfer(address indexed from, address indexed to, uint256 value);
-
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-}
-
-abstract contract ERC20 is IERC20 {
-
-    using SafeMath for uint256;
-
-    // TODO comment actual hash value.
-    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256("ERC20Token");
-
-    mapping(address => uint256) internal _balances;
-
-    mapping(address => mapping(address => uint256)) internal _allowances;
-
-    uint256 internal _totalSupply;
-
-    string internal _name;
-
-    string internal _symbol;
-
-    uint8 internal _decimals;
-
-    constructor (string memory name_, string memory symbol_, uint8 decimals_) {
-        _name = name_;
-        _symbol = symbol_;
-        _decimals = decimals_;
-    }
-
-    function name() public view returns (string memory) {
-        return _name;
-    }
-
-    function symbol() public view returns (string memory) {
-        return _symbol;
-    }
-
-    function decimals() public view override returns (uint8) {
-        return _decimals;
-    }
-
-    function totalSupply() public view override returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) public view virtual override returns (uint256) {
-        return _balances[account];
-    }
-
-    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
-        _transfer(msg.sender, recipient, amount);
-        return true;
-    }
-
-    function allowance(address owner, address spender) public view virtual override returns (uint256) {
-        return _allowances[owner][spender];
-    }
-
-    function approve(address spender, uint256 amount) public virtual override returns (bool) {
-        _approve(msg.sender, spender, amount);
-        return true;
-    }
-
-    function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
-        _transfer(sender, recipient, amount);
-        _approve(sender, msg.sender, _allowances[sender][msg.sender].sub(amount, "ERC20: transfer amount exceeds allowance"));
-        return true;
-    }
-
-    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
-        _approve(msg.sender, spender, _allowances[msg.sender][spender].add(addedValue));
-        return true;
-    }
-
-    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
-        _approve(msg.sender, spender, _allowances[msg.sender][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
-        return true;
-    }
-
-    function _transfer(address sender, address recipient, uint256 amount) internal virtual {
-        require(sender != address(0), "ERC20: transfer from the zero address");
-        require(recipient != address(0), "ERC20: transfer to the zero address");
-
-        _beforeTokenTransfer(sender, recipient, amount);
-
-        _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
-        _balances[recipient] = _balances[recipient].add(amount);
-        emit Transfer(sender, recipient, amount);
-    }
-
-    function _mint(address account_, uint256 ammount_) internal virtual {
-        require(account_ != address(0), "ERC20: mint to the zero address");
-        _beforeTokenTransfer(address(this), account_, ammount_);
-        _totalSupply = _totalSupply.add(ammount_);
-        _balances[account_] = _balances[account_].add(ammount_);
-        emit Transfer(address(this), account_, ammount_);
-    }
-
-    function _burn(address account, uint256 amount) internal virtual {
-        require(account != address(0), "ERC20: burn from the zero address");
-
-        _beforeTokenTransfer(account, address(0), amount);
-
-        _balances[account] = _balances[account].sub(amount, "ERC20: burn amount exceeds balance");
-        _totalSupply = _totalSupply.sub(amount);
-        emit Transfer(account, address(0), amount);
-    }
-
-    function _approve(address owner, address spender, uint256 amount) internal virtual {
-        require(owner != address(0), "ERC20: approve from the zero address");
-        require(spender != address(0), "ERC20: approve to the zero address");
-
-        _allowances[owner][spender] = amount;
-        emit Approval(owner, spender, amount);
-    }
-
-    function _beforeTokenTransfer(address from_, address to_, uint256 amount_) internal virtual {}
-}
-
-interface IERC2612Permit {
-
-    function permit(
-        address owner,
-        address spender,
-        uint256 amount,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external;
-
-    function nonces(address owner) external view returns (uint256);
-}
-
-library Counters {
-    using SafeMath for uint256;
-
-    struct Counter {
-
-        uint256 _value; // default: 0
-    }
-
-    function current(Counter storage counter) internal view returns (uint256) {
-        return counter._value;
-    }
-
-    function increment(Counter storage counter) internal {
-        counter._value += 1;
-    }
-
-    function decrement(Counter storage counter) internal {
-        counter._value = counter._value.sub(1);
-    }
-}
-
-abstract contract ERC20Permit is ERC20, IERC2612Permit {
-    using Counters for Counters.Counter;
-
-    mapping(address => Counters.Counter) private _nonces;
-
-    // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
-    bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
-
-    bytes32 public DOMAIN_SEPARATOR;
-
-    constructor() {
-        uint256 chainID;
-        assembly {
-            chainID := chainid()
-        }
-
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes(name())),
-                keccak256(bytes("1")), // Version
-                chainID,
-                address(this)
-            )
-        );
-    }
-
-    function permit(
-        address owner,
-        address spender,
-        uint256 amount,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public virtual override {
-        require(block.timestamp <= deadline, "Permit: expired deadline");
-
-        bytes32 hashStruct =
-        keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
-
-        bytes32 _hash = keccak256(abi.encodePacked(uint16(0x1901), DOMAIN_SEPARATOR, hashStruct));
-
-        address signer = ecrecover(_hash, v, r, s);
-        require(signer != address(0) && signer == owner, "ZeroSwapPermit: Invalid signature");
-
-        _nonces[owner].increment();
-        _approve(owner, spender, amount);
-    }
-
-    function nonces(address owner) public view override returns (uint256) {
-        return _nonces[owner].current();
-    }
-}
-
-library SafeERC20 {
-    using SafeMath for uint256;
-    using Address for address;
-
-    function safeTransfer(IERC20 token, address to, uint256 value) internal {
-        _callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
-    }
-
-    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
-        _callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
-    }
-
-    function safeApprove(IERC20 token, address spender, uint256 value) internal {
-
-        require((value == 0) || (token.allowance(address(this), spender) == 0),
-            "SafeERC20: approve from non-zero to non-zero allowance"
-        );
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
-    }
-
-    function safeIncreaseAllowance(IERC20 token, address spender, uint256 value) internal {
-        uint256 newAllowance = token.allowance(address(this), spender).add(value);
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
-    }
-
-    function safeDecreaseAllowance(IERC20 token, address spender, uint256 value) internal {
-        uint256 newAllowance = token.allowance(address(this), spender).sub(value, "SafeERC20: decreased allowance below zero");
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
-    }
-
-    function _callOptionalReturn(IERC20 token, bytes memory data) private {
-
-        bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
-        if (returndata.length > 0) {// Return data is optional
-            // solhint-disable-next-line max-line-length
-            require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
-        }
-    }
-}
-
-library FullMath {
-    function fullMul(uint256 x, uint256 y) private pure returns (uint256 l, uint256 h) {
-        uint256 mm = mulmod(x, y, uint256(- 1));
-        l = x * y;
-        h = mm - l;
-        if (mm < l) h -= 1;
-    }
-
-    function fullDiv(
-        uint256 l,
-        uint256 h,
-        uint256 d
-    ) private pure returns (uint256) {
-        uint256 pow2 = d & - d;
-        d /= pow2;
-        l /= pow2;
-        l += h * ((- pow2) / pow2 + 1);
-        uint256 r = 1;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        r *= 2 - d * r;
-        return l * r;
-    }
-
-    function mulDiv(
-        uint256 x,
-        uint256 y,
-        uint256 d
-    ) internal pure returns (uint256) {
-        (uint256 l, uint256 h) = fullMul(x, y);
-        uint256 mm = mulmod(x, y, d);
-        if (mm > l) h -= 1;
-        l -= mm;
-        require(h < d, 'FullMath::mulDiv: overflow');
-        return fullDiv(l, h, d);
-    }
-}
-
-/**
- * @dev Contract module that helps prevent reentrant calls to a function.
- *
- * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
- * available, which can be applied to functions to make sure there are no nested
- * (reentrant) calls to them.
- *
- * Note that because there is a single `nonReentrant` guard, functions marked as
- * `nonReentrant` may not call one another. This can be worked around by making
- * those functions `private`, and then adding `external` `nonReentrant` entry
- * points to them.
- *
- * TIP: If you would like to learn more about reentrancy and alternative ways
- * to protect against it, check out our blog post
- * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
- */
-abstract contract ReentrancyGuard {
-    // Booleans are more expensive than uint256 or any type that takes up a full
-    // word because each write operation emits an extra SLOAD to first read the
-    // slot's contents, replace the bits taken up by the boolean, and then write
-    // back. This is the compiler's defense against contract upgrades and
-    // pointer aliasing, and it cannot be disabled.
-
-    // The values being non-zero value makes deployment a bit more expensive,
-    // but in exchange the refund on every call to nonReentrant will be lower in
-    // amount. Since refunds are capped to a percentage of the total
-    // transaction's gas, it is best to keep them low in cases like this one, to
-    // increase the likelihood of the full refund coming into effect.
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
-
-    uint256 private _status;
-
-    constructor() {
-        _status = _NOT_ENTERED;
-    }
-
-    /**
-     * @dev Prevents a contract from calling itself, directly or indirectly.
-     * Calling a `nonReentrant` function from another `nonReentrant`
-     * function is not supported. It is possible to prevent this from happening
-     * by making the `nonReentrant` function external, and make it call a
-     * `private` function that does the actual work.
-     */
-    modifier nonReentrant() {
-        // On the first call to nonReentrant, _notEntered will be true
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-
-        // Any calls to nonReentrant after this point will fail
-        _status = _ENTERED;
-
-        _;
-
-        // By storing the original value once again, a refund is triggered (see
-        // https://eips.ethereum.org/EIPS/eip-2200)
-        _status = _NOT_ENTERED;
-    }
-}
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/Math.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IsFHM {
     function balanceForGons(uint gons) external view returns (uint);
@@ -642,13 +19,15 @@ interface IRewardsHolder {
     function newTick() external;
 }
 
-// FIXME what about integer division rest? to whom to send and how?
 // FIXME test rebase
 // FIXME voting token
-contract StakingStaking is Ownable, ReentrancyGuard {
+// FIXME borrowing
+contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
     using SafeMath for uint;
+
+    bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
     address public immutable sFHM;
     address public immutable DAO;
@@ -665,6 +44,10 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     uint public totalGonsPendingClaim;
     // staked token mapping in time of gons write
     uint public totalSfhmPendingClaim;
+    // actual number of gons borrowed
+    uint public totalGonsBorrowed;
+    // staked token mapping in time of gons write
+    uint public totalSfhmBorrowed;
 
     bool public disableContracts;
     bool public pauseNewStakes;
@@ -677,8 +60,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         uint gonsStaked; // absolute number of gons user is staking or rewarded
         uint sfhmStaked; // staked tokens mapping in time of gons write
 
+        uint gonsBorrowed; // absolute number of gons user agains user has borrowed something
+        uint sfhmBorrowed; // staked tokens mapping in time of gons write
+
         uint lastStakeBlockNumber; // time of last stake from which is counting noFeeDuration
         uint lastClaimIndex; // index in rewardSamples last claimed
+
+        mapping(address => uint) allowances;
     }
 
     // data structure holding info about all rewards gathered during time
@@ -707,6 +95,10 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     event StakingWithdraw(address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint gonsTransferred, uint sfhmTransferred, uint unstakeBlock);
     event RewardSampled(uint blockNumber, uint blockTimestamp, uint gonsRewarded, uint sfhmRewarded);
     event RewardClaimed(address indexed wallet, uint indexed startClaimIndex, uint indexed lastClaimIndex, uint gonsClaimed, uint sfhmClaimed);
+    event BorrowApproved(address indexed owner, address indexed spender, uint value);
+    event Borrowed(address indexed wallet, address indexed spender, uint gonsBorrowed, uint sfhmBorrowed, uint blockNumber);
+    event BorrowReturned(address indexed wallet, address indexed spender, uint gonsReturned, uint sfhmReturned, uint blockNumber);
+    event BorrowLiquidated(address indexed wallet, address indexed spender, uint gonsLiquidated, uint sfhmLiquidated, uint blockNumber);
     event EmergencyTokenRecovered(address indexed token, address indexed recipient, uint amount);
     event EmergencyRewardsWithdraw(address indexed recipient, uint gonsRewarded, uint sfhmRewarded);
     event EmergencyEthRecovered(address indexed recipient, uint amount);
@@ -726,7 +118,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     // _useWhitelist - false (we can set it when we will test on production)
     // _pauseNewStakes - false (you can set as some emergency leave precaution)
     // _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyPolicy {
+    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
@@ -794,7 +186,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     // Insert _amount to the pool, add to your share, need to claim everything before new stake
     //
     function stake(uint _amount) external nonReentrant {
-        doClaim(claimPageSize);
+        doClaim(msg.sender, claimPageSize);
 
         // unsure that user claim everything before stake again
         require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot stake if not claimed everything");
@@ -806,14 +198,11 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         (uint gonsStaked,uint sfhmStaked) = gonsAdd(userInfo[msg.sender].gonsStaked, gonsToStake);
 
         // persist it
-        userInfo[msg.sender] = UserInfo({
-        gonsStaked : gonsStaked,
-        sfhmStaked : sfhmStaked,
+        UserInfo storage info = userInfo[msg.sender];
+        info.gonsStaked = gonsStaked;
+        info.sfhmStaked = sfhmStaked;
+        info.lastStakeBlockNumber = block.number;
 
-        lastStakeBlockNumber : block.number,
-        // don't touch the rest
-        lastClaimIndex : userInfo[msg.sender].lastClaimIndex
-        });
         (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
 
         // and record in history
@@ -832,14 +221,20 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
     //
     // Return user balance
-    // 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable
+    // 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable, 5 - gonsBorrowed, 6 - sfhmBorrowed
     //
-    function userBalance(address _user) public view returns (uint, uint, uint, uint) {
+    function userBalance(address _user) public view returns (uint, uint, uint, uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
-        (uint gonsWithdrawable, uint sfhmWithdrawable) = getWithdrawableBalance(info.lastStakeBlockNumber, info.gonsStaked);
+        // count amount to withdraw from staked gons except borrowed gons
+        (uint gonsToWithdraw, uint sfhmToWithdraw) = (0, 0);
+        if (info.gonsStaked >= info.gonsBorrowed) {
+            (gonsToWithdraw, sfhmToWithdraw) = gonsSub(info.gonsStaked, info.gonsBorrowed);
+        }
 
-        return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable);
+        (uint gonsWithdrawable, uint sfhmWithdrawable) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToWithdraw);
+
+        return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable, info.gonsBorrowed, info.sfhmBorrowed);
     }
 
     function getWithdrawableBalance(uint lastStakeBlockNumber, uint _gons) private view returns (uint, uint) {
@@ -893,13 +288,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     }
 
     function claim(uint _claimPageSize) external nonReentrant {
-        doClaim(_claimPageSize);
+        doClaim(msg.sender, _claimPageSize);
     }
 
     //
     // Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
     //
-    function doClaim(uint _claimPageSize) private {
+    function doClaim(address _user, uint _claimPageSize) private {
         checkBefore(false);
 
         // clock new tick
@@ -946,20 +341,15 @@ contract StakingStaking is Ownable, ReentrancyGuard {
 
         // persist it
         (gonsStaked, sfhmStaked) = gonsAdd(gonsStaked, allGonsClaimed);
-        userInfo[msg.sender] = UserInfo({
-        gonsStaked : gonsStaked,
-        sfhmStaked : sfhmStaked,
-
-        lastClaimIndex : lastClaimIndex,
-        // don't touch the rest
-        lastStakeBlockNumber : info.lastStakeBlockNumber
-        });
+        info.gonsStaked = gonsStaked;
+        info.sfhmStaked = sfhmStaked;
+        info.lastClaimIndex = lastClaimIndex;
 
         (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, allGonsClaimed);
         // remove it from total balance if is not last one
         if (totalGonsPendingClaim >= allGonsClaimed) {
             (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsSub(totalGonsPendingClaim, allGonsClaimed);
-        } else  {
+        } else {
             // sfhm balance of last one is the same, so gons should be rounded
             require(balanceForGons(totalGonsPendingClaim) == allSfhmClaimed, "Last user claiming needs balance");
             (totalGonsPendingClaim, totalSfhmPendingClaim) = (0, 0);
@@ -974,14 +364,23 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     //
     function unstake(uint _amount) external nonReentrant {
         // auto claim before unstake
-        doClaim(claimPageSize);
+        doClaim(msg.sender, claimPageSize);
 
         UserInfo storage info = userInfo[msg.sender];
 
         // unsure that user claim everything before unstaking
         require(info.lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
 
-        uint gonsToUnstake = gonsForBalance(_amount);
+        // count amount to withdraw from staked gons except borrowed gons
+        (uint gonsToUnstake, uint sfhmToUnstake) = (0, 0);
+        if (info.gonsStaked >= info.gonsBorrowed) {
+            (gonsToUnstake, sfhmToUnstake) = gonsSub(info.gonsStaked, info.gonsBorrowed);
+        } else {
+            // sfhm balance of last one is the same, so gons should be rounded
+            require(balanceForGons(info.gonsStaked) == balanceForGons(info.gonsBorrowed), "Staked less than borrowed against");
+            (gonsToUnstake, sfhmToUnstake) = (0, 0);
+        }
+
         (uint gonsTransferring, uint sfhmTransferring) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToUnstake);
         // cannot unstake what is not mine
         require(gonsToUnstake <= info.gonsStaked, "Not enough tokens to unstake");
@@ -1015,6 +414,150 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     }
 
     //
+    // ----------- borrowing functions -----------
+    //
+
+    //
+    // approve _spender to do anything with _amount of tokens for current caller user
+    //
+    function approve(address _spender, uint _amount) external {
+        address user = msg.sender;
+        UserInfo storage info = userInfo[user];
+        info.allowances[_spender] = _amount;
+
+        emit BorrowApproved(user, _spender, _amount);
+    }
+
+    //
+    // check approve result, how much is approved for _owner and arbitrary _spender
+    //
+    function allowance(address _owner, address _spender) public view returns (uint) {
+        UserInfo storage info = userInfo[_owner];
+        return info.allowances[_spender];
+    }
+
+    //
+    // allow to borrow asset against sFHM collateral which are staking in this pool.
+    // You are able to borrow up to usd worth of staked + claimed tokens
+    //
+    function borrow(address _user, uint _amount) external {
+        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+
+        // temporary disable borrows, but allow to call returnBorrow
+        require(!pauseNewStakes, "New borrowing is paused!");
+
+        uint approved = allowance(_user, msg.sender);
+        require(gonsForBalance(approved) >= gonsForBalance(_amount), "Not enough allowance");
+
+        // auto claim before borrow
+        // but don't enforce to be claimed all
+        doClaim(_user, claimPageSize);
+
+        UserInfo storage info = userInfo[_user];
+
+        uint gonsToBorrow = gonsForBalance(_amount);
+        (info.gonsBorrowed, info.sfhmBorrowed) = gonsAdd(info.gonsBorrowed, gonsToBorrow);
+
+        // cannot borrow what is not mine
+        require(info.gonsBorrowed <= info.gonsStaked, "Not enough tokens to borrow");
+        // and more than we have staking or claimed
+        (uint gonsAvailableToBorrow, uint sfhmAvailableToBorrow) = gonsSub(totalGonsStaking, totalGonsBorrowed);
+        require(gonsToBorrow <= gonsAvailableToBorrow, "Borrowing more than in pool");
+
+        // add it from total balance
+        (totalGonsBorrowed, totalSfhmBorrowed) = gonsAdd(totalGonsBorrowed, gonsToBorrow);
+
+        require(totalGonsBorrowed <= totalGonsStaking, "Borrowing more than in pool");
+
+        // erc20 transfer of staked tokens
+        IERC20(sFHM).safeTransfer(msg.sender, _amount);
+
+        // and record in history
+        emit Borrowed(_user, msg.sender, gonsToBorrow, balanceForGons(gonsToBorrow), block.number);
+    }
+
+    //
+    // return borrowed staked tokens
+    //
+    function returnBorrow(address _user, uint _amount) external {
+        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+
+        // erc20 transfer of staked tokens
+        IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
+
+        // auto claim returnBorrow borrow
+        // but don't enforce to be claimed all
+        doClaim(_user, claimPageSize);
+
+        UserInfo storage info = userInfo[_user];
+
+        uint gonsToReturn = gonsForBalance(_amount);
+        // return less then borrow this turn
+        if (info.gonsBorrowed >= gonsToReturn) {
+            (info.gonsBorrowed, info.sfhmBorrowed) = gonsSub(info.gonsBorrowed, gonsToReturn);
+        }
+        // repay all plus give profit back
+        else {
+            (uint gonsToStake, uint sfhmToStake) = gonsSub(gonsToReturn, info.gonsBorrowed);
+            (info.gonsStaked, info.sfhmStaked) = gonsAdd(info.gonsStaked, gonsToStake);
+            (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
+        }
+
+        // subtract it from total balance
+        if (totalGonsBorrowed > gonsToReturn) {
+            (totalGonsBorrowed, totalSfhmBorrowed) = gonsSub(totalGonsBorrowed, gonsToReturn);
+        } else {
+            (totalGonsBorrowed, totalSfhmBorrowed) = (0, 0);
+        }
+
+        // and record in history
+        emit BorrowReturned(_user, msg.sender, gonsToReturn, balanceForGons(gonsToReturn), block.number);
+    }
+
+    //
+    // liquidation of borrowed staked tokens
+    //
+    function liquidateBorrow(address _user, uint _amount) external {
+        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+
+        // auto claim returnBorrow borrow
+        // but don't enforce to be claimed all
+        doClaim(_user, claimPageSize);
+
+        UserInfo storage info = userInfo[_user];
+
+        uint gonsToLiquidate = gonsForBalance(_amount);
+        // liquidate less or equal then borrow this turn
+        if (info.gonsBorrowed >= gonsToLiquidate) {
+            (info.gonsBorrowed, info.sfhmBorrowed) = gonsSub(info.gonsBorrowed, gonsToLiquidate);
+        }
+        // liquidate all plus take a loss
+        else {
+            (uint gonsToTakeLoss, uint sfhmToTakeLoss) = gonsSub(gonsToLiquidate, info.gonsBorrowed);
+            if (info.gonsStaked > gonsToTakeLoss) {
+                (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToTakeLoss);
+            } else {
+                (info.gonsStaked, info.sfhmStaked) = (0, 0);
+            }
+            if (totalGonsStaking > gonsToTakeLoss) {
+                (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToTakeLoss);
+            } else {
+                (totalGonsStaking, totalSfhmStaking) = (0, 0);
+            }
+        }
+
+        // subtract it from total balance
+        if (totalGonsBorrowed > gonsToLiquidate) {
+            (totalGonsBorrowed, totalSfhmBorrowed) = gonsSub(totalGonsBorrowed, gonsToLiquidate);
+        } else {
+            (totalGonsBorrowed, totalSfhmBorrowed) = (0, 0);
+        }
+
+        // and record in history
+        emit BorrowLiquidated(_user, msg.sender, gonsToLiquidate, balanceForGons(gonsToLiquidate), block.number);
+    }
+
+    //
     // ----------- emergency functions -----------
     //
 
@@ -1024,11 +567,12 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     function emergencyWithdraw() external {
         require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
 
-        uint gonsToWithdraw = userInfo[msg.sender].gonsStaked;
-        uint amount = balanceForGons(gonsToWithdraw);
+        UserInfo storage info = userInfo[msg.sender];
+
+        (uint gonsToWithdraw, uint sfhmToWithdraw) = gonsSub(info.gonsStaked, info.gonsBorrowed);
 
         // clear the data
-        delete userInfo[msg.sender];
+        (info.gonsStaked, info.sfhmStaked) = (0, 0);
 
         // repair total values
         if (totalGonsStaking >= gonsToWithdraw) {
@@ -1040,13 +584,13 @@ contract StakingStaking is Ownable, ReentrancyGuard {
         }
 
         // erc20 transfer
-        IERC20(sFHM).safeTransfer(msg.sender, amount);
+        IERC20(sFHM).safeTransfer(msg.sender, sfhmToWithdraw);
 
         // and record in history
-        emit StakingWithdraw(msg.sender, gonsToWithdraw, amount, gonsToWithdraw, amount, block.number);
+        emit StakingWithdraw(msg.sender, gonsToWithdraw, sfhmToWithdraw, gonsToWithdraw, sfhmToWithdraw, block.number);
     }
 
-    function emergencyWithdrawRewards() external onlyPolicy {
+    function emergencyWithdrawRewards() external onlyOwner {
         require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
 
         // repair total values
@@ -1063,7 +607,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     //
     // Been able to recover any token which is sent to contract by mistake
     //
-    function emergencyRecoverToken(address token) external virtual onlyPolicy {
+    function emergencyRecoverToken(address token) external virtual onlyOwner {
         require(token != sFHM);
 
         uint amount = IERC20(token).balanceOf(address(this));
@@ -1075,7 +619,7 @@ contract StakingStaking is Ownable, ReentrancyGuard {
     //
     // Been able to recover any ftm/movr token sent to contract by mistake
     //
-    function emergencyRecoverEth() external virtual onlyPolicy {
+    function emergencyRecoverEth() external virtual onlyOwner {
         uint amount = address(this).balance;
 
         payable(DAO).transfer(amount);
