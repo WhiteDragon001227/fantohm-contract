@@ -737,10 +737,7 @@ library SafeERC20 {
     }
 }
 
-interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
-
-    function unstake( uint _amount, address _recipient ) external returns ( bool );
+interface IsFHM {
 
     function index() external view returns ( uint );
 }
@@ -750,49 +747,11 @@ contract fwsFHM is ERC20 {
     using Address for address;
     using SafeMath for uint;
 
-    address public immutable staking;
-    address public immutable FHM;
     address public immutable sFHM;
 
-    constructor( address _staking, address _FHM, address _sFHM) ERC20( 'Fantom Wrapped sFHM', 'fwsFHM' ) {
-        require( _staking != address(0) );
-        staking = _staking;
-        require( _FHM != address(0) );
-        FHM = _FHM;
+    constructor( address _sFHM ) ERC20( 'Fantom Wrapped sFHM', 'fwsFHM' ) {
         require( _sFHM != address(0) );
         sFHM = _sFHM;
-    }
-
-    /**
-    @notice stakes FHM and wraps sFHM
-    @param _amount uint
-    @return uint
-    */
-    function wrapFromFHM( uint _amount ) external returns ( uint ) {
-        IERC20( FHM ).transferFrom( msg.sender, address(this), _amount );
-
-        IERC20( FHM ).approve( staking, _amount ); // stake FHM for sFHM
-        IStaking( staking ).stake( _amount, address(this) );
-
-        uint value = wsFHMValue( _amount );
-        _mint( msg.sender, value );
-        return value;
-    }
-
-    /**
-        @notice unwrap sFHM and unstake FHM
-        @param _amount uint
-        @return uint
-     */
-    function unwrapToFHM( uint _amount ) external returns ( uint ) {
-        _burn( msg.sender, _amount );
-
-        uint value = sFHMValue( _amount );
-        IERC20( sFHM ).approve( staking, value ); // unstake sFHM for FHM
-        IStaking( staking ).unstake( value, address(this) );
-
-        IERC20( FHM ).transfer( msg.sender, value );
-        return value;
     }
 
     /**
@@ -800,7 +759,7 @@ contract fwsFHM is ERC20 {
         @param _amount uint
         @return uint
      */
-    function wrapFromsFHM( uint _amount ) external returns ( uint ) {
+    function wrap( uint _amount ) external returns ( uint ) {
         IERC20( sFHM ).transferFrom( msg.sender, address(this), _amount );
 
         uint value = wsFHMValue( _amount );
@@ -813,7 +772,7 @@ contract fwsFHM is ERC20 {
         @param _amount uint
         @return uint
      */
-    function unwrapTosFHM( uint _amount ) external returns ( uint ) {
+    function unwrap( uint _amount ) external returns ( uint ) {
         _burn( msg.sender, _amount );
 
         uint value = sFHMValue( _amount );
@@ -827,7 +786,7 @@ contract fwsFHM is ERC20 {
         @return uint
      */
     function sFHMValue( uint _amount ) public view returns ( uint ) {
-        return _amount.mul( IStaking( staking ).index().div(17) ).div( 10 ** decimals() );
+        return _amount.mul( IsFHM( sFHM ).index().div(17) ).div( 10 ** decimals() );
     }
 
     /**
@@ -836,7 +795,7 @@ contract fwsFHM is ERC20 {
         @return uint
      */
     function wsFHMValue( uint _amount ) public view returns ( uint ) {
-        return _amount.mul( 10 ** decimals() ).div( IStaking( staking ).index().div(17) );
+        return _amount.mul( 10 ** decimals() ).div( IsFHM( sFHM ).index().div(17) );
     }
 
 }
