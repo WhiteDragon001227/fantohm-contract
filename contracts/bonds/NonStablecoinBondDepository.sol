@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
-// Contract logic @ line 607
-
 interface IOwnable {
     function policy() external view returns (address);
 
@@ -586,25 +584,6 @@ library FixedPoint {
     }
 }
 
-interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
-    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
-    function mintRewards( address _to, uint _amount ) external;
-}
-
-interface IBondCalculator {
-    function valuation( address _LP, uint _amount ) external view returns ( uint );
-    function markdown( address _LP ) external view returns ( uint );
-}
-
-interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
-}
-
-interface IStakingHelper {
-    function stake( uint _amount, address _recipient ) external;
-}
-
 interface AggregatorV3Interface {
 
     function decimals() external view returns (uint8);
@@ -636,7 +615,21 @@ interface AggregatorV3Interface {
     );
 }
 
-contract NonStablecoinLpBondDepository is Ownable {
+interface ITreasury {
+    function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
+    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
+    function mintRewards( address _recipient, uint _amount ) external;
+}
+
+interface IStaking {
+    function stake( uint _amount, address _recipient ) external returns ( bool );
+}
+
+interface IStakingHelper {
+    function stake( uint _amount, address _recipient ) external;
+}
+
+contract NonStablecoinBondDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -660,8 +653,7 @@ contract NonStablecoinLpBondDepository is Ownable {
     address public immutable OHM; // token given as payment for bond
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints OHM when receives principle
-
-    address public immutable bondCalculator; // calculates value of LP tokens
+    address public immutable DAO; // receives profit share from bond
 
     AggregatorV3Interface internal priceFeed;
 
@@ -686,7 +678,7 @@ contract NonStablecoinLpBondDepository is Ownable {
     struct Terms {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
-        uint minimumPrice; // vs principle value
+        uint minimumPrice; // vs principle value. 4 decimals (1500 = 0.15)
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
@@ -717,7 +709,7 @@ contract NonStablecoinLpBondDepository is Ownable {
         address _OHM,
         address _principle,
         address _treasury,
-        address _bondCalculator,
+        address _DAO,
         address _feed
     ) {
         require( _OHM != address(0) );
@@ -726,8 +718,9 @@ contract NonStablecoinLpBondDepository is Ownable {
         principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
-        // bondCalculator should be address(0) if not LP bond
-        bondCalculator = _bondCalculator;
+        require( _DAO != address(0) );
+        DAO = _DAO;
+        require( _feed != address(0) );
         priceFeed = AggregatorV3Interface( _feed );
     }
 
@@ -748,7 +741,6 @@ contract NonStablecoinLpBondDepository is Ownable {
         uint _maxDebt,
         uint _initialDebt
     ) external onlyPolicy() {
-        require( terms.controlVariable == 0, "Bonds must be initialized from 0" );
         terms = Terms ({
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
@@ -765,7 +757,7 @@ contract NonStablecoinLpBondDepository is Ownable {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, DEBT }
+    enum PARAMETER { VESTING, PAYOUT, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -773,13 +765,15 @@ contract NonStablecoinLpBondDepository is Ownable {
      */
     function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
         if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 36 hours" );
+            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
             terms.vestingTerm = _input;
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
             terms.maxPayout = _input;
-        } else if ( _parameter == PARAMETER.DEBT ) { // 3
+        } else if ( _parameter == PARAMETER.DEBT ) { // 2
             terms.maxDebt = _input;
+        } else if ( _parameter == PARAMETER.MIN_PRICE ) { // 3
+            terms.minimumPrice = _input;
         }
     }
 
@@ -796,8 +790,6 @@ contract NonStablecoinLpBondDepository is Ownable {
         uint _target,
         uint _buffer
     ) external onlyPolicy() {
-        require( _increment <= terms.controlVariable.mul( 25 ).div( 1000 ), "Increment too large" );
-
         adjustment = Adjust({
         add: _addition,
         rate: _increment,
@@ -993,6 +985,7 @@ contract NonStablecoinLpBondDepository is Ownable {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e14 );
     }
 
+
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
@@ -1030,10 +1023,7 @@ contract NonStablecoinLpBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice()
-        .mul( IBondCalculator( bondCalculator ).markdown( principle ) )
-        .mul( uint( assetPrice() ) )
-        .div( 1e12 );
+        price_ = bondPrice().mul( uint( assetPrice() ) ).mul( 1e6 );
     }
 
 
@@ -1042,18 +1032,19 @@ contract NonStablecoinLpBondDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
+        uint supply = IERC20( OHM ).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
-            IERC20( OHM ).totalSupply()
+            supply
         ).decode112with18().div( 1e18 );
     }
 
     /**
-     *  @notice debt ratio in same terms for reserve or liquidity bonds
+     *  @notice debt ratio in same terms as reserve bonds
      *  @return uint
      */
     function standardizedDebtRatio() external view returns ( uint ) {
-        return debtRatio().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 1e9 );
+        return debtRatio().mul( uint( assetPrice() ) ).div( 1e8 ); // ETH feed is 8 decimals
     }
 
     /**
@@ -1108,5 +1099,21 @@ contract NonStablecoinLpBondDepository is Ownable {
         } else {
             pendingPayout_ = payout.mul( percentVested ).div( 10000 );
         }
+    }
+
+
+
+
+    /* ======= AUXILLIARY ======= */
+
+    /**
+     *  @notice allow anyone to send lost tokens (excluding principle or OHM) to the DAO
+     *  @return bool
+     */
+    function recoverLostToken( address _token ) external returns ( bool ) {
+        require( _token != OHM );
+        require( _token != principle );
+        IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
+        return true;
     }
 }
