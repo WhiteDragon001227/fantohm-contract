@@ -855,7 +855,6 @@ contract NonStablecoinBondStakingDepository is Ownable {
 
         IERC20( FHM ).approve( staking, payout );
         IStaking( staking ).stake( payout, address(this) );
-        IStaking( staking ).claim( address(this) );
         uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
 
         // depositor info is stored
@@ -886,6 +885,9 @@ contract NonStablecoinBondStakingDepository is Ownable {
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
         require ( percentVested >= 10000 , "Wait for end of bond") ;
+
+        IStaking( staking ).claim( address(this) );
+
         delete _bondInfo[ _recipient ]; // delete user info
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
