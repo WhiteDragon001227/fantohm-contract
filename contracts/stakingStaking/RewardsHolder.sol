@@ -49,11 +49,16 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
     }
 
     function stake() private {
+        // claim previous round from warmup
+        IStaking(staking).claim(address(this));
+
         uint fhmRewards = IERC20(FHM).balanceOf(address(this));
         if (fhmRewards == 0) return;
 
+        // stake new round for warmup
         IERC20(FHM).approve(staking, fhmRewards);
         IStaking(staking).stake(fhmRewards, address(this));
+        // try to claim if using warmup period 0
         IStaking(staking).claim(address(this));
     }
 
