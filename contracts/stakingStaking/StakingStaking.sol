@@ -1,3 +1,7 @@
+/// FIXME test rebase
+/// FIXME voting token
+/// FIXME borrowing
+
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
@@ -19,14 +23,15 @@ interface IRewardsHolder {
     function newTick() external;
 }
 
-// FIXME test rebase
-// FIXME voting token
-// FIXME borrowing
+/// @title Double staking vault for FantOHM
+/// @author pwntr0n
+/// @notice With this staking vault you can receive rebases from 3,3 staking and rewards for 6,6 double staking
 contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
     using SafeMath for uint;
 
+    /// @dev ACL role for borrower contract to whitelist call our methods
     bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
     address public immutable sFHM;
@@ -55,7 +60,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     bool public enableEmergencyWithdraw;
     bool private initCalled;
 
-    // data structure holding info about all stakers
+    /// @notice data structure holding info about all stakers
     struct UserInfo {
         uint gonsStaked; // absolute number of gons user is staking or rewarded
         uint sfhmStaked; // staked tokens mapping in time of gons write
@@ -69,7 +74,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         mapping(address => uint) allowances;
     }
 
-    // data structure holding info about all rewards gathered during time
+    /// @notice data structure holding info about all rewards gathered during time
     struct SampleInfo {
         uint blockNumber; // time of newSample tick
         uint timestamp; // time of newSample tick as unix timestamp
@@ -87,13 +92,41 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     SampleInfo[] public rewardSamples;
 
-    //
-    // ----------- events -----------
-    //
+    /* ///////////////////////////////////////////////////////////////
+                                EVENTS
+    ////////////////////////////////////////////////////////////// */
 
-    event StakingDeposited(address indexed wallet, uint gonsStaked, uint sfhmStaked, uint lastStakeBlockNumber);
-    event StakingWithdraw(address indexed wallet, uint gonsUnstaked, uint sfhmUnstaked, uint gonsTransferred, uint sfhmTransferred, uint unstakeBlock);
-    event RewardSampled(uint blockNumber, uint blockTimestamp, uint gonsRewarded, uint sfhmRewarded);
+    /// @notice EIP-4626 version of deposit event
+    /// @param _from user who triggered the deposit
+    /// @param _to user who is able to withdraw the deposited tokens
+    /// @param _value deposited sFHM value
+    event Deposit(address indexed _from, address indexed _to, uint _value);
+
+    /// @notice deposit event
+    /// @param _from user who triggered the deposit
+    /// @param _to user who is able to withdraw the deposited tokens
+    /// @param _gonsStaked total worth of gons sFHM which are currently staked
+    /// @param _sfhmStaked sFHM value of _gonsStaked
+    /// @param _lastStakeBlockNumber block number of deposit
+    event StakingDeposited(address indexed _from,  address indexed _to, uint _gonsStaked, uint _sfhmStaked, uint _lastStakeBlockNumber);
+
+    /// @notice EIP-4626 version of withdraw event
+    /// @param _owner user who triggered the withdrawal
+    /// @param _to user who received the withdrawn tokens
+    /// @param _value amount in sFHM token withdrawn
+    event Withdraw(address indexed _owner, address indexed _to, uint _value);
+
+    /// @notice withdraw event
+    /// @param _owner user who triggered the withdrawal
+    /// @param _to user who received the withdrawn tokens
+    /// @param _gonsUnstaked amount in gons for sFHM token to be withdrawn
+    /// @param _sfhmUnstaked amount in sFHM token to be withdrawn
+    /// @param _gonsTransferred amount in gons for sFHM token actually withdrawn - potential fee was applied
+    /// @param _sfhmTransferred amount in sFHM token actually withdrawn - potential fee was applied
+    /// @param _unstakeBlock block number of event generated
+    event StakingWithdraw(address indexed _owner, address indexed _to, uint _gonsUnstaked, uint _sfhmUnstaked, uint _gonsTransferred, uint _sfhmTransferred, uint _unstakeBlock);
+
+    event RewardSampled(uint _blockNumber, uint _blockTimestamp, uint _gonsRewarded, uint _sfhmRewarded);
     event RewardClaimed(address indexed wallet, uint indexed startClaimIndex, uint indexed lastClaimIndex, uint gonsClaimed, uint sfhmClaimed);
     event BorrowApproved(address indexed owner, address indexed spender, uint value);
     event Borrowed(address indexed wallet, address indexed spender, uint gonsBorrowed, uint sfhmBorrowed, uint blockNumber);
@@ -109,15 +142,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         initCalled = false;
     }
 
-    //
-    // suggested values:
-    // _noFeeBlocks - 30 days in blocks
-    // _unstakeFee - 3000 aka 30%
-    // _claimPageSize - 100/1000
-    // _disableContracts - true
-    // _useWhitelist - false (we can set it when we will test on production)
-    // _pauseNewStakes - false (you can set as some emergency leave precaution)
-    // _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
+    /// @notice suggested values:
+    /// @param _noFeeBlocks - 30 days in blocks
+    /// @param _unstakeFee - 3000 aka 30%
+    /// @param _claimPageSize - 100/1000
+    /// @param _disableContracts - true
+    /// @param _useWhitelist - false (we can set it when we will test on production)
+    /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
+    /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
     function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
@@ -136,31 +168,27 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     function modifyWhitelist(address user, bool add) external {
         if (add) {
-            require(!whitelist[user], "Already in whitelist");
+            require(!whitelist[user], "ALREADY_IN_WHITELIST");
             whitelist[user] = true;
         } else {
-            require(whitelist[user], "Not in whitelist");
+            require(whitelist[user], "NOT_IN_WHITELIST");
             delete whitelist[user];
         }
     }
 
-    //
-    // fail fast stake/unstake for well known conditions
-    //
+    /// @notice fail fast stake/unstake for well known conditions
     function checkBefore(bool stake) private {
         // whether to disable contracts to call staking pool
-        if (disableContracts) require(msg.sender == tx.origin, "Contracts are not allowed here");
+        if (disableContracts) require(msg.sender == tx.origin, "CONTRACTS_NOT_ALLOWED");
 
         // temporary disable new stakes, but allow to call claim and unstake
-        require(!(pauseNewStakes && stake), "New staking is paused!");
+        require(!(pauseNewStakes && stake), "PAUSED");
 
         // allow only whitelisted contracts
-        if (useWhitelist) require(whitelist[msg.sender], "User isn't in whitelist!");
+        if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
     }
 
-    //
-    // --- operations of 2 gons by converting into balance, doing operation and converting again to gons with its balance in unionm ---
-    //
+    /// @notice operations of 2 gons by converting into balance, doing operation and converting again to gons with its balance in unionm
 
     function gonsAdd(uint gonsA, uint gonsB) private view returns (uint, uint) {
         uint balance = balanceForGons(gonsA).add(balanceForGons(gonsB));
@@ -182,23 +210,21 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         return (gonsForBalance(balance), balance);
     }
 
-    //
-    // Insert _amount to the pool, add to your share, need to claim everything before new stake
-    //
-    function stake(uint _amount) external nonReentrant {
-        doClaim(msg.sender, claimPageSize);
+    /// @notice Insert _amount to the pool, add to your share, need to claim everything before new stake
+    function deposit(address _to, uint _amount) public nonReentrant returns (uint _shares) {
+        doClaim(_to, claimPageSize);
 
         // unsure that user claim everything before stake again
-        require(userInfo[msg.sender].lastClaimIndex == rewardSamples.length - 1, "Cannot stake if not claimed everything");
+        require(userInfo[_to].lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
 
         // erc20 transfer of staked tokens
         IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
         uint gonsToStake = gonsForBalance(_amount);
 
-        (uint gonsStaked,uint sfhmStaked) = gonsAdd(userInfo[msg.sender].gonsStaked, gonsToStake);
+        (uint gonsStaked,uint sfhmStaked) = gonsAdd(userInfo[_to].gonsStaked, gonsToStake);
 
         // persist it
-        UserInfo storage info = userInfo[msg.sender];
+        UserInfo storage info = userInfo[_to];
         info.gonsStaked = gonsStaked;
         info.sfhmStaked = sfhmStaked;
         info.lastStakeBlockNumber = block.number;
@@ -206,24 +232,31 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
 
         // and record in history
-        emit StakingDeposited(msg.sender,
-            userInfo[msg.sender].gonsStaked,
-            userInfo[msg.sender].sfhmStaked,
-            userInfo[msg.sender].lastStakeBlockNumber);
+        emit Deposit(msg.sender, _to, _amount);
+        emit StakingDeposited(msg.sender, _to, info.gonsStaked, info.sfhmStaked, info.lastStakeBlockNumber);
+
+        _shares = 0;
     }
 
-    //
-    // Return current TVL of staking contract
-    //
+    /// @notice Return current TVL of staking contract
     function totalValueLocked() public view returns (uint, uint) {
         return gonsAdd(totalGonsStaking, totalGonsPendingClaim);
     }
 
-    //
-    // Return user balance
-    // 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable, 5 - gonsBorrowed, 6 - sfhmBorrowed
-    //
-    function userBalance(address _user) public view returns (uint, uint, uint, uint, uint, uint) {
+    /// @notice Returns the amount of underlying tokens that idly sit in the Vault.
+    /// @return The amount of underlying tokens that sit idly in the Vault.
+    function totalHoldings() public view returns (uint) {
+        return IERC20(sFHM).balanceOf(address(this));
+    }
+
+    /// @notice EIP-4626 underlying token used for accounting
+    function underlying() public view returns (address) {
+        return sFHM;
+    }
+
+    // @notice Return user balance
+    // @return 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable, 5 - gonsBorrowed, 6 - sfhmBorrowed
+    function userBalance(address _user) external view returns (uint, uint, uint, uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
         // count amount to withdraw from staked gons except borrowed gons
@@ -237,6 +270,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable, info.gonsBorrowed, info.sfhmBorrowed);
     }
 
+    /// @notice Returns a user's Vault balance in underlying tokens.
+    /// @param _owner The user to get the underlying balance of.
+    /// @return The user's Vault balance in underlying tokens.
+    function balanceOfUnderlying(address _owner) public view returns (uint) {
+        UserInfo storage info = userInfo[_owner];
+        return balanceForGons(info.gonsStaked);
+    }
+
     function getWithdrawableBalance(uint lastStakeBlockNumber, uint _gons) private view returns (uint, uint) {
         uint balanceWithdrawable = balanceForGons(_gons);
         if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
@@ -246,10 +287,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         return (gonsForBalance(balanceWithdrawable), balanceWithdrawable);
     }
 
-    //
-    // Rewards holder accumulated enough balance during its period to create new sample
-    // Record our current staking TVL
-    //
+    // @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
     function newSample(uint _balance) public {
         // transfer balance from rewards holder
         if (_balance > 0) IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _balance);
@@ -291,9 +329,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         doClaim(msg.sender, _claimPageSize);
     }
 
-    //
-    // Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
-    //
+    // @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
     function doClaim(address _user, uint _claimPageSize) private {
         checkBefore(false);
 
@@ -351,7 +387,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
             (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsSub(totalGonsPendingClaim, allGonsClaimed);
         } else {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(totalGonsPendingClaim) == allSfhmClaimed, "Last user claiming needs balance");
+            require(balanceForGons(totalGonsPendingClaim) == allSfhmClaimed, "LAST_USER_NEED_BALANCE");
             (totalGonsPendingClaim, totalSfhmPendingClaim) = (0, 0);
         }
 
@@ -359,17 +395,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, allGonsClaimed, allSfhmClaimed);
     }
 
-    //
-    // Unstake _amount from staking pool. Automatically call claim.
-    //
-    function unstake(uint _amount) external nonReentrant {
+    /// @notice Unstake _amount from staking pool. Automatically call claim.
+    /// @param _to user who will receive withdraw amount
+    /// @param _amount amount to withdraw
+    function withdraw(address _to, uint256 _amount) public nonReentrant returns (uint _shares) {
+        address _owner = msg.sender;
         // auto claim before unstake
-        doClaim(msg.sender, claimPageSize);
+        doClaim(_owner, claimPageSize);
 
-        UserInfo storage info = userInfo[msg.sender];
+        UserInfo storage info = userInfo[_owner];
 
         // unsure that user claim everything before unstaking
-        require(info.lastClaimIndex == rewardSamples.length - 1, "Cannot unstake if not claimed everything");
+        require(info.lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
 
         // count amount to withdraw from staked gons except borrowed gons
         (uint gonsToUnstake, uint sfhmToUnstake) = (0, 0);
@@ -377,20 +414,20 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
             (gonsToUnstake, sfhmToUnstake) = gonsSub(info.gonsStaked, info.gonsBorrowed);
         } else {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(info.gonsStaked) == balanceForGons(info.gonsBorrowed), "Staked less than borrowed against");
+            require(balanceForGons(info.gonsStaked) == balanceForGons(info.gonsBorrowed), "STAKED_LESS_THAN_BORROWED");
             (gonsToUnstake, sfhmToUnstake) = (0, 0);
         }
 
         (uint gonsTransferring, uint sfhmTransferring) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToUnstake);
         // cannot unstake what is not mine
-        require(gonsToUnstake <= info.gonsStaked, "Not enough tokens to unstake");
+        require(gonsToUnstake <= info.gonsStaked, "NOT_ENOUGH_USER_TOKENS");
         // and more than we have
-        require(gonsTransferring <= totalGonsStaking, "Unstaking more than in pool");
+        require(gonsTransferring <= totalGonsStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
 
         (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToUnstake);
         if (info.gonsStaked == 0) {
             // if unstaking everything just delete whole record
-            delete userInfo[msg.sender];
+            delete userInfo[_owner];
         }
 
         // remove it from total balance
@@ -398,28 +435,29 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
             (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToUnstake);
         } else {
             // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToUnstake), "Last user unstake needs balance");
+            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToUnstake), "LAST_USER_NEED_BALANCE");
             (totalGonsStaking, totalSfhmStaking) = (0, 0);
         }
 
         // actual erc20 transfer
-        IERC20(sFHM).safeTransfer(msg.sender, sfhmTransferring);
+        IERC20(sFHM).safeTransfer(_to, sfhmTransferring);
 
         // and send fee to DAO
         (uint gonsFee,uint sfhmFee) = gonsSub(gonsToUnstake, gonsTransferring);
         IERC20(sFHM).safeTransfer(DAO, sfhmFee);
 
         // and record in history
-        emit StakingWithdraw(msg.sender, gonsToUnstake, balanceForGons(gonsToUnstake), gonsTransferring, sfhmTransferring, block.number);
+        emit Withdraw(_owner, _to, balanceForGons(gonsToUnstake));
+        emit StakingWithdraw(_owner, _to, gonsToUnstake, balanceForGons(gonsToUnstake), gonsTransferring, sfhmTransferring, block.number);
+
+        _shares = 0;
     }
 
-    //
-    // ----------- borrowing functions -----------
-    //
+    /* ///////////////////////////////////////////////////////////////
+                          BORROWING FUNCTIONS
+    ////////////////////////////////////////////////////////////// */
 
-    //
-    // approve _spender to do anything with _amount of tokens for current caller user
-    //
+    /// @notice approve _spender to do anything with _amount of tokens for current caller user
     function approve(address _spender, uint _amount) external {
         address user = msg.sender;
         UserInfo storage info = userInfo[user];
@@ -428,26 +466,23 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit BorrowApproved(user, _spender, _amount);
     }
 
-    //
-    // check approve result, how much is approved for _owner and arbitrary _spender
-    //
+    /// @notice check approve result, how much is approved for _owner and arbitrary _spender
     function allowance(address _owner, address _spender) public view returns (uint) {
         UserInfo storage info = userInfo[_owner];
         return info.allowances[_spender];
     }
 
-    //
-    // allow to borrow asset against sFHM collateral which are staking in this pool.
-    // You are able to borrow up to usd worth of staked + claimed tokens
-    //
-    function borrow(address _user, uint _amount) external {
-        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+    /// @notice allow to borrow asset against sFHM collateral which are staking in this pool.
+    /// You are able to borrow up to usd worth of staked + claimed tokens
+    /// @param _user from which account
+    function borrow(address _user, uint _amount) external nonReentrant {
+        require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // temporary disable borrows, but allow to call returnBorrow
-        require(!pauseNewStakes, "New borrowing is paused!");
+        require(!pauseNewStakes, "PAUSED");
 
         uint approved = allowance(_user, msg.sender);
-        require(gonsForBalance(approved) >= gonsForBalance(_amount), "Not enough allowance");
+        require(gonsForBalance(approved) >= gonsForBalance(_amount), "NOT_ENOUGH_BALANCE");
 
         // auto claim before borrow
         // but don't enforce to be claimed all
@@ -459,7 +494,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         (info.gonsBorrowed, info.sfhmBorrowed) = gonsAdd(info.gonsBorrowed, gonsToBorrow);
 
         // cannot borrow what is not mine
-        require(info.gonsBorrowed <= info.gonsStaked, "Not enough tokens to borrow");
+        require(info.gonsBorrowed <= info.gonsStaked, "NOT_ENOUGH_USER_TOKENS");
         // and more than we have staking or claimed
         (uint gonsAvailableToBorrow, uint sfhmAvailableToBorrow) = gonsSub(totalGonsStaking, totalGonsBorrowed);
         require(gonsToBorrow <= gonsAvailableToBorrow, "Borrowing more than in pool");
@@ -476,11 +511,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit Borrowed(_user, msg.sender, gonsToBorrow, balanceForGons(gonsToBorrow), block.number);
     }
 
-    //
-    // return borrowed staked tokens
-    //
-    function returnBorrow(address _user, uint _amount) external {
-        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+    /// @notice return borrowed staked tokens
+    function returnBorrow(address _user, uint _amount) external nonReentrant {
+        require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // erc20 transfer of staked tokens
         IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
@@ -514,11 +547,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit BorrowReturned(_user, msg.sender, gonsToReturn, balanceForGons(gonsToReturn), block.number);
     }
 
-    //
-    // liquidation of borrowed staked tokens
-    //
-    function liquidateBorrow(address _user, uint _amount) external {
-        require(hasRole(BORROWER_ROLE, msg.sender), "Caller needs to have borrower role");
+    /// @notice liquidation of borrowed staked tokens
+    function liquidateBorrow(address _user, uint _amount) external nonReentrant {
+        require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // auto claim returnBorrow borrow
         // but don't enforce to be claimed all
@@ -557,15 +588,13 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit BorrowLiquidated(_user, msg.sender, gonsToLiquidate, balanceForGons(gonsToLiquidate), block.number);
     }
 
-    //
-    // ----------- emergency functions -----------
-    //
+    /* ///////////////////////////////////////////////////////////////
+                           EMERGENCY FUNCTIONS
+    ////////////////////////////////////////////////////////////// */
 
-    //
-    // emergency withdraw of user holding
-    //
+    /// @notice emergency withdraw of user holding
     function emergencyWithdraw() external {
-        require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
+        require(enableEmergencyWithdraw, "EMERGENCY_WITHDRAW_NOT_ENABLED");
 
         UserInfo storage info = userInfo[msg.sender];
 
@@ -587,11 +616,12 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         IERC20(sFHM).safeTransfer(msg.sender, sfhmToWithdraw);
 
         // and record in history
-        emit StakingWithdraw(msg.sender, gonsToWithdraw, sfhmToWithdraw, gonsToWithdraw, sfhmToWithdraw, block.number);
+        emit StakingWithdraw(msg.sender, msg.sender, gonsToWithdraw, sfhmToWithdraw, gonsToWithdraw, sfhmToWithdraw, block.number);
     }
 
+    /// @dev Once called, any user who not claimed cannot claim/withdraw, should be used only in emergency.
     function emergencyWithdrawRewards() external onlyOwner {
-        require(enableEmergencyWithdraw, "Emergency withdraw is not enabled");
+        require(enableEmergencyWithdraw, "EMERGENCY_WITHDRAW_NOT_ENABLED");
 
         // repair total values
         uint sfhmAmount = balanceForGons(totalGonsPendingClaim);
@@ -604,9 +634,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit EmergencyRewardsWithdraw(DAO, totalGonsPendingClaim, sfhmAmount);
     }
 
-    //
-    // Been able to recover any token which is sent to contract by mistake
-    //
+    /// @notice Been able to recover any token which is sent to contract by mistake
     function emergencyRecoverToken(address token) external virtual onlyOwner {
         require(token != sFHM);
 
@@ -616,9 +644,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         emit EmergencyTokenRecovered(token, DAO, amount);
     }
 
-    //
-    // Been able to recover any ftm/movr token sent to contract by mistake
-    //
+    /// @notice Been able to recover any ftm/movr token sent to contract by mistake
     function emergencyRecoverEth() external virtual onlyOwner {
         uint amount = address(this).balance;
 
@@ -626,5 +652,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
         emit EmergencyEthRecovered(DAO, amount);
     }
+
+    /// @notice Self destructs a Vault, enabling it to be redeployed.
+    /// @dev Caller will receive any ETH held as float in the Vault.
+    function destroy() external onlyOwner {
+        selfdestruct(payable(msg.sender));
+    }
+
+    /* ///////////////////////////////////////////////////////////////
+                            RECEIVE ETHER LOGIC
+    ////////////////////////////////////////////////////////////// */
+
+    /// @dev Required for the Vault to receive unwrapped ETH.
+    receive() external payable {}
 
 }
