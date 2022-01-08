@@ -6,10 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-interface IsFHM {
-    function balanceForGons(uint gons) external view returns (uint);
-
-    function gonsForBalance(uint amount) external view returns (uint);
+interface IwsFHM {
+    function wrap( uint _amount ) external returns ( uint );
 }
 
 interface IStaking {
@@ -27,6 +25,7 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
 
     address public immutable FHM;
     address public immutable sFHM;
+    address public immutable wsFHM;
     address public immutable staking;
     address public stakingStaking;
 
@@ -35,11 +34,12 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
     // once for how many blocks is next sample made
     uint public blocksPerSample;
 
-    event RewardSample(uint timestamp, uint blockNumber, uint gonsRewards, uint sfhmRewards);
+    event RewardSample(uint timestamp, uint blockNumber, uint rewards);
 
-    constructor(address _FHM, address _sFHM, address _staking) {
+    constructor(address _FHM, address _sFHM, address _wsFHM, address _staking) {
         FHM = _FHM;
         sFHM = _sFHM;
+        wsFHM = _wsFHM;
         staking = _staking;
     }
 
@@ -48,22 +48,28 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
         blocksPerSample = _blocksPerSample;
     }
 
-    function stake() private {
+    function _stakeAndConvert() private {
         // claim previous round from warmup
         IStaking(staking).claim(address(this));
 
-        uint fhmRewards = IERC20(FHM).balanceOf(address(this));
-        if (fhmRewards == 0) return;
+        // wrap staked if got from warmup
+        uint sfhmBalance = IERC20(sFHM).balanceOf(address(this));
+        if (sfhmBalance > 0) {
+            IERC20(sFHM).approve(wsFHM, sfhmBalance);
+            IwsFHM(wsFHM).wrap(sfhmBalance);
+        }
 
-        // stake new round for warmup
-        IERC20(FHM).approve(staking, fhmRewards);
-        IStaking(staking).stake(fhmRewards, address(this));
-        // try to claim if using warmup period 0
-        IStaking(staking).claim(address(this));
+        // find if got rewards
+        uint fhmRewards = IERC20(FHM).balanceOf(address(this));
+        if (fhmRewards > 0) {
+            // stake new round for warmup
+            IERC20(FHM).approve(staking, fhmRewards);
+            IStaking(staking).stake(fhmRewards, address(this));
+        }
     }
 
     function newTick() public {
-        stake();
+        _stakeAndConvert();
 
         // not doing anything, waiting and gathering rewards
         if (lastSampleBlockNumber.add(blocksPerSample) > block.number) return;
@@ -71,15 +77,14 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
         // perform new sample, remember staking pool supply back then
 
         // call new sample to transfer rewards
-        uint sfhmRewards = IERC20(sFHM).balanceOf(address(this));
-        uint gonsRewards = IsFHM(sFHM).gonsForBalance(sfhmRewards);
-        IERC20(sFHM).approve(stakingStaking, sfhmRewards);
-        IStakingStaking(stakingStaking).newSample(sfhmRewards);
+        uint rewards = IERC20(wsFHM).balanceOf(address(this));
+        IERC20(wsFHM).approve(stakingStaking, rewards);
+        IStakingStaking(stakingStaking).newSample(rewards);
 
         // remember last sample block
         lastSampleBlockNumber = block.number;
 
         // and record in history
-        emit RewardSample(block.timestamp, block.number, gonsRewards, sfhmRewards);
+        emit RewardSample(block.timestamp, block.number, rewards);
     }
 }

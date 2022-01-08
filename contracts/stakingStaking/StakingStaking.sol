@@ -1,6 +1,6 @@
-/// FIXME test rebase
 /// FIXME voting token
 /// FIXME borrowing
+/// FIXME stake fee
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
@@ -12,12 +12,6 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-interface IsFHM {
-    function balanceForGons(uint gons) external view returns (uint);
-
-    function gonsForBalance(uint amount) external view returns (uint);
-}
 
 interface IRewardsHolder {
     function newTick() external;
@@ -34,25 +28,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     /// @dev ACL role for borrower contract to whitelist call our methods
     bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
-    address public immutable sFHM;
+    address public immutable wsFHM;
     address public immutable DAO;
     address public rewardsHolder;
     uint public noFeeBlocks; // 30 days in blocks
     uint public unstakeFee; // 100 means 1%
-    uint public claimPageSize; // maximum iteration threshold
 
-    // actual number of gons staking, which is user staking pool
-    uint public totalGonsStaking;
-    // staked token mapping in time of gons write
-    uint public totalSfhmStaking;
-    // actual number of gons transferred during sample ticks which were not claimed to any user, which is rewards pool
-    uint public totalGonsPendingClaim;
-    // staked token mapping in time of gons write
-    uint public totalSfhmPendingClaim;
-    // actual number of gons borrowed
-    uint public totalGonsBorrowed;
-    // staked token mapping in time of gons write
-    uint public totalSfhmBorrowed;
+    // actual number of wsFHM staking, which is user staking pool
+    uint public totalStaking;
+    // actual number of wsFHM transferred during sample ticks which were not claimed to any user, which is rewards pool
+    uint public totalPendingClaim;
+    // actual number of wsFHM borrowed
+    uint public totalBorrowed;
 
     bool public disableContracts;
     bool public pauseNewStakes;
@@ -62,11 +49,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     /// @notice data structure holding info about all stakers
     struct UserInfo {
-        uint gonsStaked; // absolute number of gons user is staking or rewarded
-        uint sfhmStaked; // staked tokens mapping in time of gons write
+        uint staked; // absolute number of wsFHM user is staking or rewarded
 
-        uint gonsBorrowed; // absolute number of gons user agains user has borrowed something
-        uint sfhmBorrowed; // staked tokens mapping in time of gons write
+        uint borrowed; // absolute number of wsFHM user agains user has borrowed something
 
         uint lastStakeBlockNumber; // time of last stake from which is counting noFeeDuration
         uint lastClaimIndex; // index in rewardSamples last claimed
@@ -79,11 +64,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         uint blockNumber; // time of newSample tick
         uint timestamp; // time of newSample tick as unix timestamp
 
-        uint totalGonsRewarded; // absolute number of gons transferred during newSample
-        uint totalSfhmRewarded; // staked tokens mapping in time of gons write
+        uint totalRewarded; // absolute number of wsFHM transferred during newSample
 
-        uint gonsTvl; // gons supply staking contract is holding from which rewards will be dispersed
-        uint sfhmTvl; // staked tokens mapping in time of gons write
+        uint tvl; // wsFHM supply staking contract is holding from which rewards will be dispersed
     }
 
     mapping(address => bool) public whitelist;
@@ -99,45 +82,89 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     /// @notice EIP-4626 version of deposit event
     /// @param _from user who triggered the deposit
     /// @param _to user who is able to withdraw the deposited tokens
-    /// @param _value deposited sFHM value
+    /// @param _value deposited wsFHM value
     event Deposit(address indexed _from, address indexed _to, uint _value);
 
     /// @notice deposit event
     /// @param _from user who triggered the deposit
     /// @param _to user who is able to withdraw the deposited tokens
-    /// @param _gonsStaked total worth of gons sFHM which are currently staked
-    /// @param _sfhmStaked sFHM value of _gonsStaked
+    /// @param _value deposited wsFHM value
     /// @param _lastStakeBlockNumber block number of deposit
-    event StakingDeposited(address indexed _from,  address indexed _to, uint _gonsStaked, uint _sfhmStaked, uint _lastStakeBlockNumber);
+    event StakingDeposited(address indexed _from,  address indexed _to, uint _value, uint _lastStakeBlockNumber);
 
     /// @notice EIP-4626 version of withdraw event
     /// @param _owner user who triggered the withdrawal
     /// @param _to user who received the withdrawn tokens
-    /// @param _value amount in sFHM token withdrawn
+    /// @param _value amount in wsFHM token withdrawn
     event Withdraw(address indexed _owner, address indexed _to, uint _value);
 
     /// @notice withdraw event
     /// @param _owner user who triggered the withdrawal
     /// @param _to user who received the withdrawn tokens
-    /// @param _gonsUnstaked amount in gons for sFHM token to be withdrawn
-    /// @param _sfhmUnstaked amount in sFHM token to be withdrawn
-    /// @param _gonsTransferred amount in gons for sFHM token actually withdrawn - potential fee was applied
-    /// @param _sfhmTransferred amount in sFHM token actually withdrawn - potential fee was applied
+    /// @param _unstaked amount in wsFHM token to be withdrawn
+    /// @param _transferred amount in wsFHM token actually withdrawn - potential fee was applied
     /// @param _unstakeBlock block number of event generated
-    event StakingWithdraw(address indexed _owner, address indexed _to, uint _gonsUnstaked, uint _sfhmUnstaked, uint _gonsTransferred, uint _sfhmTransferred, uint _unstakeBlock);
+    event StakingWithdraw(address indexed _owner, address indexed _to, uint _unstaked, uint _transferred, uint _unstakeBlock);
 
-    event RewardSampled(uint _blockNumber, uint _blockTimestamp, uint _gonsRewarded, uint _sfhmRewarded);
-    event RewardClaimed(address indexed wallet, uint indexed startClaimIndex, uint indexed lastClaimIndex, uint gonsClaimed, uint sfhmClaimed);
-    event BorrowApproved(address indexed owner, address indexed spender, uint value);
-    event Borrowed(address indexed wallet, address indexed spender, uint gonsBorrowed, uint sfhmBorrowed, uint blockNumber);
-    event BorrowReturned(address indexed wallet, address indexed spender, uint gonsReturned, uint sfhmReturned, uint blockNumber);
-    event BorrowLiquidated(address indexed wallet, address indexed spender, uint gonsLiquidated, uint sfhmLiquidated, uint blockNumber);
-    event EmergencyTokenRecovered(address indexed token, address indexed recipient, uint amount);
-    event EmergencyRewardsWithdraw(address indexed recipient, uint gonsRewarded, uint sfhmRewarded);
-    event EmergencyEthRecovered(address indexed recipient, uint amount);
+    /// @notice new rewards were sampled and prepared for claim
+    /// @param _blockNumber  block number of event generated
+    /// @param _blockTimestamp  block timestamp of event generated
+    /// @param _rewarded  block timestamp of event generated
+    /// @param _tvl  wsFHM supply in the time of sample
+    event RewardSampled(uint _blockNumber, uint _blockTimestamp, uint _rewarded, uint _tvl);
 
-    constructor(address _sFHM, address _DAO) {
-        sFHM = _sFHM;
+    /// @notice reward claimed during one claim() method
+    /// @param _wallet  user who triggered the claim
+    /// @param _startClaimIndex first rewards which were claimed
+    /// @param _lastClaimIndex last rewards which were claimed
+    /// @param _claimed how many wsFHM claimed
+    event RewardClaimed(address indexed _wallet, uint indexed _startClaimIndex, uint indexed _lastClaimIndex, uint _claimed);
+
+    /// @notice approve borrow contract for 9,9 borrowing against
+    /// @param _owner user who triggered approval
+    /// @param _spender user who has rights to call borrow and return borrow or liquidate borrow
+    /// @param _value how much he can borrow against
+    event BorrowApproved(address indexed _owner, address indexed _spender, uint _value);
+
+    /// @notice borrow contract transferred wsFHM of owner from the vault
+    /// @param _owner user whos account is used
+    /// @param _spender calling smart contract
+    /// @param _borrowed how borrowed against
+    /// @param _blockNumber block number of event generated
+    event Borrowed(address indexed _owner, address indexed _spender, uint _borrowed, uint _blockNumber);
+
+    /// @notice borrow contract returned wsFHM to owner to the vault
+    /// @param _owner user whos account is used
+    /// @param _spender calling smart contract
+    /// @param _returned how much returned from borrow against
+    /// @param _blockNumber block number of event generated
+    event BorrowReturned(address indexed _owner, address indexed _spender, uint _returned, uint _blockNumber);
+
+    /// @notice borrow contract liquidated wsFHM to owner to the vault
+    /// @param _owner user whos account is used
+    /// @param _spender calling smart contract
+    /// @param _liquidated how much was lost during borrow against
+    /// @param _blockNumber block number of event generated
+    event BorrowLiquidated(address indexed _owner, address indexed _spender, uint _liquidated, uint _blockNumber);
+
+    /// @notice emergency token transferred
+    /// @param _token ERC20 token
+    /// @param _recipient recipient of transaction
+    /// @param _amount token amount
+    event EmergencyTokenRecovered(address indexed _token, address indexed _recipient, uint _amount);
+
+    /// @notice emergency withdraw of unclaimed rewards
+    /// @param _recipient recipient of transaction
+    /// @param _rewarded wsFHM amount of unclaimed rewards transferred
+    event EmergencyRewardsWithdraw(address indexed _recipient, uint _rewarded);
+
+    /// @notice emergency withdraw of ETH
+    /// @param _recipient recipient of transaction
+    /// @param _amount ether value of transaction
+    event EmergencyEthRecovered(address indexed _recipient, uint _amount);
+
+    constructor(address _wsFHM, address _DAO) {
+        wsFHM = _wsFHM;
         DAO = _DAO;
         initCalled = false;
     }
@@ -145,16 +172,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     /// @notice suggested values:
     /// @param _noFeeBlocks - 30 days in blocks
     /// @param _unstakeFee - 3000 aka 30%
-    /// @param _claimPageSize - 100/1000
     /// @param _disableContracts - true
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
-        claimPageSize = _claimPageSize;
         disableContracts = _disableContracts;
         useWhitelist = _useWhitelist;
         pauseNewStakes = _pauseNewStakes;
@@ -177,124 +202,103 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /// @notice fail fast stake/unstake for well known conditions
-    function checkBefore(bool stake) private {
+    /// @param _stake whether to check for pause contract
+    function checkBefore(bool _stake) private view {
         // whether to disable contracts to call staking pool
         if (disableContracts) require(msg.sender == tx.origin, "CONTRACTS_NOT_ALLOWED");
 
         // temporary disable new stakes, but allow to call claim and unstake
-        require(!(pauseNewStakes && stake), "PAUSED");
+        require(!(pauseNewStakes && _stake), "PAUSED");
 
         // allow only whitelisted contracts
         if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
     }
 
-    /// @notice operations of 2 gons by converting into balance, doing operation and converting again to gons with its balance in unionm
-
-    function gonsAdd(uint gonsA, uint gonsB) private view returns (uint, uint) {
-        uint balance = balanceForGons(gonsA).add(balanceForGons(gonsB));
-        return (gonsForBalance(balance), balance);
-    }
-
-    function gonsSub(uint gonsA, uint gonsB) private view returns (uint, uint) {
-        uint balance = balanceForGons(gonsA).sub(balanceForGons(gonsB));
-        return (gonsForBalance(balance), balance);
-    }
-
-    function gonsDiv(uint gonsA, uint gonsB) private view returns (uint, uint) {
-        uint balance = balanceForGons(gonsA).div(balanceForGons(gonsB));
-        return (gonsForBalance(balance), balance);
-    }
-
-    function gonsMul(uint gonsA, uint gonsB) private view returns (uint, uint) {
-        uint balance = balanceForGons(gonsA).mul(balanceForGons(gonsB));
-        return (gonsForBalance(balance), balance);
-    }
-
     /// @notice Insert _amount to the pool, add to your share, need to claim everything before new stake
+    /// @param _to user onto which account we want to transfer money
+    /// @param _amount how much wsFHM user wants to deposit
+    /// @return _shares not used
     function deposit(address _to, uint _amount) public nonReentrant returns (uint _shares) {
-        doClaim(_to, claimPageSize);
+        doClaim(_to);
 
         // unsure that user claim everything before stake again
         require(userInfo[_to].lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
 
         // erc20 transfer of staked tokens
-        IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
-        uint gonsToStake = gonsForBalance(_amount);
+        IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _amount);
 
-        (uint gonsStaked,uint sfhmStaked) = gonsAdd(userInfo[_to].gonsStaked, gonsToStake);
+        uint staked = userInfo[_to].staked.add(_amount);
 
         // persist it
         UserInfo storage info = userInfo[_to];
-        info.gonsStaked = gonsStaked;
-        info.sfhmStaked = sfhmStaked;
+        info.staked = staked;
         info.lastStakeBlockNumber = block.number;
 
-        (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
+        totalStaking = totalStaking.add(_amount);
 
         // and record in history
         emit Deposit(msg.sender, _to, _amount);
-        emit StakingDeposited(msg.sender, _to, info.gonsStaked, info.sfhmStaked, info.lastStakeBlockNumber);
+        emit StakingDeposited(msg.sender, _to, info.staked, info.lastStakeBlockNumber);
 
         _shares = 0;
     }
 
     /// @notice Return current TVL of staking contract
-    function totalValueLocked() public view returns (uint, uint) {
-        return gonsAdd(totalGonsStaking, totalGonsPendingClaim);
+    function totalValueLocked() public view returns (uint) {
+        return totalStaking.add(totalPendingClaim);
     }
 
     /// @notice Returns the amount of underlying tokens that idly sit in the Vault.
     /// @return The amount of underlying tokens that sit idly in the Vault.
     function totalHoldings() public view returns (uint) {
-        return IERC20(sFHM).balanceOf(address(this));
+        return IERC20(wsFHM).balanceOf(address(this));
     }
 
     /// @notice EIP-4626 underlying token used for accounting
     function underlying() public view returns (address) {
-        return sFHM;
+        return wsFHM;
     }
 
     // @notice Return user balance
-    // @return 1 - gonsStaked, 2 - sfhmStaked, 3 - gonsWithdrawable, 4 - sfhmWithdrawable, 5 - gonsBorrowed, 6 - sfhmBorrowed
-    function userBalance(address _user) external view returns (uint, uint, uint, uint, uint, uint) {
+    // @return 1 - staked and to claim from rewards, 2 - withdrawable, 3 - borrowed
+    function userBalance(address _user) public view returns (uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
-        // count amount to withdraw from staked gons except borrowed gons
-        (uint gonsToWithdraw, uint sfhmToWithdraw) = (0, 0);
-        if (info.gonsStaked >= info.gonsBorrowed) {
-            (gonsToWithdraw, sfhmToWithdraw) = gonsSub(info.gonsStaked, info.gonsBorrowed);
+        // count amount to withdraw from staked tokens except borrowed tokens
+        uint toWithdraw = 0;
+        uint stakedAndToClaim = info.staked.add(claimable(_user));
+        if (stakedAndToClaim >= info.borrowed) {
+            toWithdraw = stakedAndToClaim.sub(info.borrowed);
         }
 
-        (uint gonsWithdrawable, uint sfhmWithdrawable) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToWithdraw);
+        uint withdrawable = getWithdrawableBalance(info.lastStakeBlockNumber, toWithdraw);
 
-        return (info.gonsStaked, info.sfhmStaked, gonsWithdrawable, sfhmWithdrawable, info.gonsBorrowed, info.sfhmBorrowed);
+        return (stakedAndToClaim, withdrawable, info.borrowed);
     }
 
     /// @notice Returns a user's Vault balance in underlying tokens.
     /// @param _owner The user to get the underlying balance of.
     /// @return The user's Vault balance in underlying tokens.
     function balanceOfUnderlying(address _owner) public view returns (uint) {
-        UserInfo storage info = userInfo[_owner];
-        return balanceForGons(info.gonsStaked);
+        (uint stakedAndToClaim, uint withdrawable, uint borrowed) = userBalance(_owner);
+        return stakedAndToClaim;
     }
 
-    function getWithdrawableBalance(uint lastStakeBlockNumber, uint _gons) private view returns (uint, uint) {
-        uint balanceWithdrawable = balanceForGons(_gons);
+    function getWithdrawableBalance(uint lastStakeBlockNumber, uint _balanceWithdrawable) private view returns (uint) {
         if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
-            uint fee = balanceWithdrawable.mul(unstakeFee).div(10 ** 4);
-            balanceWithdrawable = balanceWithdrawable.sub(fee);
+            uint fee = _balanceWithdrawable.mul(unstakeFee).div(10 ** 4);
+            _balanceWithdrawable = _balanceWithdrawable.sub(fee);
         }
-        return (gonsForBalance(balanceWithdrawable), balanceWithdrawable);
+        return _balanceWithdrawable;
     }
 
     // @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
-    function newSample(uint _balance) public {
+    // @param _rewarded wsFHM amount rewarded
+    function newSample(uint _rewarded) public {
         // transfer balance from rewards holder
-        if (_balance > 0) IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _balance);
-        uint gonsRewarded = gonsForBalance(_balance);
-        uint sfhmRewarded = balanceForGons(gonsRewarded);
+        if (_rewarded > 0) IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _rewarded);
 
-        (uint gonsTvl, uint sfhmTvl) = totalValueLocked();
+        uint tvl = totalValueLocked();
 
         rewardSamples.push(SampleInfo({
         // remember time data
@@ -302,153 +306,149 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         timestamp : block.timestamp,
 
         // rewards size
-        totalGonsRewarded : gonsRewarded,
-        totalSfhmRewarded : sfhmRewarded,
+        totalRewarded : _rewarded,
 
-        // holders snapshot based on staking and pending claim gons
-        gonsTvl : gonsTvl,
-        sfhmTvl : sfhmTvl
+        // holders snapshot based on staking and pending claim wsFHM
+        tvl : tvl
         }));
 
         // count total value to be claimed
-        (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsAdd(totalGonsPendingClaim, gonsRewarded);
+        totalPendingClaim = totalPendingClaim.add(_rewarded);
 
         // and record in history
-        emit RewardSampled(block.number, block.timestamp, gonsRewarded, sfhmRewarded);
+        emit RewardSampled(block.number, block.timestamp, _rewarded, tvl);
     }
 
-    function balanceForGons(uint gons) private view returns (uint) {
-        return IsFHM(sFHM).balanceForGons(gons);
-    }
-
-    function gonsForBalance(uint balance) private view returns (uint) {
-        return IsFHM(sFHM).gonsForBalance(balance);
-    }
-
-    function claim(uint _claimPageSize) external nonReentrant {
-        doClaim(msg.sender, _claimPageSize);
-    }
-
-    // @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
-    function doClaim(address _user, uint _claimPageSize) private {
-        checkBefore(false);
-
-        // clock new tick
-        IRewardsHolder(rewardsHolder).newTick();
-
-        UserInfo storage info = userInfo[msg.sender];
+    // @notice Counts claimable tokens from totalPendingClaim tokens for given user
+    // @param _user claiming user
+    function claimable(address _user) private view returns (uint){
+        UserInfo storage info = userInfo[_user];
 
         uint lastClaimIndex = info.lastClaimIndex;
         // last item already claimed
-        if (lastClaimIndex == rewardSamples.length - 1) return;
+        if (lastClaimIndex == rewardSamples.length - 1) return 0;
 
-        // start claiming with gons staking previously
-        uint gonsStaked = info.gonsStaked;
-        uint sfhmStaked = info.sfhmStaked;
-        uint allGonsClaimed = 0;
-        uint allSfhmClaimed = 0;
-        uint startIndex = lastClaimIndex + 1;
+        // start claiming with wsFHM staking previously
+        uint allClaimed = 0;
 
         // new user considered as claimed last sample
         if (info.lastStakeBlockNumber == 0) {
             lastClaimIndex = rewardSamples.length - 1;
         } else {
-            // page size is either _claimPageSize or the rest
-            uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
+            uint staked = info.staked;
+            uint startIndex = lastClaimIndex + 1;
 
-            for (uint i = startIndex; i <= endIndex; i++) {
+            for (uint i = startIndex; i <= rewardSamples.length - 1; i++) {
                 lastClaimIndex = i;
 
                 // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
-                if (gonsStaked > 0) {
-                    uint gonsClaimed = 0;
-                    uint sfhmClaimed = 0;
-                    if (rewardSamples[i].gonsTvl > 0) {
+                if (staked > 0) {
+                    uint claimed = 0;
+                    if (rewardSamples[i].tvl > 0) {
                         // 40 * 10 / 20000
-                        (uint gonsShare, uint sfhmShare) = gonsAdd(gonsStaked, allGonsClaimed);
-                        (uint gons, uint sfhm) = gonsMul(rewardSamples[i].totalGonsRewarded, gonsShare);
-                        (gonsClaimed, sfhmClaimed) = gonsDiv(gons, rewardSamples[i].gonsTvl);
+                        uint share = staked.add(allClaimed);
+                        uint wsfhm = rewardSamples[i].totalRewarded.mul(share);
+                        claimed = wsfhm.div(rewardSamples[i].tvl);
                     }
 
-                    (allGonsClaimed, allSfhmClaimed) = gonsAdd(allGonsClaimed, gonsClaimed);
+                    allClaimed = allClaimed.add(claimed);
                 }
             }
         }
 
-        // persist it
-        (gonsStaked, sfhmStaked) = gonsAdd(gonsStaked, allGonsClaimed);
-        info.gonsStaked = gonsStaked;
-        info.sfhmStaked = sfhmStaked;
-        info.lastClaimIndex = lastClaimIndex;
+       return allClaimed;
+    }
 
-        (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, allGonsClaimed);
+    // @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
+    // @param _user claiming user
+    function doClaim(address _user) private {
+        checkBefore(false);
+
+        // clock new tick
+        IRewardsHolder(rewardsHolder).newTick();
+
+        UserInfo storage info = userInfo[_user];
+
+        // last item already claimed
+        if (info.lastClaimIndex == rewardSamples.length - 1) return;
+
+        // otherwise collect rewards
+        uint startIndex = info.lastClaimIndex + 1;
+        uint allClaimed = claimable(_user);
+
+        // persist it
+        info.staked = info.staked.add(allClaimed);
+        info.lastClaimIndex = rewardSamples.length - 1;
+
+        totalStaking = totalStaking.add(allClaimed);
         // remove it from total balance if is not last one
-        if (totalGonsPendingClaim >= allGonsClaimed) {
-            (totalGonsPendingClaim, totalSfhmPendingClaim) = gonsSub(totalGonsPendingClaim, allGonsClaimed);
+        if (totalPendingClaim > allClaimed) {
+            totalPendingClaim = totalPendingClaim.sub(allClaimed);
         } else {
-            // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(totalGonsPendingClaim) == allSfhmClaimed, "LAST_USER_NEED_BALANCE");
-            (totalGonsPendingClaim, totalSfhmPendingClaim) = (0, 0);
+            // wsfhm balance of last one is the same, so gons should be rounded
+            require(totalPendingClaim == allClaimed, "LAST_USER_NEED_BALANCE");
+            totalPendingClaim = 0;
         }
 
         // and record in history
-        emit RewardClaimed(msg.sender, startIndex, lastClaimIndex, allGonsClaimed, allSfhmClaimed);
+        emit RewardClaimed(_user, startIndex, info.lastClaimIndex, allClaimed);
     }
 
     /// @notice Unstake _amount from staking pool. Automatically call claim.
     /// @param _to user who will receive withdraw amount
     /// @param _amount amount to withdraw
+    /// @return _shares not used
     function withdraw(address _to, uint256 _amount) public nonReentrant returns (uint _shares) {
         address _owner = msg.sender;
         // auto claim before unstake
-        doClaim(_owner, claimPageSize);
+        doClaim(_owner);
 
         UserInfo storage info = userInfo[_owner];
 
         // unsure that user claim everything before unstaking
         require(info.lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
 
-        // count amount to withdraw from staked gons except borrowed gons
-        (uint gonsToUnstake, uint sfhmToUnstake) = (0, 0);
-        if (info.gonsStaked >= info.gonsBorrowed) {
-            (gonsToUnstake, sfhmToUnstake) = gonsSub(info.gonsStaked, info.gonsBorrowed);
+        // count amount to withdraw from staked except borrowed
+        uint toUnstake = 0;
+        if (info.staked > info.borrowed) {
+            toUnstake = info.staked.sub(info.borrowed);
         } else {
-            // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(info.gonsStaked) == balanceForGons(info.gonsBorrowed), "STAKED_LESS_THAN_BORROWED");
-            (gonsToUnstake, sfhmToUnstake) = (0, 0);
+            // wsfhm balance of last one is the same, so wsFHM should be rounded
+            require(info.staked == info.borrowed, "STAKED_LESS_THAN_BORROWED");
+            toUnstake = 0;
         }
 
-        (uint gonsTransferring, uint sfhmTransferring) = getWithdrawableBalance(info.lastStakeBlockNumber, gonsToUnstake);
+        uint transferring = getWithdrawableBalance(info.lastStakeBlockNumber, toUnstake);
         // cannot unstake what is not mine
-        require(gonsToUnstake <= info.gonsStaked, "NOT_ENOUGH_USER_TOKENS");
+        require(toUnstake <= info.staked, "NOT_ENOUGH_USER_TOKENS");
         // and more than we have
-        require(gonsTransferring <= totalGonsStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
+        require(transferring <= totalStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
 
-        (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToUnstake);
-        if (info.gonsStaked == 0) {
+        info.staked = info.staked.sub(toUnstake);
+        if (info.staked == 0) {
             // if unstaking everything just delete whole record
             delete userInfo[_owner];
         }
 
         // remove it from total balance
-        if (totalGonsStaking >= gonsToUnstake) {
-            (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToUnstake);
+        if (totalStaking > toUnstake) {
+            totalStaking = totalStaking.sub(toUnstake);
         } else {
-            // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToUnstake), "LAST_USER_NEED_BALANCE");
-            (totalGonsStaking, totalSfhmStaking) = (0, 0);
+            // wsfhm balance of last one is the same, so wsfhm should be rounded
+            require(totalStaking == toUnstake, "LAST_USER_NEED_BALANCE");
+            totalStaking = 0;
         }
 
         // actual erc20 transfer
-        IERC20(sFHM).safeTransfer(_to, sfhmTransferring);
+        IERC20(wsFHM).safeTransfer(_to, transferring);
 
         // and send fee to DAO
-        (uint gonsFee,uint sfhmFee) = gonsSub(gonsToUnstake, gonsTransferring);
-        IERC20(sFHM).safeTransfer(DAO, sfhmFee);
+        uint fee = toUnstake.sub(transferring);
+        IERC20(wsFHM).safeTransfer(DAO, fee);
 
         // and record in history
-        emit Withdraw(_owner, _to, balanceForGons(gonsToUnstake));
-        emit StakingWithdraw(_owner, _to, gonsToUnstake, balanceForGons(gonsToUnstake), gonsTransferring, sfhmTransferring, block.number);
+        emit Withdraw(_owner, _to, toUnstake);
+        emit StakingWithdraw(_owner, _to, toUnstake, transferring, block.number);
 
         _shares = 0;
     }
@@ -458,6 +458,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     ////////////////////////////////////////////////////////////// */
 
     /// @notice approve _spender to do anything with _amount of tokens for current caller user
+    /// @param _spender who will have right to do whatever he wants with _amount of user's money
+    /// @param _amount approved amount _spender can withdraw
     function approve(address _spender, uint _amount) external {
         address user = msg.sender;
         UserInfo storage info = userInfo[user];
@@ -467,14 +469,17 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /// @notice check approve result, how much is approved for _owner and arbitrary _spender
+    /// @param _owner who gives right to the _spender
+    /// @param _spender who will have right to do whatever he wants with _amount of user's money
     function allowance(address _owner, address _spender) public view returns (uint) {
         UserInfo storage info = userInfo[_owner];
         return info.allowances[_spender];
     }
 
-    /// @notice allow to borrow asset against sFHM collateral which are staking in this pool.
+    /// @notice allow to borrow asset against wsFHM collateral which are staking in this pool.
     /// You are able to borrow up to usd worth of staked + claimed tokens
     /// @param _user from which account
+    /// @param _amount how much tokens _user wants to borrow against
     function borrow(address _user, uint _amount) external nonReentrant {
         require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
@@ -482,110 +487,120 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         require(!pauseNewStakes, "PAUSED");
 
         uint approved = allowance(_user, msg.sender);
-        require(gonsForBalance(approved) >= gonsForBalance(_amount), "NOT_ENOUGH_BALANCE");
+        require(approved >= _amount, "NOT_ENOUGH_BALANCE");
 
         // auto claim before borrow
         // but don't enforce to be claimed all
-        doClaim(_user, claimPageSize);
+        doClaim(_user);
 
         UserInfo storage info = userInfo[_user];
 
-        uint gonsToBorrow = gonsForBalance(_amount);
-        (info.gonsBorrowed, info.sfhmBorrowed) = gonsAdd(info.gonsBorrowed, gonsToBorrow);
+        info.borrowed = info.borrowed.add(_amount);
+
+        // refresh allowance
+        info.allowances[msg.sender] = info.allowances[msg.sender].sub(_amount);
 
         // cannot borrow what is not mine
-        require(info.gonsBorrowed <= info.gonsStaked, "NOT_ENOUGH_USER_TOKENS");
+        require(info.borrowed <= info.staked, "NOT_ENOUGH_USER_TOKENS");
         // and more than we have staking or claimed
-        (uint gonsAvailableToBorrow, uint sfhmAvailableToBorrow) = gonsSub(totalGonsStaking, totalGonsBorrowed);
-        require(gonsToBorrow <= gonsAvailableToBorrow, "Borrowing more than in pool");
+        uint availableToBorrow = totalStaking.sub(totalBorrowed);
+        require(_amount <= availableToBorrow, "NOT_ENOUGH_POOL_TOKENS");
 
         // add it from total balance
-        (totalGonsBorrowed, totalSfhmBorrowed) = gonsAdd(totalGonsBorrowed, gonsToBorrow);
-
-        require(totalGonsBorrowed <= totalGonsStaking, "Borrowing more than in pool");
+        totalBorrowed = totalBorrowed.add(_amount);
 
         // erc20 transfer of staked tokens
-        IERC20(sFHM).safeTransfer(msg.sender, _amount);
+        IERC20(wsFHM).safeTransfer(msg.sender, _amount);
 
         // and record in history
-        emit Borrowed(_user, msg.sender, gonsToBorrow, balanceForGons(gonsToBorrow), block.number);
+        emit Borrowed(_user, msg.sender, _amount, block.number);
     }
 
     /// @notice return borrowed staked tokens
+    /// @param _user from which account
+    /// @param _amount how much tokens _user wants to return
     function returnBorrow(address _user, uint _amount) external nonReentrant {
         require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // erc20 transfer of staked tokens
-        IERC20(sFHM).safeTransferFrom(msg.sender, address(this), _amount);
+        IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _amount);
 
         // auto claim returnBorrow borrow
-        // but don't enforce to be claimed all
-        doClaim(_user, claimPageSize);
+        doClaim(_user);
 
         UserInfo storage info = userInfo[_user];
 
-        uint gonsToReturn = gonsForBalance(_amount);
         // return less then borrow this turn
-        if (info.gonsBorrowed >= gonsToReturn) {
-            (info.gonsBorrowed, info.sfhmBorrowed) = gonsSub(info.gonsBorrowed, gonsToReturn);
+        if (info.borrowed >= _amount) {
+            info.borrowed = info.borrowed.sub(_amount);
         }
         // repay all plus give profit back
         else {
-            (uint gonsToStake, uint sfhmToStake) = gonsSub(gonsToReturn, info.gonsBorrowed);
-            (info.gonsStaked, info.sfhmStaked) = gonsAdd(info.gonsStaked, gonsToStake);
-            (totalGonsStaking, totalSfhmStaking) = gonsAdd(totalGonsStaking, gonsToStake);
+            uint toStake = _amount.sub(info.borrowed);
+            info.staked = info.staked.add(toStake);
+            info.borrowed = 0;
+            totalStaking = totalStaking.add(toStake);
         }
 
         // subtract it from total balance
-        if (totalGonsBorrowed > gonsToReturn) {
-            (totalGonsBorrowed, totalSfhmBorrowed) = gonsSub(totalGonsBorrowed, gonsToReturn);
+        if (totalBorrowed > _amount) {
+            totalBorrowed = totalBorrowed.sub(_amount);
         } else {
-            (totalGonsBorrowed, totalSfhmBorrowed) = (0, 0);
+            totalBorrowed = 0;
         }
 
         // and record in history
-        emit BorrowReturned(_user, msg.sender, gonsToReturn, balanceForGons(gonsToReturn), block.number);
+        emit BorrowReturned(_user, msg.sender, _amount, block.number);
     }
 
     /// @notice liquidation of borrowed staked tokens
+    /// @param _user from which account
+    /// @param _amount how much tokens _user wants to liquidate
     function liquidateBorrow(address _user, uint _amount) external nonReentrant {
         require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // auto claim returnBorrow borrow
-        // but don't enforce to be claimed all
-        doClaim(_user, claimPageSize);
+        doClaim(_user);
 
         UserInfo storage info = userInfo[_user];
 
-        uint gonsToLiquidate = gonsForBalance(_amount);
         // liquidate less or equal then borrow this turn
-        if (info.gonsBorrowed >= gonsToLiquidate) {
-            (info.gonsBorrowed, info.sfhmBorrowed) = gonsSub(info.gonsBorrowed, gonsToLiquidate);
+        if (info.borrowed >= _amount) {
+            info.borrowed = info.borrowed.sub(_amount);
+
+            // subtract it from total balance
+            if (totalBorrowed > _amount) {
+                totalBorrowed = totalBorrowed.sub(_amount);
+            } else {
+                totalBorrowed = 0;
+            }
         }
         // liquidate all plus take a loss
         else {
-            (uint gonsToTakeLoss, uint sfhmToTakeLoss) = gonsSub(gonsToLiquidate, info.gonsBorrowed);
-            if (info.gonsStaked > gonsToTakeLoss) {
-                (info.gonsStaked, info.sfhmStaked) = gonsSub(info.gonsStaked, gonsToTakeLoss);
+            uint toTakeLoss = _amount.sub(info.borrowed);
+            if (info.staked > toTakeLoss) {
+                info.staked = info.staked.sub(toTakeLoss);
             } else {
-                (info.gonsStaked, info.sfhmStaked) = (0, 0);
+                info.staked = 0;
             }
-            if (totalGonsStaking > gonsToTakeLoss) {
-                (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToTakeLoss);
+            if (totalStaking > toTakeLoss) {
+                totalStaking = totalStaking.sub(toTakeLoss);
             } else {
-                (totalGonsStaking, totalSfhmStaking) = (0, 0);
+                totalStaking = 0;
             }
-        }
 
-        // subtract it from total balance
-        if (totalGonsBorrowed > gonsToLiquidate) {
-            (totalGonsBorrowed, totalSfhmBorrowed) = gonsSub(totalGonsBorrowed, gonsToLiquidate);
-        } else {
-            (totalGonsBorrowed, totalSfhmBorrowed) = (0, 0);
+            // subtract it from total balance
+            if (totalBorrowed > info.borrowed) {
+                totalBorrowed = totalBorrowed.sub(info.borrowed);
+            } else {
+                totalBorrowed = 0;
+            }
+
+            info.borrowed = 0;
         }
 
         // and record in history
-        emit BorrowLiquidated(_user, msg.sender, gonsToLiquidate, balanceForGons(gonsToLiquidate), block.number);
+        emit BorrowLiquidated(_user, msg.sender, _amount, block.number);
     }
 
     /* ///////////////////////////////////////////////////////////////
@@ -598,25 +613,25 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
         UserInfo storage info = userInfo[msg.sender];
 
-        (uint gonsToWithdraw, uint sfhmToWithdraw) = gonsSub(info.gonsStaked, info.gonsBorrowed);
+        uint toWithdraw = info.staked.sub(info.borrowed);
 
         // clear the data
-        (info.gonsStaked, info.sfhmStaked) = (0, 0);
+        info.staked = 0;
 
         // repair total values
-        if (totalGonsStaking >= gonsToWithdraw) {
-            (totalGonsStaking, totalSfhmStaking) = gonsSub(totalGonsStaking, gonsToWithdraw);
+        if (totalStaking >= toWithdraw) {
+            totalStaking = totalStaking.sub(toWithdraw);
         } else {
-            // sfhm balance of last one is the same, so gons should be rounded
-            require(balanceForGons(totalGonsStaking) == balanceForGons(gonsToWithdraw), "Last user emergency withdraw needs balance");
-            (totalGonsStaking, totalSfhmStaking) = (0, 0);
+            // wsfhm balance of last one is the same, so gons should be rounded
+            require(totalStaking == toWithdraw, "Last user emergency withdraw needs balance");
+            totalStaking = 0;
         }
 
         // erc20 transfer
-        IERC20(sFHM).safeTransfer(msg.sender, sfhmToWithdraw);
+        IERC20(wsFHM).safeTransfer(msg.sender, toWithdraw);
 
         // and record in history
-        emit StakingWithdraw(msg.sender, msg.sender, gonsToWithdraw, sfhmToWithdraw, gonsToWithdraw, sfhmToWithdraw, block.number);
+        emit StakingWithdraw(msg.sender, msg.sender, toWithdraw, toWithdraw, block.number);
     }
 
     /// @dev Once called, any user who not claimed cannot claim/withdraw, should be used only in emergency.
@@ -624,19 +639,19 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         require(enableEmergencyWithdraw, "EMERGENCY_WITHDRAW_NOT_ENABLED");
 
         // repair total values
-        uint sfhmAmount = balanceForGons(totalGonsPendingClaim);
-        totalGonsPendingClaim = 0;
-        totalSfhmPendingClaim = 0;
+        uint amount = totalPendingClaim;
+        totalPendingClaim = 0;
 
         // erc20 transfer
-        IERC20(sFHM).safeTransfer(DAO, sfhmAmount);
+        IERC20(wsFHM).safeTransfer(DAO, amount);
 
-        emit EmergencyRewardsWithdraw(DAO, totalGonsPendingClaim, sfhmAmount);
+        emit EmergencyRewardsWithdraw(DAO, amount);
     }
 
     /// @notice Been able to recover any token which is sent to contract by mistake
+    /// @param token erc20 token
     function emergencyRecoverToken(address token) external virtual onlyOwner {
-        require(token != sFHM);
+        require(token != wsFHM);
 
         uint amount = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransfer(DAO, amount);
