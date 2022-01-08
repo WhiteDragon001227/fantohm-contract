@@ -1,6 +1,5 @@
 /// FIXME voting token
 /// FIXME borrowing
-/// FIXME stake fee
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
@@ -33,6 +32,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     address public rewardsHolder;
     uint public noFeeBlocks; // 30 days in blocks
     uint public unstakeFee; // 100 means 1%
+    uint public claimPageSize; // maximum iteration threshold
 
     // actual number of wsFHM staking, which is user staking pool
     uint public totalStaking;
@@ -172,14 +172,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     /// @notice suggested values:
     /// @param _noFeeBlocks - 30 days in blocks
     /// @param _unstakeFee - 3000 aka 30%
+    /// @param _claimPageSize - 100/1000
     /// @param _disableContracts - true
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
+        claimPageSize = _claimPageSize;
         disableContracts = _disableContracts;
         useWhitelist = _useWhitelist;
         pauseNewStakes = _pauseNewStakes;
@@ -219,7 +221,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     /// @param _amount how much wsFHM user wants to deposit
     /// @return _shares not used
     function deposit(address _to, uint _amount) public nonReentrant returns (uint _shares) {
-        doClaim(_to);
+        doClaim(_to, claimPageSize);
 
         // unsure that user claim everything before stake again
         require(userInfo[_to].lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
@@ -244,6 +246,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /// @notice Return current TVL of staking contract
+    /// @return totalStaking plus totalPendingClaim even with amount borrowed against
     function totalValueLocked() public view returns (uint) {
         return totalStaking.add(totalPendingClaim);
     }
@@ -259,14 +262,22 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         return wsFHM;
     }
 
-    // @notice Return user balance
-    // @return 1 - staked and to claim from rewards, 2 - withdrawable, 3 - borrowed
+    /// @notice last rewards to stakers
+    /// @dev APY => 100 * (1 + <actualRewards> / <totalValueLocked>)^(365 * <rebases per day>)
+    /// @return rewards for last sample
+    function actualRewards() public view returns (uint) {
+        return rewardSamples[rewardSamples.length - 1].totalRewarded;
+    }
+
+    /// @notice Return user balance
+    /// @return 1 - staked and to claim from rewards, 2 - withdrawable, 3 - borrowed
     function userBalance(address _user) public view returns (uint, uint, uint) {
         UserInfo storage info = userInfo[_user];
 
         // count amount to withdraw from staked tokens except borrowed tokens
         uint toWithdraw = 0;
-        uint stakedAndToClaim = info.staked.add(claimable(_user));
+        (uint allClaimable, uint lastClaimIndex) = claimable(_user, claimPageSize);
+        uint stakedAndToClaim = info.staked.add(allClaimable);
         if (stakedAndToClaim >= info.borrowed) {
             toWithdraw = stakedAndToClaim.sub(info.borrowed);
         }
@@ -274,6 +285,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         uint withdrawable = getWithdrawableBalance(info.lastStakeBlockNumber, toWithdraw);
 
         return (stakedAndToClaim, withdrawable, info.borrowed);
+    }
+
+    /// @notice safety check if user need to manually call claim to see additional rewards
+    /// @param _user owner
+    /// @return true if need to manually call claim or borrow/return/liquidate before additional deposit/withdraw
+    function needToClaim(address _user) external view returns (bool) {
+        UserInfo storage info = userInfo[_user];
+        return info.lastClaimIndex + claimPageSize < rewardSamples.length;
     }
 
     /// @notice Returns a user's Vault balance in underlying tokens.
@@ -321,12 +340,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
     // @notice Counts claimable tokens from totalPendingClaim tokens for given user
     // @param _user claiming user
-    function claimable(address _user) private view returns (uint){
+    // @param _claimPageSize page size for iteration loop
+    // @return claimable amount up to the page size and last claim index
+    function claimable(address _user, uint _claimPageSize) private view returns (uint, uint){
         UserInfo storage info = userInfo[_user];
 
         uint lastClaimIndex = info.lastClaimIndex;
         // last item already claimed
-        if (lastClaimIndex == rewardSamples.length - 1) return 0;
+        if (lastClaimIndex == rewardSamples.length - 1) return (0, rewardSamples.length - 1);
 
         // start claiming with wsFHM staking previously
         uint allClaimed = 0;
@@ -337,8 +358,10 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         } else {
             uint staked = info.staked;
             uint startIndex = lastClaimIndex + 1;
+            // page size is either _claimPageSize or the rest
+            uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
 
-            for (uint i = startIndex; i <= rewardSamples.length - 1; i++) {
+            for (uint i = startIndex; i <= endIndex; i++) {
                 lastClaimIndex = i;
 
                 // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
@@ -356,12 +379,17 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
             }
         }
 
-       return allClaimed;
+       return (allClaimed, lastClaimIndex);
+    }
+
+    function claim(uint _claimPageSize) external nonReentrant {
+        doClaim(msg.sender, _claimPageSize);
     }
 
     // @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
     // @param _user claiming user
-    function doClaim(address _user) private {
+    // @param _claimPageSize page size for iteration loop
+    function doClaim(address _user, uint _claimPageSize) private {
         checkBefore(false);
 
         // clock new tick
@@ -374,11 +402,11 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
         // otherwise collect rewards
         uint startIndex = info.lastClaimIndex + 1;
-        uint allClaimed = claimable(_user);
+        (uint allClaimed, uint lastClaimIndex) = claimable(_user, _claimPageSize);
 
         // persist it
         info.staked = info.staked.add(allClaimed);
-        info.lastClaimIndex = rewardSamples.length - 1;
+        info.lastClaimIndex = lastClaimIndex;
 
         totalStaking = totalStaking.add(allClaimed);
         // remove it from total balance if is not last one
@@ -401,7 +429,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     function withdraw(address _to, uint256 _amount) public nonReentrant returns (uint _shares) {
         address _owner = msg.sender;
         // auto claim before unstake
-        doClaim(_owner);
+        doClaim(_owner, claimPageSize);
 
         UserInfo storage info = userInfo[_owner];
 
@@ -491,7 +519,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
 
         // auto claim before borrow
         // but don't enforce to be claimed all
-        doClaim(_user);
+        doClaim(_user, claimPageSize);
 
         UserInfo storage info = userInfo[_user];
 
@@ -526,7 +554,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _amount);
 
         // auto claim returnBorrow borrow
-        doClaim(_user);
+        // but don't enforce to be claimed all
+        doClaim(_user, claimPageSize);
 
         UserInfo storage info = userInfo[_user];
 
@@ -560,7 +589,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
         require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
 
         // auto claim returnBorrow borrow
-        doClaim(_user);
+        // but don't enforce to be claimed all
+        doClaim(_user, claimPageSize);
 
         UserInfo storage info = userInfo[_user];
 
