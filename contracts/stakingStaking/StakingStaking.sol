@@ -1,4 +1,3 @@
-/// FIXME voting token
 /// FIXME borrowing
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -12,14 +11,22 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+interface IwsFHM {
+    function sFHMValue( uint _amount ) external view returns ( uint );
+}
+
 interface IRewardsHolder {
     function newTick() external;
+}
+
+interface IVotingEscrow {
+    function balanceOfVotingToken(address _owner) external view returns (uint);
 }
 
 /// @title Double staking vault for FantOHM
 /// @author pwntr0n
 /// @notice With this staking vault you can receive rebases from 3,3 staking and rewards for 6,6 double staking
-contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
+contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscrow {
 
     using SafeERC20 for IERC20;
     using SafeMath for uint;
@@ -301,6 +308,15 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard {
     function balanceOfUnderlying(address _owner) public view returns (uint) {
         (uint stakedAndToClaim, uint withdrawable, uint borrowed) = userBalance(_owner);
         return stakedAndToClaim;
+    }
+
+    /// @notice This method shows staked token balance from wrapped token balance even from rewards
+    /// @dev Should be used in snapshot.eth strategy contract call
+    /// @param _owner The user to get the underlying balance of.
+    /// @return Balance in staked token usefull for voting escrow
+    function balanceOfVotingToken(address _owner) external override view returns (uint) {
+        (uint stakedAndToClaim, uint withdrawable, uint borrowed) = userBalance(_owner);
+        return IwsFHM(wsFHM).sFHMValue(stakedAndToClaim);
     }
 
     function getWithdrawableBalance(uint lastStakeBlockNumber, uint _balanceWithdrawable) private view returns (uint) {
