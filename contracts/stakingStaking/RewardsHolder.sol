@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
+
 pragma solidity 0.7.5;
 
 import "@openzeppelin/contracts/access/Ownable.sol";

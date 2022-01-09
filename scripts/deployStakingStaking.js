@@ -6,11 +6,11 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const RewardsHolder = await ethers.getContractFactory('RewardsHolder');
-    const rewardsHolder = await RewardsHolder.deploy("0xA7e3647898A0F004a01a0EF832921f59b0c0A48e","0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5","0xeAF4d87871CA3064a39FD5c6740B0ec22F5dd024");
+    const rewardsHolder = await RewardsHolder.deploy("0xA7e3647898A0F004a01a0EF832921f59b0c0A48e","0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5","0x5dbd56f663b76e47dcd8463407b0c671bb7a2e86","0xeAF4d87871CA3064a39FD5c6740B0ec22F5dd024");
     console.log(`Deployed rewardsHolder to: ${rewardsHolder.address}`);
 
     const StakingStaking = await ethers.getContractFactory('StakingStaking');
-    const stakingStaking = await StakingStaking.deploy("0xb7118db48cb2D7ff0f93dbDDa9D2289F6AA7CbF5", `${deployer.address}`);
+    const stakingStaking = await StakingStaking.deploy("0x5dbd56f663b76e47dcd8463407b0c671bb7a2e86", `${deployer.address}`);
     console.log(`Deployed StakingStaking to: ${stakingStaking.address}`);
 
     await rewardsHolder.init(`${stakingStaking.address}`, 2);

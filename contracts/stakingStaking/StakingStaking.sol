@@ -1,6 +1,7 @@
-/// FIXME borrowing
+/// FIXME borrowing, what if user deletes withdraws during borrow
 
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
+
 pragma solidity 0.7.5;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -12,7 +13,7 @@ import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IwsFHM {
-    function sFHMValue( uint _amount ) external view returns ( uint );
+    function sFHMValue(uint _amount) external view returns (uint);
 }
 
 interface IRewardsHolder {
@@ -97,7 +98,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _to user who is able to withdraw the deposited tokens
     /// @param _value deposited wsFHM value
     /// @param _lastStakeBlockNumber block number of deposit
-    event StakingDeposited(address indexed _from,  address indexed _to, uint _value, uint _lastStakeBlockNumber);
+    event StakingDeposited(address indexed _from, address indexed _to, uint _value, uint _lastStakeBlockNumber);
 
     /// @notice EIP-4626 version of withdraw event
     /// @param _owner user who triggered the withdrawal
@@ -395,7 +396,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
             }
         }
 
-       return (allClaimed, lastClaimIndex);
+        return (allClaimed, lastClaimIndex);
     }
 
     function claim(uint _claimPageSize) external nonReentrant {
@@ -453,33 +454,25 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         require(info.lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
 
         // count amount to withdraw from staked except borrowed
-        uint toUnstake = 0;
-        if (info.staked > info.borrowed) {
-            toUnstake = info.staked.sub(info.borrowed);
-        } else {
-            // wsfhm balance of last one is the same, so wsFHM should be rounded
-            require(info.staked == info.borrowed, "STAKED_LESS_THAN_BORROWED");
-            toUnstake = 0;
-        }
+        uint maxToUnstake = info.staked.sub(info.borrowed);
+        require(_amount <= maxToUnstake, "NOT_ENOUGH_USER_TOKENS");
 
-        uint transferring = getWithdrawableBalance(info.lastStakeBlockNumber, toUnstake);
-        // cannot unstake what is not mine
-        require(toUnstake <= info.staked, "NOT_ENOUGH_USER_TOKENS");
+        uint transferring = getWithdrawableBalance(info.lastStakeBlockNumber, _amount);
         // and more than we have
         require(transferring <= totalStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
 
-        info.staked = info.staked.sub(toUnstake);
+        info.staked = info.staked.sub(_amount);
         if (info.staked == 0) {
             // if unstaking everything just delete whole record
             delete userInfo[_owner];
         }
 
         // remove it from total balance
-        if (totalStaking > toUnstake) {
-            totalStaking = totalStaking.sub(toUnstake);
+        if (totalStaking > _amount) {
+            totalStaking = totalStaking.sub(_amount);
         } else {
             // wsfhm balance of last one is the same, so wsfhm should be rounded
-            require(totalStaking == toUnstake, "LAST_USER_NEED_BALANCE");
+            require(totalStaking == _amount, "LAST_USER_NEED_BALANCE");
             totalStaking = 0;
         }
 
@@ -487,12 +480,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         IERC20(wsFHM).safeTransfer(_to, transferring);
 
         // and send fee to DAO
-        uint fee = toUnstake.sub(transferring);
-        IERC20(wsFHM).safeTransfer(DAO, fee);
+        uint fee = _amount.sub(transferring);
+        if (fee > 0) {
+            IERC20(wsFHM).safeTransfer(DAO, fee);
+        }
 
         // and record in history
-        emit Withdraw(_owner, _to, toUnstake);
-        emit StakingWithdraw(_owner, _to, toUnstake, transferring, block.number);
+        emit Withdraw(_owner, _to, _amount);
+        emit StakingWithdraw(_owner, _to, _amount, transferring, block.number);
 
         _shares = 0;
     }
