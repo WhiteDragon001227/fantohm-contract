@@ -4,10 +4,8 @@ pragma solidity 0.7.5;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/presets/ERC20PresetMinterPauser.sol";
 
 interface IVotingEscrow {
     function balanceOfVotingToken(address _owner) external view returns (uint);
@@ -74,7 +72,7 @@ contract VotingHelper is Ownable, AccessControl {
         tokens.push(_contract);
     }
 
-    function removeToken(uint _index) external onlyOwner {
+    function removeToken(uint _index) external {
         require(hasRole(ADMIN_ROLE, _msgSender()), "Must have admin role to configure voting");
 
         tokens[_index] = address(0);
@@ -87,20 +85,20 @@ contract VotingHelper is Ownable, AccessControl {
         wrappedTokens.push(_contract);
     }
 
-    function removeWrappedToken(uint _index) external onlyOwner {
+    function removeWrappedToken(uint _index) external {
         require(hasRole(ADMIN_ROLE, _msgSender()), "Must have admin role to configure voting");
 
         wrappedTokens[_index] = address(0);
     }
 
-    function addContract(address _contract) external onlyOwner {
+    function addContract(address _contract) external {
         require(hasRole(ADMIN_ROLE, _msgSender()), "Must have admin role to configure voting");
 
         require(_contract != address(0));
         contracts.push(_contract);
     }
 
-    function removeContract(uint _index) external onlyOwner {
+    function removeContract(uint _index) external {
         require(hasRole(ADMIN_ROLE, _msgSender()), "Must have admin role to configure voting");
 
         contracts[_index] = address(0);
