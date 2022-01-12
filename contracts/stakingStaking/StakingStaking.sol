@@ -175,6 +175,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         wsFHM = _wsFHM;
         DAO = _DAO;
         initCalled = false;
+
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     /// @notice suggested values:
@@ -607,36 +609,56 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // liquidate less or equal then borrow this turn
         if (info.borrowed >= _amount) {
-            info.borrowed = info.borrowed.sub(_amount);
+            // 1. subs from user staked
+            if (info.staked > _amount) {
+                info.staked = info.staked.sub(_amount);
+            } else {
+                info.staked = 0;
+            }
 
-            // subtract it from total balance
+            // 2. subs from total staking
+            if (totalStaking > _amount) {
+                totalStaking = totalStaking.sub(_amount);
+            } else {
+                totalStaking = 0;
+            }
+
+            // 3. subs total borrowed
             if (totalBorrowed > _amount) {
                 totalBorrowed = totalBorrowed.sub(_amount);
             } else {
                 totalBorrowed = 0;
             }
+
+            // 4. subs from user borrowed
+            info.borrowed = info.borrowed.sub(_amount);
         }
         // liquidate all plus take a loss
         else {
             uint toTakeLoss = _amount.sub(info.borrowed);
+
+            // 1. subs from user staked
             if (info.staked > toTakeLoss) {
                 info.staked = info.staked.sub(toTakeLoss);
             } else {
                 info.staked = 0;
             }
+
+            // 2. subs from total staking
             if (totalStaking > toTakeLoss) {
                 totalStaking = totalStaking.sub(toTakeLoss);
             } else {
                 totalStaking = 0;
             }
 
-            // subtract it from total balance
+            // 3. subs from total borrowed
             if (totalBorrowed > info.borrowed) {
                 totalBorrowed = totalBorrowed.sub(info.borrowed);
             } else {
                 totalBorrowed = 0;
             }
 
+            // 4. subs from borrowed
             info.borrowed = 0;
         }
 
@@ -713,6 +735,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @dev Caller will receive any ETH held as float in the Vault.
     function destroy() external onlyOwner {
         selfdestruct(payable(msg.sender));
+    }
+
+    /// @notice grants borrower role to given _account
+    /// @param _account borrower contract
+    function grantRoleBorrower(address _account) external {
+        grantRole(BORROWER_ROLE, _account);
+    }
+
+    /// @notice revoke borrower role to given _account
+    /// @param _account borrower contract
+    function revokeRoleBorrower(address _account) external {
+        revokeRole(BORROWER_ROLE, _account);
     }
 
     /* ///////////////////////////////////////////////////////////////
