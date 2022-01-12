@@ -1,5 +1,3 @@
-/// FIXME borrowing, what if user deletes withdraws during borrow
-
 // SPDX-License-Identifier: MIT
 
 pragma solidity 0.7.5;
@@ -250,7 +248,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // and record in history
         emit Deposit(msg.sender, _to, _amount);
-        emit StakingDeposited(msg.sender, _to, info.staked, info.lastStakeBlockNumber);
+        emit StakingDeposited(msg.sender, _to, _amount, info.lastStakeBlockNumber);
 
         _shares = 0;
     }
