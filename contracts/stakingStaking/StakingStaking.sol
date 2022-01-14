@@ -126,6 +126,12 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _claimed how many wsFHM claimed
     event RewardClaimed(address indexed _wallet, uint indexed _startClaimIndex, uint indexed _lastClaimIndex, uint _claimed);
 
+    /// @notice token transferred inside vault
+    /// @param _from  user who triggered the transfer
+    /// @param _to user to which is transferring to
+    /// @param _amount amount in wrapped token to transfer
+    event TokenTransferred(address indexed _from, address indexed _to, uint _amount);
+
     /// @notice approve borrow contract for 9,9 borrowing against
     /// @param _owner user who triggered approval
     /// @param _spender user who has rights to call borrow and return borrow or liquidate borrow
@@ -491,6 +497,35 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         _shares = 0;
     }
+
+    /// @notice transfers amount to different user with preserving lastStakedBlock
+    /// @param _to user transferring amount to
+    /// @param _amount wsfhm amount
+    /// @return _shares not used
+    function transfer(address _to, uint _amount) external nonReentrant returns (uint _shares) {
+        // need to claim before any operation with staked amounts
+        // use half of the page size to have same complexity
+        uint halfPageSize = claimPageSize.div(2);
+        doClaim(msg.sender, halfPageSize);
+        doClaim(_to, halfPageSize);
+
+        // subtract from caller
+        UserInfo storage fromInfo = userInfo[msg.sender];
+        require(fromInfo.staked.sub(fromInfo.borrowed) >= _amount, "NOT_ENOUGH_USER_TOKENS");
+        fromInfo.staked = fromInfo.staked.sub(_amount);
+
+        // add it to the callee
+        UserInfo storage toInfo = userInfo[_to];
+        toInfo.staked = toInfo.staked.add(_amount);
+        // act as normal deposit()
+        toInfo.lastStakeBlockNumber = Math.max(fromInfo.lastStakeBlockNumber, toInfo.lastStakeBlockNumber);
+
+        // and record in history
+        emit TokenTransferred(msg.sender, _to, _amount);
+
+        _shares = 0;
+    }
+
 
     /* ///////////////////////////////////////////////////////////////
                           BORROWING FUNCTIONS
