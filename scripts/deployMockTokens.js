@@ -12,13 +12,23 @@ async function main() {
     const DAI = await ethers.getContractFactory('DAI');
     const dai = await DAI.deploy( 0 );
     console.log(`Deployed DAI to: ${dai.address}`)
-    
+
 
     // Deploy 10,000,000 mock DAI
     await dai.mint( deployer.address, initialMint );
     console.log(`Minted DAI`)
-
     console.log( "DAI: " + dai.address );
+
+
+    // Deploy MIM
+    const MIM = await ethers.getContractFactory('Mim');
+    const mim = await MIM.deploy( 0 );
+    console.log(`Deployed MIM to: ${mim.address}`)
+
+    // Deploy 10,000,000 mock MIM
+    await mim.mint( deployer.address, initialMint );
+    console.log(`Minted MIM`)
+    console.log( "MIM: " + mim.address );
 }
 
 main()

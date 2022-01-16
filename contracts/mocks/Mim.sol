@@ -31,7 +31,7 @@ contract LibNote {
   }
 }
 
-interface IFRAX {
+interface IMim {
 
 
     // --- Auth ---
@@ -64,7 +64,7 @@ interface IFRAX {
 }
 
 
-contract FRAX is LibNote {
+contract Mim is LibNote {
   
   event Approval(address indexed src, address indexed guy, uint wad);
   event Transfer(address indexed src, address indexed dst, uint wad);
@@ -77,23 +77,23 @@ contract FRAX is LibNote {
     function deny(address guy) external note auth { wards[guy] = 0; }
 
     modifier auth {
-        require(wards[msg.sender] == 1, "Frax/not-authorized");
+        require(wards[msg.sender] == 1, "Mim/not-authorized");
         _;
     }
 
     // --- ERC20 Data ---
-    string  public constant name     = "FRAX TOKEN";
-    string  public constant symbol   = "FRAX";
+    string  public constant name     = "Mim TOKEN";
+    string  public constant symbol   = "Mim";
     string  public constant version  = "1";
     uint8   public constant decimals = 18;
     uint256 public totalSupply;
-    uint public dailyFraxLimit;
+    uint public dailyMimLimit;
 
     mapping (address => uint)                      public balanceOf;
     mapping (address => mapping (address => uint)) private allowances;
     mapping (address => uint)                      public nonces;
     mapping (address => uint)                      public lastMintRestart;
-    mapping (address => uint)                      public fraxMintedToday;
+    mapping (address => uint)                      public mimMintedToday;
 
     // event Approval(address indexed src, address indexed guy, uint wad);
     // event Transfer(address indexed src, address indexed dst, uint wad);
@@ -121,7 +121,7 @@ contract FRAX is LibNote {
             chainId_,
             address(this)
         ));
-        dailyFraxLimit = 10000000000000000000000;
+        dailyMimLimit = 10000000000000000000000;
     }
 
     function allowance( address account_, address sender_ ) external view returns ( uint ) {
@@ -141,9 +141,9 @@ contract FRAX is LibNote {
     function transferFrom(address src, address dst, uint wad) public returns (bool) {
       
       
-      require(balanceOf[src] >= wad, "Frax/insufficient-balance");
+      require(balanceOf[src] >= wad, "Mim/insufficient-balance");
         if (src != msg.sender && _allowance( src, msg.sender ) != uint(-1)) {
-            require(_allowance( src, msg.sender ) >= wad, "Frax/insufficient-allowance");
+            require(_allowance( src, msg.sender ) >= wad, "Mim/insufficient-allowance");
             allowances[src][msg.sender] = sub(_allowance( src, msg.sender ), wad);
         }
         balanceOf[src] = sub(balanceOf[src], wad);
@@ -156,19 +156,19 @@ contract FRAX is LibNote {
         wards[usr] = 1;
     }
 
-    function adjustDailyFraxLimit(uint _limit) external auth {
-        dailyFraxLimit = _limit;
+    function adjustDailyMimLimit(uint _limit) external auth {
+        dailyMimLimit = _limit;
     }
 
     function mint(address usr, uint wad) external {
 
       if(wards[msg.sender] == 0) {
-        require(add(wad, fraxMintedToday[msg.sender]) <= dailyFraxLimit || sub(block.number, lastMintRestart[msg.sender]) >= 6500 && wad <= dailyFraxLimit, "Over daily Frax Limit");
+        require(add(wad, mimMintedToday[msg.sender]) <= dailyMimLimit || sub(block.number, lastMintRestart[msg.sender]) >= 6500 && wad <= dailyMimLimit, "Over daily Mim Limit");
         if( sub(block.number, lastMintRestart[msg.sender]) >= 6500 ) {
-            fraxMintedToday[msg.sender] = wad;
+            mimMintedToday[msg.sender] = wad;
             lastMintRestart[msg.sender] = block.number;
         } else {
-            fraxMintedToday[msg.sender] = add(fraxMintedToday[msg.sender], wad);
+            mimMintedToday[msg.sender] = add(mimMintedToday[msg.sender], wad);
         }
       }
       
@@ -181,9 +181,9 @@ contract FRAX is LibNote {
     }
 
     function burn(address usr, uint wad) external {
-        require(balanceOf[usr] >= wad, "Frax/insufficient-balance");
+        require(balanceOf[usr] >= wad, "Mim/insufficient-balance");
         if (usr != msg.sender && _allowance( usr, msg.sender ) != uint(-1)) {
-            require(_allowance( usr, msg.sender ) >= wad, "Frax/insufficient-allowance");
+            require(_allowance( usr, msg.sender ) >= wad, "Mim/insufficient-allowance");
             allowances[usr][msg.sender] = sub(_allowance( usr, msg.sender ), wad);
         }
         balanceOf[usr] = sub(balanceOf[usr], wad);
@@ -233,10 +233,10 @@ contract FRAX is LibNote {
                                      allowed))
         ));
 
-        require(holder != address(0), "Frax/invalid-address-0");
-        require(holder == ecrecover(digest, v, r, s), "Frax/invalid-permit");
-        require(expiry == 0 || block.timestamp <= expiry, "Frax/permit-expired");
-        require(nonce == nonces[holder]++, "Frax/invalid-nonce");
+        require(holder != address(0), "Mim/invalid-address-0");
+        require(holder == ecrecover(digest, v, r, s), "Mim/invalid-permit");
+        require(expiry == 0 || block.timestamp <= expiry, "Mim/permit-expired");
+        require(nonce == nonces[holder]++, "Mim/invalid-nonce");
         uint wad = allowed ? uint(-1) : 0;
         allowances[holder][spender] = wad;
         emit Approval(holder, spender, wad);
