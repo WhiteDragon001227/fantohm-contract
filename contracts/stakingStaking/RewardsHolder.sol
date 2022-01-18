@@ -2,10 +2,10 @@
 
 pragma solidity 0.7.5;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IwsFHM {
     function wrap( uint _amount ) external returns ( uint );
@@ -21,8 +21,11 @@ interface IStakingStaking {
     function newSample(uint _balance) external;
 }
 
-contract RewardsHolder is Ownable, ReentrancyGuard {
+contract RewardsHolder is Ownable, AccessControl {
     using SafeMath for uint;
+
+    /// @dev ACL role for staking pool contract to whitelist call our methods
+    bytes32 public constant TICKER_ROLE = keccak256("TICKER_ROLE");
 
     address public immutable FHM;
     address public immutable sFHM;
@@ -38,13 +41,17 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
     event RewardSample(uint timestamp, uint blockNumber, uint rewards);
 
     constructor(address _FHM, address _sFHM, address _wsFHM, address _staking) {
+        require(_FHM != address(0));
         FHM = _FHM;
+        require(_sFHM != address(0));
         sFHM = _sFHM;
+        require(_wsFHM != address(0));
         wsFHM = _wsFHM;
+        require(_staking != address(0));
         staking = _staking;
     }
 
-    function init(address _stakingStaking, uint _blocksPerSample) external onlyOwner {
+    function setParameters(address _stakingStaking, uint _blocksPerSample) external onlyOwner {
         stakingStaking = _stakingStaking;
         blocksPerSample = _blocksPerSample;
     }
@@ -69,7 +76,9 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
         }
     }
 
-    function newTick() public {
+    function newTick() external {
+        require(hasRole(TICKER_ROLE, msg.sender), "MISSING_TICKER_ROLE");
+
         _stakeAndConvert();
 
         // not doing anything, waiting and gathering rewards
@@ -87,5 +96,17 @@ contract RewardsHolder is Ownable, ReentrancyGuard {
 
         // and record in history
         emit RewardSample(block.timestamp, block.number, rewards);
+    }
+
+    /// @notice grants ticker role to given _account
+    /// @param _account ticker contract
+    function grantRoleTicker(address _account) external {
+        grantRole(TICKER_ROLE, _account);
+    }
+
+    /// @notice revoke ticker role to given _account
+    /// @param _account ticker contract
+    function revokeRoleTicker(address _account) external {
+        revokeRole(TICKER_ROLE, _account);
     }
 }

@@ -33,6 +33,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @dev ACL role for borrower contract to whitelist call our methods
     bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
+    /// @dev ACL role for calling newSample() from RewardsHolder contract
+    bytes32 public constant REWARDS_ROLE = keccak256("REWARDS_ROLE");
+
     address public immutable wsFHM;
     address public immutable DAO;
     address public rewardsHolder;
@@ -176,9 +179,10 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     event EmergencyEthRecovered(address indexed _recipient, uint _amount);
 
     constructor(address _wsFHM, address _DAO) {
+        require(_wsFHM != address(0));
         wsFHM = _wsFHM;
+        require(_DAO != address(0));
         DAO = _DAO;
-        initCalled = false;
 
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -191,7 +195,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function setParameters(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
@@ -207,7 +211,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
     }
 
-    function modifyWhitelist(address user, bool add) external {
+    function modifyWhitelist(address user, bool add) external onlyOwner {
         if (add) {
             require(!whitelist[user], "ALREADY_IN_WHITELIST");
             whitelist[user] = true;
@@ -337,6 +341,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     // @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
     // @param _rewarded wsFHM amount rewarded
     function newSample(uint _rewarded) public {
+        require(hasRole(REWARDS_ROLE, msg.sender), "MISSING_REWARDS_ROLE");
+
         // transfer balance from rewards holder
         if (_rewarded > 0) IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _rewarded);
 
@@ -384,22 +390,20 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
             // page size is either _claimPageSize or the rest
             uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
 
-            for (uint i = startIndex; i <= endIndex; i++) {
-                lastClaimIndex = i;
-
-                // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
-                if (staked > 0) {
-                    uint claimed = 0;
+            if (staked > 0) {
+                for (uint i = startIndex; i <= endIndex; i++) {
+                    // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
                     if (rewardSamples[i].tvl > 0) {
+                        uint claimed = 0;
                         // 40 * 10 / 20000
                         uint share = staked.add(allClaimed);
                         uint wsfhm = rewardSamples[i].totalRewarded.mul(share);
                         claimed = wsfhm.div(rewardSamples[i].tvl);
+                        allClaimed = allClaimed.add(claimed);
                     }
-
-                    allClaimed = allClaimed.add(claimed);
                 }
             }
+            lastClaimIndex = endIndex;
         }
 
         return (allClaimed, lastClaimIndex);
@@ -780,6 +784,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _account borrower contract
     function revokeRoleBorrower(address _account) external {
         revokeRole(BORROWER_ROLE, _account);
+    }
+
+    /// @notice grants rewards role to given _account
+    /// @param _account rewards contract
+    function grantRoleRewards(address _account) external {
+        grantRole(REWARDS_ROLE, _account);
+    }
+
+    /// @notice revoke rewards role to given _account
+    /// @param _account rewards contract
+    function revokeRoleRewards(address _account) external {
+        revokeRole(REWARDS_ROLE, _account);
     }
 
     /* ///////////////////////////////////////////////////////////////
