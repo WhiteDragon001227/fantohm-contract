@@ -604,6 +604,10 @@ interface IStaking {
     function claim( address _recipient ) external;
 }
 
+interface IFHUDMinter {
+    function getMarketPrice() external view returns (uint);
+}
+
 contract FantohmBondStakingDepository is Ownable {
 
     using FixedPoint for *;
@@ -630,6 +634,7 @@ contract FantohmBondStakingDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
+    address public immutable fhudMinter; // FHUD minter
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
@@ -653,6 +658,7 @@ contract FantohmBondStakingDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
+        uint maximumDiscount; // in thousands of a %, 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
@@ -687,7 +693,8 @@ contract FantohmBondStakingDepository is Ownable {
         address _principle,
         address _treasury,
         address _DAO,
-        address _bondCalculator
+        address _bondCalculator,
+        address _fhudMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -699,6 +706,8 @@ contract FantohmBondStakingDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
+        require( _fhudMinter != address(0) );
+        fhudMinter = _fhudMinter;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
@@ -709,6 +718,7 @@ contract FantohmBondStakingDepository is Ownable {
      *  @param _controlVariable uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
+     *  @param _maximumDiscount uint
      *  @param _maxPayout uint
      *  @param _fee uint
      *  @param _maxDebt uint
@@ -718,6 +728,7 @@ contract FantohmBondStakingDepository is Ownable {
         uint _controlVariable,
         uint _vestingTerm,
         uint _minimumPrice,
+        uint _maximumDiscount,
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
@@ -727,6 +738,7 @@ contract FantohmBondStakingDepository is Ownable {
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
+        maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
         fee: _fee,
         maxDebt: _maxDebt
@@ -951,6 +963,11 @@ contract FantohmBondStakingDepository is Ownable {
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     /**
@@ -964,6 +981,17 @@ contract FantohmBondStakingDepository is Ownable {
         } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
+    }
+
+    function getMinimalBondPrice() public view returns (uint) {
+        uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
+        return marketPrice.sub(discount);
     }
 
     /**

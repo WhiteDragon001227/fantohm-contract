@@ -616,7 +616,7 @@ interface AggregatorV3Interface {
 }
 
 interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
+    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
     function mintRewards( address _recipient, uint _amount ) external;
 }
@@ -627,6 +627,10 @@ interface IStaking {
 
 interface IStakingHelper {
     function stake( uint _amount, address _recipient ) external;
+}
+
+interface IFHUDMinter {
+    function getMarketPrice() external view returns (uint);
 }
 
 contract NonStablecoinBondDepository is Ownable {
@@ -650,10 +654,11 @@ contract NonStablecoinBondDepository is Ownable {
 
     /* ======== STATE VARIABLES ======== */
 
-    address public immutable OHM; // token given as payment for bond
+    address public immutable FHM; // token given as payment for bond
     address public immutable principle; // token used to create bond
-    address public immutable treasury; // mints OHM when receives principle
+    address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
+    address public immutable fhudMinter; // FHM price
 
     AggregatorV3Interface internal priceFeed;
 
@@ -678,7 +683,8 @@ contract NonStablecoinBondDepository is Ownable {
     struct Terms {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
-        uint minimumPrice; // vs principle value. 4 decimals (1500 = 0.15)
+        uint minimumPrice; // vs principle value
+        uint maximumDiscount; // in thousands of a %, 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
@@ -706,20 +712,23 @@ contract NonStablecoinBondDepository is Ownable {
     /* ======== INITIALIZATION ======== */
 
     constructor (
-        address _OHM,
+        address _FHM,
         address _principle,
         address _treasury,
         address _DAO,
-        address _feed
+        address _feed,
+        address _fhudMinter
     ) {
-        require( _OHM != address(0) );
-        OHM = _OHM;
+        require( _FHM != address(0) );
+        FHM = _FHM;
         require( _principle != address(0) );
         principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
+        require( _fhudMinter != address(0) );
+        fhudMinter = _fhudMinter;
         require( _feed != address(0) );
         priceFeed = AggregatorV3Interface( _feed );
     }
@@ -729,6 +738,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @param _controlVariable uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
+     *  @param _maximumDiscount uint
      *  @param _maxPayout uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
@@ -737,6 +747,7 @@ contract NonStablecoinBondDepository is Ownable {
         uint _controlVariable,
         uint _vestingTerm,
         uint _minimumPrice,
+        uint _maximumDiscount,
         uint _maxPayout,
         uint _maxDebt,
         uint _initialDebt
@@ -745,6 +756,7 @@ contract NonStablecoinBondDepository is Ownable {
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
+        maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
         maxDebt: _maxDebt
         });
@@ -919,13 +931,13 @@ contract NonStablecoinBondDepository is Ownable {
      */
     function stakeOrSend( address _recipient, bool _stake, uint _amount ) internal returns ( uint ) {
         if ( !_stake ) { // if user does not want to stake
-            IERC20( OHM ).transfer( _recipient, _amount ); // send payout
+            IERC20(FHM).transfer( _recipient, _amount ); // send payout
         } else { // if user wants to stake
             if ( useHelper ) { // use if staking warmup is 0
-                IERC20( OHM ).approve( stakingHelper, _amount );
+                IERC20(FHM).approve( stakingHelper, _amount );
                 IStakingHelper( stakingHelper ).stake( _amount, _recipient );
             } else {
-                IERC20( OHM ).approve( staking, _amount );
+                IERC20(FHM).approve( staking, _amount );
                 IStaking( staking ).stake( _amount, _recipient );
             }
         }
@@ -973,7 +985,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( OHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -995,6 +1007,11 @@ contract NonStablecoinBondDepository is Ownable {
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     /**
@@ -1008,6 +1025,17 @@ contract NonStablecoinBondDepository is Ownable {
         } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
+    }
+
+    function getMinimalBondPrice() public view returns (uint) {
+        uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
+        return marketPrice.sub(discount);
     }
 
     /**
@@ -1028,11 +1056,11 @@ contract NonStablecoinBondDepository is Ownable {
 
 
     /**
-     *  @notice calculate current ratio of debt to OHM supply
+     *  @notice calculate current ratio of debt to FHM supply
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( OHM ).totalSupply();
+        uint supply = IERC20(FHM).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1086,7 +1114,7 @@ contract NonStablecoinBondDepository is Ownable {
     }
 
     /**
-     *  @notice calculate amount of OHM available for claim by depositor
+     *  @notice calculate amount of FHM available for claim by depositor
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
@@ -1107,11 +1135,11 @@ contract NonStablecoinBondDepository is Ownable {
     /* ======= AUXILLIARY ======= */
 
     /**
-     *  @notice allow anyone to send lost tokens (excluding principle or OHM) to the DAO
+     *  @notice allow anyone to send lost tokens (excluding principle or FHM) to the DAO
      *  @return bool
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
-        require( _token != OHM );
+        require( _token != FHM);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;

@@ -631,6 +631,10 @@ interface IStaking {
     function claim( address _recipient ) external;
 }
 
+interface IFHUDMinter {
+    function getMarketPrice() external view returns (uint);
+}
+
 contract NonStablecoinBondStakingDepository is Ownable {
 
     using FixedPoint for *;
@@ -657,6 +661,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
+    address public immutable fhudMinter; // FHM price
 
     AggregatorV3Interface internal priceFeed;
 
@@ -680,6 +685,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value. 4 decimals (1500 = 0.15)
+        uint maximumDiscount; // in thousands of a %, 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
@@ -713,7 +719,8 @@ contract NonStablecoinBondStakingDepository is Ownable {
         address _principle,
         address _treasury,
         address _DAO,
-        address _feed
+        address _feed,
+        address _fhudMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -727,6 +734,8 @@ contract NonStablecoinBondStakingDepository is Ownable {
         DAO = _DAO;
         require( _feed != address(0) );
         priceFeed = AggregatorV3Interface( _feed );
+        require( _fhudMinter != address(0) );
+        fhudMinter = _fhudMinter;
     }
 
     /**
@@ -734,6 +743,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @param _controlVariable uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
+     *  @param _maximumDiscount uint
      *  @param _maxPayout uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
@@ -742,6 +752,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         uint _controlVariable,
         uint _vestingTerm,
         uint _minimumPrice,
+        uint _maximumDiscount,
         uint _maxPayout,
         uint _maxDebt,
         uint _initialDebt
@@ -750,6 +761,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
+        maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
         maxDebt: _maxDebt
         });
@@ -963,6 +975,11 @@ contract NonStablecoinBondStakingDepository is Ownable {
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     /**
@@ -976,6 +993,17 @@ contract NonStablecoinBondStakingDepository is Ownable {
         } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
+    }
+
+    function getMinimalBondPrice() public view returns (uint) {
+        uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
+        return marketPrice.sub(discount);
     }
 
     /**
