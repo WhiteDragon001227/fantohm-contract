@@ -205,6 +205,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         pauseNewStakes = _pauseNewStakes;
         enableEmergencyWithdraw = _enableEmergencyWithdraw;
 
+        _setupRole(REWARDS_ROLE, _rewardsHolder);
+        _setupRole(REWARDS_ROLE, msg.sender);
+
         if (!initCalled) {
             newSample(0);
             initCalled = true;

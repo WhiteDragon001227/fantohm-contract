@@ -49,11 +49,15 @@ contract RewardsHolder is Ownable, AccessControl {
         wsFHM = _wsFHM;
         require(_staking != address(0));
         staking = _staking;
+
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     function setParameters(address _stakingStaking, uint _blocksPerSample) external onlyOwner {
         stakingStaking = _stakingStaking;
         blocksPerSample = _blocksPerSample;
+
+        _setupRole(TICKER_ROLE, stakingStaking);
     }
 
     function _stakeAndConvert() private {

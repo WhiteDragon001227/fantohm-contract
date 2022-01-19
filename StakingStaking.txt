@@ -1,3 +1,5 @@
+// Sources flattened with hardhat v2.6.4 https://hardhat.org
+
 // File @openzeppelin/contracts/utils/EnumerableSet.sol@v3.4.2
 
 // SPDX-License-Identifier: MIT
@@ -519,6 +521,8 @@ abstract contract Context {
 // File @openzeppelin/contracts/access/AccessControl.sol@v3.4.2
 
 pragma solidity >=0.6.0 <0.8.0;
+
+
 
 /**
  * @dev Contract module that allows children to implement role-based access
@@ -1099,6 +1103,8 @@ library SafeMath {
 
 pragma solidity >=0.6.0 <0.8.0;
 
+
+
 /**
  * @title SafeERC20
  * @dev Wrappers around ERC20 operations that throw on failure (when the token
@@ -1270,6 +1276,11 @@ abstract contract ReentrancyGuard {
 pragma solidity 0.7.5;
 
 
+
+
+
+
+
 interface IwsFHM {
     function sFHMValue(uint _amount) external view returns (uint);
 }
@@ -1292,6 +1303,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
     /// @dev ACL role for borrower contract to whitelist call our methods
     bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
+
+    /// @dev ACL role for calling newSample() from RewardsHolder contract
+    bytes32 public constant REWARDS_ROLE = keccak256("REWARDS_ROLE");
 
     address public immutable wsFHM;
     address public immutable DAO;
@@ -1386,6 +1400,12 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _claimed how many wsFHM claimed
     event RewardClaimed(address indexed _wallet, uint indexed _startClaimIndex, uint indexed _lastClaimIndex, uint _claimed);
 
+    /// @notice token transferred inside vault
+    /// @param _from  user who triggered the transfer
+    /// @param _to user to which is transferring to
+    /// @param _amount amount in wrapped token to transfer
+    event TokenTransferred(address indexed _from, address indexed _to, uint _amount);
+
     /// @notice approve borrow contract for 9,9 borrowing against
     /// @param _owner user who triggered approval
     /// @param _spender user who has rights to call borrow and return borrow or liquidate borrow
@@ -1430,9 +1450,10 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     event EmergencyEthRecovered(address indexed _recipient, uint _amount);
 
     constructor(address _wsFHM, address _DAO) {
+        require(_wsFHM != address(0));
         wsFHM = _wsFHM;
+        require(_DAO != address(0));
         DAO = _DAO;
-        initCalled = false;
 
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -1445,7 +1466,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function init(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function setParameters(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
@@ -1455,13 +1476,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         pauseNewStakes = _pauseNewStakes;
         enableEmergencyWithdraw = _enableEmergencyWithdraw;
 
+        _setupRole(REWARDS_ROLE, _rewardsHolder);
+        _setupRole(REWARDS_ROLE, msg.sender);
+
         if (!initCalled) {
             newSample(0);
             initCalled = true;
         }
     }
 
-    function modifyWhitelist(address user, bool add) external {
+    function modifyWhitelist(address user, bool add) external onlyOwner {
         if (add) {
             require(!whitelist[user], "ALREADY_IN_WHITELIST");
             whitelist[user] = true;
@@ -1591,6 +1615,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     // @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
     // @param _rewarded wsFHM amount rewarded
     function newSample(uint _rewarded) public {
+        require(hasRole(REWARDS_ROLE, msg.sender), "MISSING_REWARDS_ROLE");
+
         // transfer balance from rewards holder
         if (_rewarded > 0) IERC20(wsFHM).safeTransferFrom(msg.sender, address(this), _rewarded);
 
@@ -1638,22 +1664,20 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
             // page size is either _claimPageSize or the rest
             uint endIndex = Math.min(lastClaimIndex + _claimPageSize, rewardSamples.length - 1);
 
-            for (uint i = startIndex; i <= endIndex; i++) {
-                lastClaimIndex = i;
-
-                // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
-                if (staked > 0) {
-                    uint claimed = 0;
+            if (staked > 0) {
+                for (uint i = startIndex; i <= endIndex; i++) {
+                    // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
                     if (rewardSamples[i].tvl > 0) {
+                        uint claimed = 0;
                         // 40 * 10 / 20000
                         uint share = staked.add(allClaimed);
                         uint wsfhm = rewardSamples[i].totalRewarded.mul(share);
                         claimed = wsfhm.div(rewardSamples[i].tvl);
+                        allClaimed = allClaimed.add(claimed);
                     }
-
-                    allClaimed = allClaimed.add(claimed);
                 }
             }
+            lastClaimIndex = endIndex;
         }
 
         return (allClaimed, lastClaimIndex);
@@ -1751,6 +1775,35 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         _shares = 0;
     }
+
+    /// @notice transfers amount to different user with preserving lastStakedBlock
+    /// @param _to user transferring amount to
+    /// @param _amount wsfhm amount
+    /// @return _shares not used
+    function transfer(address _to, uint _amount) external nonReentrant returns (uint _shares) {
+        // need to claim before any operation with staked amounts
+        // use half of the page size to have same complexity
+        uint halfPageSize = claimPageSize.div(2);
+        doClaim(msg.sender, halfPageSize);
+        doClaim(_to, halfPageSize);
+
+        // subtract from caller
+        UserInfo storage fromInfo = userInfo[msg.sender];
+        require(fromInfo.staked.sub(fromInfo.borrowed) >= _amount, "NOT_ENOUGH_USER_TOKENS");
+        fromInfo.staked = fromInfo.staked.sub(_amount);
+
+        // add it to the callee
+        UserInfo storage toInfo = userInfo[_to];
+        toInfo.staked = toInfo.staked.add(_amount);
+        // act as normal deposit()
+        toInfo.lastStakeBlockNumber = Math.max(fromInfo.lastStakeBlockNumber, toInfo.lastStakeBlockNumber);
+
+        // and record in history
+        emit TokenTransferred(msg.sender, _to, _amount);
+
+        _shares = 0;
+    }
+
 
     /* ///////////////////////////////////////////////////////////////
                           BORROWING FUNCTIONS
@@ -2005,6 +2058,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _account borrower contract
     function revokeRoleBorrower(address _account) external {
         revokeRole(BORROWER_ROLE, _account);
+    }
+
+    /// @notice grants rewards role to given _account
+    /// @param _account rewards contract
+    function grantRoleRewards(address _account) external {
+        grantRole(REWARDS_ROLE, _account);
+    }
+
+    /// @notice revoke rewards role to given _account
+    /// @param _account rewards contract
+    function revokeRoleRewards(address _account) external {
+        revokeRole(REWARDS_ROLE, _account);
     }
 
     /* ///////////////////////////////////////////////////////////////
