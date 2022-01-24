@@ -15,9 +15,9 @@ interface IStaking {
 
     function rebase() external;
 
-    function epoch() external returns (uint,uint,uint,uint);
+    function epoch() external view returns (uint,uint,uint,uint);
 
-    function warmupPeriod() external returns (uint);
+    function warmupPeriod() external view returns (uint);
 }
 
 interface IsFHM {
@@ -74,7 +74,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         _setupRole(STAKER_ROLE, manager);
     }
 
-    function checkBefore(address _recipient) private {
+    function checkBefore(address _recipient) private view {
         require(hasRole(STAKER_ROLE, _msgSender()), "Must have staker role to stake or claim");
         require(_recipient != address(0));
     }
@@ -129,7 +129,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         IERC20(sFHM).safeTransfer(_recipient, IsFHM(sFHM).balanceForGons(info.gons));
     }
 
-    function getEpochNumber() public returns (uint _epoch) {
+    function getEpochNumber() public view returns (uint _epoch) {
         (,_epoch,,) = IStaking(staking).epoch();
     }
 

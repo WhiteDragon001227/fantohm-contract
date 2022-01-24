@@ -15,9 +15,9 @@ interface IStaking {
 
     function rebase() external;
 
-    function epoch() external returns (uint,uint,uint,uint);
+    function epoch() external view returns (uint,uint,uint,uint);
 
-    function warmupPeriod() external returns (uint);
+    function warmupPeriod() external view returns (uint);
 }
 
 interface IsFHM {
@@ -60,7 +60,7 @@ contract StakingWarmupManager is Ownable {
         staking = _staking;
     }
 
-    function checkBefore(address _recipient) private {
+    function checkBefore(address _recipient) private view {
         require(_recipient != address(0));
 
         uint period = IStaking(staking).warmupPeriod();
@@ -113,7 +113,7 @@ contract StakingWarmupManager is Ownable {
         }
     }
 
-    function getEpochNumber() public returns (uint _epoch) {
+    function getEpochNumber() public view returns (uint _epoch) {
         (,_epoch,,) = IStaking(staking).epoch();
     }
 
@@ -128,7 +128,7 @@ contract StakingWarmupManager is Ownable {
         executors[_index] = address(0);
     }
 
-    function executorsLength() private returns (uint) {
+    function executorsLength() private view returns (uint) {
         uint length = 0;
         for (uint i = 0; i < executors.length; i++) {
             if (executors[i] != address(0)) length++;
@@ -136,7 +136,7 @@ contract StakingWarmupManager is Ownable {
         return length;
     }
 
-    function executorGet(uint _index) private returns (address) {
+    function executorGet(uint _index) private view returns (address) {
         uint index = 0;
         for (uint i = 0; i < executors.length; i++) {
             if (executors[i] != address(0) && index == _index) return executors[i];
