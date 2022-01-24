@@ -5,12 +5,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-contract Zap {
+contract Zap_V1 {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     /**
-    @dev Must attach ETH equal to the `value` field from the API response.
+    @dev Buy bonds with dai and ftm using zap.
     @param sellTokenAddress The 'sellTokenAddress' from the API response
     @param buyTokenAddress The 'buyTokenAddress' field from the API response
     @param sellTokenQuantity The 'sellTokenAmount' field from the API response
