@@ -66,7 +66,7 @@ contract StakingWarmupManager is Ownable {
         uint period = IStaking(staking).warmupPeriod();
         uint realLength = executorsLength();
         if (period == 0) require(realLength == 1, "Not enough executors to handle warmup periods");
-        else require(period == realLength, "Not enough executors to handle warmup periods");
+        else require(realLength >= period, "Not enough executors to handle warmup periods");
     }
 
     /// @notice handles stake to be able to not reset expiry each time stakes in epoch+1

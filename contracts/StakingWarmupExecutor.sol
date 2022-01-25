@@ -100,7 +100,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         info.gons = info.gons.add(IsFHM(sFHM).gonsForBalance(_amount));
         info.expiry = epochNumber.add(IStaking(staking).warmupPeriod());
 
-        IERC20(sFHM).approve(staking, _amount);
+        IERC20(FHM).approve(staking, _amount);
         return IStaking(staking).stake(_amount, address(this));
     }
 
