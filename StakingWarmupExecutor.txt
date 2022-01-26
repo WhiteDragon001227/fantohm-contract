@@ -1260,7 +1260,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
     function stake(uint _amount, address _recipient) external returns (bool) {
         checkBefore(_recipient);
 
-        Claim memory info = warmupInfos[_recipient];
+        Claim storage info = warmupInfos[_recipient];
 
         uint epochNumber = getEpochNumber();
         // if can claim previous epoch do it now
@@ -1291,7 +1291,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
             IStaking(staking).claim(address(this));
         }
 
-        Claim memory info = warmupInfos[_recipient];
+        Claim storage info = warmupInfos[_recipient];
 
         // nothing to send or warmup expiring next turn not this turn
         if (info.expiry > epochNumber) return;
