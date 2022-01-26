@@ -60,8 +60,9 @@ contract StakingWarmupManager is Ownable {
         staking = _staking;
     }
 
-    function checkBefore(address _recipient) private view {
+    function checkBefore(uint _amount, address _recipient) private view {
         require(_recipient != address(0));
+        require(_amount != 0);
 
         uint period = IStaking(staking).warmupPeriod();
         uint realLength = executorsLength();
@@ -73,7 +74,7 @@ contract StakingWarmupManager is Ownable {
     /// @param _amount native tokena amount
     /// @param _recipient originating recipient
     function stake(uint _amount, address _recipient) external returns (bool) {
-        checkBefore(_recipient);
+        checkBefore(_amount, _recipient);
 
         // tick rebase if can do it
         IStaking(staking).rebase();
@@ -104,7 +105,7 @@ contract StakingWarmupManager is Ownable {
     /// @notice claim for _recipient on all warmup executors
     /// @param _recipient originating recipient
     function claim(address _recipient) public {
-        checkBefore(_recipient);
+        checkBefore(1, _recipient);
 
         for (uint i = 0; i < executors.length; i++) {
             if (executors[i] != address(0)) {

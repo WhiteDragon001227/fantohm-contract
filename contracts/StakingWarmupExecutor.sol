@@ -60,6 +60,9 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
     // here should be warmupPeriod times warmupInfos for each modulo
     mapping(address => Claim) public warmupInfos;
 
+    event Staked(address _user, uint deposit, uint _gons, uint _expiry, uint _epoch);
+    event Claimed(address _user, uint deposit, uint _gons, uint _expiry, uint _epoch);
+
     constructor(address _FHM, address _sFHM, address _staking, address _manager) {
         require(_FHM != address(0));
         FHM = _FHM;
@@ -74,9 +77,10 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         _setupRole(STAKER_ROLE, manager);
     }
 
-    function checkBefore(address _recipient) private view {
+    function checkBefore(uint _amount, address _recipient) private view {
         require(hasRole(STAKER_ROLE, _msgSender()), "Must have staker role to stake or claim");
         require(_recipient != address(0));
+        require(_amount != 0);
     }
 
     /// @notice stake for given original _recipient and claim rewards for former epoch
@@ -84,7 +88,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
     /// @param _recipient original recipient, not a manager
     /// @return true
     function stake(uint _amount, address _recipient) external returns (bool) {
-        checkBefore(_recipient);
+        checkBefore(_amount, _recipient);
 
         Claim storage info = warmupInfos[_recipient];
 
@@ -101,13 +105,16 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         info.expiry = epochNumber.add(IStaking(staking).warmupPeriod());
 
         IERC20(FHM).approve(staking, _amount);
+
+        emit Staked(_recipient, info.deposit, info.gons, info.expiry, epochNumber);
+
         return IStaking(staking).stake(_amount, address(this));
     }
 
     /// @notice claim for original recipient
     /// @param _recipient original recipient, not a manager
     function claim(address _recipient) public {
-        checkBefore(_recipient);
+        checkBefore(1, _recipient);
 
         uint epochNumber = getEpochNumber();
         uint warmupPeriod = IStaking(staking).warmupPeriod();
@@ -120,10 +127,12 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         Claim storage info = warmupInfos[_recipient];
 
         // nothing to send or warmup expiring next turn not this turn
-        if (info.expiry > epochNumber) return;
+        if (info.gons == 0 || info.expiry > epochNumber) return;
 
         // delete info as it will already handled
         delete warmupInfos[_recipient];
+
+        emit Claimed(_recipient, IsFHM(sFHM).balanceForGons(info.gons), info.gons, info.expiry, epochNumber);
 
         // transfer staked tokens to originating _recipient
         IERC20(sFHM).safeTransfer(_recipient, IsFHM(sFHM).balanceForGons(info.gons));
