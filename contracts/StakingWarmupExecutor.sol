@@ -60,8 +60,8 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
     // here should be warmupPeriod times warmupInfos for each modulo
     mapping(address => Claim) public warmupInfos;
 
-    event Staked(address _user, uint deposit, uint _gons, uint _expiry, uint _epoch);
-    event Claimed(address _user, uint deposit, uint _gons, uint _expiry, uint _epoch);
+    event WarmupStaked(bool _stake, address _user, uint deposit, uint _gons, uint _epoch, uint _expiry);
+    event WarmupClaimed(bool _stake, address _user, uint deposit, uint _gons, uint _epoch, uint _expiry);
 
     constructor(address _FHM, address _sFHM, address _staking, address _manager) {
         require(_FHM != address(0));
@@ -104,9 +104,10 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         info.gons = info.gons.add(IsFHM(sFHM).gonsForBalance(_amount));
         info.expiry = epochNumber.add(IStaking(staking).warmupPeriod());
 
-        IERC20(FHM).approve(staking, _amount);
+        // and record in history
+        emit WarmupStaked(true, _recipient, info.deposit, info.gons, epochNumber, info.expiry);
 
-        emit Staked(_recipient, info.deposit, info.gons, info.expiry, epochNumber);
+        IERC20(FHM).approve(staking, _amount);
 
         return IStaking(staking).stake(_amount, address(this));
     }
@@ -124,18 +125,19 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
             IStaking(staking).claim(address(this));
         }
 
-        Claim storage info = warmupInfos[_recipient];
+        Claim memory info = warmupInfos[_recipient];
 
         // nothing to send or warmup expiring next turn not this turn
         if (info.gons == 0 || info.expiry > epochNumber) return;
 
+        // transfer staked tokens to originating _recipient
+        IERC20(sFHM).safeTransfer(_recipient, IsFHM(sFHM).balanceForGons(info.gons));
+
         // delete info as it will already handled
         delete warmupInfos[_recipient];
 
-        emit Claimed(_recipient, IsFHM(sFHM).balanceForGons(info.gons), info.gons, info.expiry, epochNumber);
-
-        // transfer staked tokens to originating _recipient
-        IERC20(sFHM).safeTransfer(_recipient, IsFHM(sFHM).balanceForGons(info.gons));
+        // and record in history
+        emit WarmupClaimed(false, _recipient, IsFHM(sFHM).balanceForGons(info.gons), info.gons, epochNumber, info.expiry);
     }
 
     function getEpochNumber() public view returns (uint _epoch) {
