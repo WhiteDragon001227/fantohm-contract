@@ -47,8 +47,8 @@ contract StakingWarmupManager is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    address public FHM;
-    address public staking;
+    address public immutable FHM;
+    address public immutable staking;
 
     address[] public executors;
     uint public currentEpochNumber;

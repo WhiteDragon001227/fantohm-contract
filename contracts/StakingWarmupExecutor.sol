@@ -44,10 +44,10 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
 
     bytes32 public constant STAKER_ROLE = keccak256("STAKER_ROLE");
 
-    address public FHM;
-    address public sFHM;
-    address public staking;
-    address public manager;
+    address public immutable FHM;
+    address public immutable sFHM;
+    address public immutable staking;
+    address public immutable manager;
 
     uint public lastStakedEpochNumber;
 
@@ -74,7 +74,7 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
         manager = _manager;
 
         _setupRole(STAKER_ROLE, msg.sender);
-        _setupRole(STAKER_ROLE, manager);
+        _setupRole(STAKER_ROLE, _manager);
     }
 
     function checkBefore(uint _amount, address _recipient) private view {
@@ -92,24 +92,25 @@ contract StakingWarmupExecutor is Ownable, AccessControl {
 
         Claim storage info = warmupInfos[_recipient];
 
-        uint epochNumber = getEpochNumber();
         // if can claim previous epoch do it now
-        if (epochNumber <= info.expiry) claim(_recipient);
+        if (getEpochNumber() >= info.expiry) claim(_recipient);
+
+        IERC20(FHM).approve(staking, _amount);
+        // stake is changing epoch number potentially
+        bool result = IStaking(staking).stake(_amount, address(this));
 
         // remember last stake for claim
-        lastStakedEpochNumber = epochNumber;
+        lastStakedEpochNumber = getEpochNumber();
 
         // persist original _recipient
         info.deposit = info.deposit.add(_amount);
         info.gons = info.gons.add(IsFHM(sFHM).gonsForBalance(_amount));
-        info.expiry = epochNumber.add(IStaking(staking).warmupPeriod());
+        info.expiry = lastStakedEpochNumber.add(IStaking(staking).warmupPeriod());
 
         // and record in history
-        emit WarmupStaked(true, _recipient, info.deposit, info.gons, epochNumber, info.expiry);
+        emit WarmupStaked(true, _recipient, info.deposit, info.gons, lastStakedEpochNumber, info.expiry);
 
-        IERC20(FHM).approve(staking, _amount);
-
-        return IStaking(staking).stake(_amount, address(this));
+        return result;
     }
 
     /// @notice claim for original recipient
