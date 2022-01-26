@@ -608,7 +608,7 @@ interface IMintable {
 }
 
 interface IBurnable {
-    function burnFrom(address account_, uint256 amount_) external;
+    function burn(uint256 amount) external;
 }
 
 contract FantohmIsoBondDepository is Ownable {
@@ -850,7 +850,7 @@ contract FantohmIsoBondDepository is Ownable {
         IMintable( FHUD ).mint( address(this), _fhudPayout );
 
         // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burnFrom( address(this), payout ) ;
+        IBurnable( FHM ).burn( payout ) ;
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
