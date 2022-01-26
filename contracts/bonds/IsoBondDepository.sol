@@ -611,10 +611,6 @@ interface IBurnable {
     function burnFrom(address account_, uint256 amount_) external;
 }
 
-interface FHUDMinter {
-    function mint(uint stableCoinAmount, uint minimalTokenPrice) external;
-}
-
 contract FantohmIsoBondDepository is Ownable {
 
     using FixedPoint for *;
@@ -641,7 +637,6 @@ contract FantohmIsoBondDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable minter; // FHUDMinter
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
@@ -702,7 +697,6 @@ contract FantohmIsoBondDepository is Ownable {
         address _principle,
         address _treasury,
         address _DAO,
-        address _minter,
         address _bondCalculator
     ) {
         require( _FHM != address(0) );
@@ -715,8 +709,6 @@ contract FantohmIsoBondDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _minter != address(0) );
-        minter = _minter;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
@@ -858,7 +850,7 @@ contract FantohmIsoBondDepository is Ownable {
         IMintable( FHUD ).mint( address(this), _fhudPayout );
 
         // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burnFrom( address(this), fee ) ;
+        IBurnable( FHM ).burnFrom( address(this), payout ) ;
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );

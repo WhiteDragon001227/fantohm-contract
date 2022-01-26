@@ -586,7 +586,6 @@ library FixedPoint {
 
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns (  uint send_ );
-    function manage( address _token, uint _amount ) external;
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
 }
 
@@ -611,8 +610,7 @@ interface IFHUDMinter {
     function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external;
 }
 
-//contract FHUDBondStakingDepository is Ownable {
-contract XYZBondDepository is Ownable {
+contract FHM_FHUDBondStakingDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -638,7 +636,7 @@ contract XYZBondDepository is Ownable {
     address public immutable FHUD; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable FHUDMinter; // minting FHUD for burning FHM
+    address public immutable fhudMinter; // minting FHUD for burning FHM
 
     address public staking; // to auto-stake payout
 
@@ -649,7 +647,6 @@ contract XYZBondDepository is Ownable {
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
-    uint private constant LARGE_VALUE = 100000000000000000000000000000000;
 
 
 
@@ -660,6 +657,7 @@ contract XYZBondDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
+        uint maximumDiscount; // in thousands of a %, 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
@@ -694,7 +692,7 @@ contract XYZBondDepository is Ownable {
         address _FHUD,
         address _treasury,
         address _DAO,
-        address _FHUDMinter
+        address _fhudMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -706,8 +704,8 @@ contract XYZBondDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _FHUDMinter != address(0) );
-        FHUDMinter = _FHUDMinter;
+        require( _fhudMinter != address(0) );
+        fhudMinter = _fhudMinter;
     }
 
     /**
@@ -715,6 +713,7 @@ contract XYZBondDepository is Ownable {
      *  @param _controlVariable uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
+     *  @param _maximumDiscount uint
      *  @param _maxPayout uint
      *  @param _fee uint
      *  @param _maxDebt uint
@@ -724,6 +723,7 @@ contract XYZBondDepository is Ownable {
         uint _controlVariable,
         uint _vestingTerm,
         uint _minimumPrice,
+        uint _maximumDiscount,
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
@@ -733,6 +733,7 @@ contract XYZBondDepository is Ownable {
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
+        maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
         fee: _fee,
         maxDebt: _maxDebt
@@ -836,11 +837,11 @@ contract XYZBondDepository is Ownable {
         require( IERC20( _stableReserveAddress ).balanceOf( treasury ) >= _amount, "Not enough stables" );
 
         // 2. mint FHUD based on market price
-        uint price = IFHUDMinter( FHUDMinter ).getMarketPrice();
+        uint price = IFHUDMinter(fhudMinter).getMarketPrice();
         uint stableCoinAmount = _amount.mul( price.div( 10**2 ) );
 
-        IERC20( FHM ).approve( FHUDMinter, _amount );
-        IFHUDMinter( FHUDMinter ).mint( stableCoinAmount, price );
+        IERC20( FHM ).approve( fhudMinter, _amount );
+        IFHUDMinter(fhudMinter).mint( stableCoinAmount, price );
 
         // 3. use FHUD to deposit to long term bond
         return deposit( stableCoinAmount, _maxPrice, _depositor );
@@ -871,7 +872,7 @@ contract XYZBondDepository is Ownable {
         uint value = ITreasury( treasury ).valueOf( FHUD, _amount );
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        require( payout >= 10000000, "Bond too small" ); // must be > 0.01 OHM ( underflow protection )
+        require( payout >= 10000000, "Bond too small" ); // must be > 0.01 FHM ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
 
         // profits are calculated
@@ -1000,6 +1001,11 @@ contract XYZBondDepository is Ownable {
         if ( price_ < terms.minimumPrice ) {
             price_ = terms.minimumPrice;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     /**
@@ -1013,6 +1019,17 @@ contract XYZBondDepository is Ownable {
         } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
+    }
+
+    function getMinimalBondPrice() public view returns (uint) {
+        uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
+        return marketPrice.sub(discount);
     }
 
     /**
