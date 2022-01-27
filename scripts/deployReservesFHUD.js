@@ -32,9 +32,9 @@ async function main() {
     // const bondVestingLength = '498300';
 
     // Min bond price
-    const minBondPrice = '10000';
+    const minBondPrice = '3000';
 
-    const maxDiscount = '800';
+    const maxDiscount = '8000';
 
     // Max bond payout
     const maxBondPayout = '1000'
@@ -95,7 +95,7 @@ async function main() {
         // const bond = await Bond.deploy( fhmAddress, reserve.address, treasury.address, deployer.address, zeroAddress);
         const Bond = await ethers.getContractFactory('FantohmIsoBondDepository');
         // const bond = await Bond.attach("0x1e38e60F2c797A247A9b720F100d7E1cD8D256C0");
-        const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, zeroAddress);
+        const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress);
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor
@@ -105,28 +105,28 @@ async function main() {
         console.log(`Toggled ${reserve.name} Bond as reserve depositor`);
 
         // // Set bond terms
-        // await bond.initializeBondTerms(reserve.bondBCV, bondVestingLength, minBondPrice, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt);
-        // console.log(`Initialized terms for ${reserve.name} Bond`);
+        await bond.initializeBondTerms(reserve.bondBCV, bondVestingLength, minBondPrice, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt);
+        console.log(`Initialized terms for ${reserve.name} Bond`);
         //
         // // Set staking for bond
         // // await bond.setStaking(stakingAddress, stakingHelperAddress);
         // await bond.setStaking(stakingAddress);
         // console.log(`Set Staking for ${reserve.name} Bond`);
         //
-        // // Approve the treasury to spend deployer's reserve tokens
-        // await reserveToken.approve(treasury.address, largeApproval );
-        // console.log(`Approved treasury to spend deployer ${reserve.name}`);
+        // Approve the treasury to spend deployer's reserve tokens
+        await reserveToken.approve(treasury.address, largeApproval );
+        console.log(`Approved treasury to spend deployer ${reserve.name}`);
         //
-        // // Approve bonds to spend deployer's reserve tokens
-        // await reserveToken.approve(bond.address, largeApproval );
-        // console.log(`Approved bond to spend deployer ${reserve.name}`);
+        // Approve bonds to spend deployer's reserve tokens
+        await reserveToken.approve(bond.address, largeApproval );
+        console.log(`Approved bond to spend deployer ${reserve.name}`);
         //
         // // Deposit reserve tokens to treasury, minting some FHM to deployer and depositProfit kept in treasury as excesss reserves
         // await treasury.deposit(reserve.depositAmount, reserveToken.address, reserve.depositProfit);
         // console.log(`Deposited ${reserve.name} into treasury`);
         //
-        // await bond.deposit('1000000000000000000000', '60000', deployer.address );
-        // console.log(`Deposited from deployer to Bond address: ${bond.address}`);
+        await bond.deposit('1000000000000000000000', '60000', deployer.address );
+        console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
         // DONE
         console.log(`${reserve.name} Bond: "${reserveToken.address}",`);

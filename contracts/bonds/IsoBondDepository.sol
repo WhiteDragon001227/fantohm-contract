@@ -638,13 +638,6 @@ contract FantohmIsoBondDepository is Ownable {
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
 
-    bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
-    address public immutable bondCalculator; // calculates value of LP tokens
-
-    address public staking; // to auto-stake payout
-    address public stakingHelper; // to stake and claim if no staking warmup
-    bool public useHelper;
-
     Terms public terms; // stores terms for new bonds
     Adjust public adjustment; // stores adjustment to BCV data
 
@@ -696,8 +689,7 @@ contract FantohmIsoBondDepository is Ownable {
         address _FHUD,
         address _principle,
         address _treasury,
-        address _DAO,
-        address _bondCalculator
+        address _DAO
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -709,9 +701,6 @@ contract FantohmIsoBondDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        // bondCalculator should be address(0) if not LP bond
-        bondCalculator = _bondCalculator;
-        isLiquidityBond = ( _bondCalculator != address(0) );
     }
 
     /**
@@ -978,13 +967,15 @@ contract FantohmIsoBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        if( isLiquidityBond ) {
-            price_ = bondPrice().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 100 );
-        } else {
-            price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div( 100 );
-        }
-    }
+        uint _originalPrice = 1;
+        // 9 places in price should be sufficient
+        _originalPrice = _originalPrice.mul( 10 ** 9 );
 
+        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
+        uint _fhudPayout = _originalPrice.add(_discount);
+
+        price_ = _originalPrice.mul( 10 ** IERC20( principle ).decimals() ).div(_fhudPayout);
+    }
 
     /**
      *  @notice calculate current ratio of debt to FHM supply
@@ -1003,11 +994,7 @@ contract FantohmIsoBondDepository is Ownable {
      *  @return uint
      */
     function standardizedDebtRatio() external view returns ( uint ) {
-        if ( isLiquidityBond ) {
-            return debtRatio().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 1e9 );
-        } else {
-            return debtRatio();
-        }
+        return debtRatio();
     }
 
     /**
