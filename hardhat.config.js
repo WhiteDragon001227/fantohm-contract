@@ -2,7 +2,7 @@ require("@nomiclabs/hardhat-waffle");
 const { alchemyApiKey, privateKey, daoPrivateKey, etherscanApiKey, alchemyApiKeyProd } = require('./secrets.json');
 require('@nomiclabs/hardhat-ethers');
 require("@nomiclabs/hardhat-etherscan");
-require('@symblox/hardhat-abi-gen');
+// require('@symblox/hardhat-abi-gen');
 
 // This is a sample Hardhat task. To learn how to create your own go to
 // https://hardhat.org/guides/create-task.html
@@ -66,11 +66,11 @@ module.exports = {
   etherscan: {
     apiKey: `${etherscanApiKey}`
   },
-  abiExporter: {
-    path: './data/abi',
-    clear: true,
-    flat: true,
-    spacing: 2
-  }
+  // abiExporter: {
+  //   path: './data/abi',
+  //   clear: true,
+  //   flat: true,
+  //   spacing: 2
+  // }
 };
 

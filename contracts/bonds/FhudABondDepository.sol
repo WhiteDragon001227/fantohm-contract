@@ -52,6 +52,35 @@ contract Ownable is IOwnable {
     }
 }
 
+/**
+ * @dev Standard math utilities missing in the Solidity language.
+ */
+library Math {
+    /**
+     * @dev Returns the largest of two numbers.
+     */
+    function max(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a >= b ? a : b;
+    }
+
+    /**
+     * @dev Returns the smallest of two numbers.
+     */
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    /**
+     * @dev Returns the average of two numbers. The result is rounded towards
+     * zero.
+     */
+    function average(uint256 a, uint256 b) internal pure returns (uint256) {
+        // (a + b) / 2 can overflow, so we distribute
+        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
+    }
+}
+
+
 library SafeMath {
 
     function add(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -586,8 +615,9 @@ library FixedPoint {
 }
 
 interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( bool );
+    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
+    function mintRewards( address _recipient, uint _amount ) external;
 }
 
 interface IBondCalculator {
@@ -611,7 +641,13 @@ interface IBurnable {
     function burn(uint256 amount) external;
 }
 
-contract FantohmIsoBondDepository is Ownable {
+interface IFHUDMinter {
+    function getMarketPrice() external view returns (uint);
+}
+
+/// @notice FHUD>$1
+/// @dev this is ISO bond - x% discount with 30 day vesting and also FHUD A, 0.25% discount, instant
+contract FhudABondDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -624,8 +660,6 @@ contract FantohmIsoBondDepository is Ownable {
 
     event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
     event BondRedeemed( address indexed recipient, uint payout, uint remaining );
-    event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
-    event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
 
 
 
@@ -637,29 +671,29 @@ contract FantohmIsoBondDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
+    address public immutable fhudMinter; // receives profit share from bond
 
     Terms public terms; // stores terms for new bonds
-    Adjust public adjustment; // stores adjustment to BCV data
 
     mapping( address => Bond ) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
 
-
-
+    bool public useWhitelist;
+    mapping(address => bool) public whitelist;
+    SoldBonds[] public soldBondsInHour;
 
     /* ======== STRUCTS ======== */
 
     // Info for creating new bonds
     struct Terms {
-        uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
-        uint minimumPrice; // vs principle value
         uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
+        uint soldBondsLimitUsd; //
     }
 
     // Info for bond holder
@@ -670,17 +704,11 @@ contract FantohmIsoBondDepository is Ownable {
         uint pricePaid; // In DAI, for front end viewing
     }
 
-    // Info for incremental adjustments to control variable
-    struct Adjust {
-        bool add; // addition or subtraction
-        uint rate; // increment
-        uint target; // BCV when adjustment finished
-        uint buffer; // minimum length (in blocks) between adjustments
-        uint lastBlock; // block when last adjustment made
+    struct SoldBonds {
+        uint timestampFrom;
+        uint timestampTo;
+        uint payoutInUsd;
     }
-
-
-
 
     /* ======== INITIALIZATION ======== */
 
@@ -689,7 +717,8 @@ contract FantohmIsoBondDepository is Ownable {
         address _FHUD,
         address _principle,
         address _treasury,
-        address _DAO
+        address _DAO,
+        address _fhudMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -701,40 +730,43 @@ contract FantohmIsoBondDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
+        require( _fhudMinter != address(0) );
+        fhudMinter = _fhudMinter;
+        useWhitelist = true;
+        whitelist[msg.sender] = true;
     }
 
     /**
      *  @notice initializes bond parameters
-     *  @param _controlVariable uint
      *  @param _vestingTerm uint
-     *  @param _minimumPrice uint
      *  @param _discount uint
      *  @param _maxPayout uint
      *  @param _fee uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
+     *  @param _soldBondsLimitUsd uint
      */
     function initializeBondTerms(
-        uint _controlVariable,
         uint _vestingTerm,
-        uint _minimumPrice,
         uint _discount,
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
-        uint _initialDebt
+        uint _initialDebt,
+        uint _soldBondsLimitUsd,
+        bool _useWhitelist
     ) external onlyPolicy() {
         terms = Terms ({
-        controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
-        minimumPrice: _minimumPrice,
         discount: _discount,
         maxPayout: _maxPayout,
         fee: _fee,
-        maxDebt: _maxDebt
+        maxDebt: _maxDebt,
+        soldBondsLimitUsd: _soldBondsLimitUsd
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
+        useWhitelist = _useWhitelist;
     }
 
 
@@ -742,7 +774,7 @@ contract FantohmIsoBondDepository is Ownable {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -760,31 +792,7 @@ contract FantohmIsoBondDepository is Ownable {
             terms.fee = _input;
         } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
-        }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
-            terms.minimumPrice = _input;
         }
-    }
-
-    /**
-     *  @notice set control variable adjustment
-     *  @param _addition bool
-     *  @param _increment uint
-     *  @param _target uint
-     *  @param _buffer uint
-     */
-    function setAdjustment (
-        bool _addition,
-        uint _increment,
-        uint _target,
-        uint _buffer
-    ) external onlyPolicy() {
-        adjustment = Adjust({
-        add: _addition,
-        rate: _increment,
-        target: _target,
-        buffer: _buffer,
-        lastBlock: block.number
-        });
     }
 
     /* ======== USER FUNCTIONS ======== */
@@ -802,44 +810,38 @@ contract FantohmIsoBondDepository is Ownable {
         address _depositor
     ) external returns ( uint ) {
         require( _depositor != address(0), "Invalid address" );
+        // allow only whitelisted contracts
+        if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
 
         decayDebt();
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
 
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
-        uint nativePrice = _bondPrice();
+        uint nativePrice = bondPrice();
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount );
+        uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        require( payout >= 10000000, "Bond too small" ); // must be > 0.01 FHM ( underflow protection )
+        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 FHUD ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
+        require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
+
+        uint payoutInFhm = payoutInFhmFor(payout);
 
         // profits are calculated
-        uint fee = payout.mul( terms.fee ).div( 10000 );
-        uint profit = value.sub( payout ).sub( fee );
+        uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
 
-        /**
-            principle is transferred in
-            approved and
-            deposited into the treasury, returning (_amount - profit) FHM
-         */
-        IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
-        IERC20( principle ).approve( address( treasury ), _amount );
+        IERC20( principle ).safeTransferFrom( msg.sender, address( treasury ), _amount );
 
-        ITreasury( treasury ).deposit( _amount, principle, profit );
-
-        // count discount to give amount
-        uint _discount = _amount.mul( terms.discount ).div( 10 ** 5 );
-        uint _fhudPayout = _amount.add( _discount );
+        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
         // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), _fhudPayout );
+        IMintable( FHUD ).mint( address(this), payout );
 
         // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burn( payout ) ;
+        IBurnable( FHM ).burn( payoutInFhm ) ;
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
@@ -848,20 +850,21 @@ contract FantohmIsoBondDepository is Ownable {
         // total debt is increased
         totalDebt = totalDebt.add( value );
 
+        // update sold bonds
+        updateSoldBonds(payout);
+
         // depositor info is stored
         bondInfo[ _depositor ] = Bond({
-        fhudPayout: bondInfo[ _depositor ].fhudPayout.add( _fhudPayout ),
+        fhudPayout: bondInfo[ _depositor ].fhudPayout.add( payout ),
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD
         });
 
         // indexed events are emitted
-        emit BondCreated( _amount, _fhudPayout, block.number.add( terms.vestingTerm ), priceInUSD );
-        emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
+        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
 
-        adjust(); // control variable is adjusted
-        return _fhudPayout;
+        return payout;
     }
 
     /**
@@ -880,31 +883,76 @@ contract FantohmIsoBondDepository is Ownable {
         emit BondRedeemed( _recipient, info.fhudPayout, 0 ); // emit bond data
 
         IERC20( FHUD ).transfer( _recipient, info.fhudPayout ); // pay user everything due
+
+        return info.fhudPayout;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
-    /**
-     *  @notice makes incremental adjustment to control variable
-     */
-    function adjust() internal {
-        uint blockCanAdjust = adjustment.lastBlock.add( adjustment.buffer );
-        if( adjustment.rate != 0 && block.number >= blockCanAdjust ) {
-            uint initial = terms.controlVariable;
-            if ( adjustment.add ) {
-                terms.controlVariable = terms.controlVariable.add( adjustment.rate );
-                if ( terms.controlVariable >= adjustment.target ) {
-                    adjustment.rate = 0;
-                }
-            } else {
-                terms.controlVariable = terms.controlVariable.sub( adjustment.rate );
-                if ( terms.controlVariable <= adjustment.target ) {
-                    adjustment.rate = 0;
-                }
-            }
-            adjustment.lastBlock = block.number;
-            emit ControlVariableAdjustment( initial, terms.controlVariable, adjustment.rate, adjustment.add );
+    function modifyWhitelist(address user, bool add) external onlyPolicy {
+        if (add) {
+            require(!whitelist[user], "ALREADY_IN_WHITELIST");
+            whitelist[user] = true;
+        } else {
+            require(whitelist[user], "NOT_IN_WHITELIST");
+            delete whitelist[user];
         }
+    }
+
+    function updateSoldBonds(uint _payout) internal {
+        uint length = soldBondsInHour.length;
+        if (length == 0) {
+            soldBondsInHour.push(SoldBonds({
+            timestampFrom: block.timestamp,
+            timestampTo: block.timestamp + 1 hours,
+            payoutInUsd: _payout
+            }));
+            return;
+        }
+
+        SoldBonds storage soldBonds = soldBondsInHour[length - 1];
+        // update in existing interval
+        if (soldBonds.timestampFrom < block.timestamp && soldBonds.timestampTo >= block.timestamp) {
+            soldBonds.payoutInUsd = soldBonds.payoutInUsd.add(_payout);
+        } else {
+            // create next interval if its continuous
+            uint nextTo = soldBonds.timestampTo + 1 hours;
+            if (block.timestamp <= nextTo) {
+                soldBondsInHour.push(SoldBonds({
+                timestampFrom: soldBonds.timestampTo,
+                timestampTo: nextTo,
+                payoutInUsd: _payout
+                }));
+            } else {
+                soldBondsInHour.push(SoldBonds({
+                timestampFrom: block.timestamp,
+                timestampTo: block.timestamp + 1 hours,
+                payoutInUsd: _payout
+                }));
+            }
+        }
+    }
+
+    function circuitBreakerActivated(uint payout) public view returns (bool) {
+        if (soldBondsInHour.length == 0) return payout > terms.soldBondsLimitUsd;
+
+        uint max = 0;
+        if (soldBondsInHour.length >= 24) max = soldBondsInHour.length - 24;
+
+        uint to = soldBondsInHour[soldBondsInHour.length - 1].timestampTo;
+        uint from = to - 24 hours;
+        for (uint i = max; i < soldBondsInHour.length; i++) {
+            SoldBonds memory soldBonds = soldBondsInHour[i];
+            if (soldBonds.timestampFrom >= from && soldBonds.timestampFrom <= to) {
+                payout = payout.add(soldBonds.payoutInUsd);
+            }
+        }
+
+        return payout > terms.soldBondsLimitUsd;
+    }
+
+    function getMarketPrice() public view returns (uint _marketPrice) {
+        _marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
     }
 
     /**
@@ -925,7 +973,7 @@ contract FantohmIsoBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20( FHUD ).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -937,29 +985,21 @@ contract FantohmIsoBondDepository is Ownable {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
 
+    function payoutInFhmFor( uint _fhudValue ) public view returns ( uint ) {
+        return FixedPoint.fraction( _fhudValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    }
+
 
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
-        if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;
-        }
-    }
+        uint _originalPrice = 1;
+        _originalPrice = _originalPrice.mul( 10 ** 2 );
 
-    /**
-     *  @notice calculate current bond price and remove floor if above
-     *  @return price_ uint
-     */
-    function _bondPrice() internal returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
-        if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;
-        } else if ( terms.minimumPrice != 0 ) {
-            terms.minimumPrice = 0;
-        }
+        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
+        price_ = _originalPrice.sub(_discount);
     }
 
     /**
@@ -967,14 +1007,7 @@ contract FantohmIsoBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        uint _originalPrice = 1;
-        // 9 places in price should be sufficient
-        _originalPrice = _originalPrice.mul( 10 ** 9 );
-
-        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
-        uint _fhudPayout = _originalPrice.add(_discount);
-
-        price_ = _originalPrice.mul( 10 ** IERC20( principle ).decimals() ).div(_fhudPayout);
+        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
     }
 
     /**
