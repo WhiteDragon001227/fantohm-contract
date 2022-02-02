@@ -50,7 +50,6 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     // actual number of wsFHM borrowed
     uint public totalBorrowed;
 
-    bool public disableContracts;
     bool public pauseNewStakes;
     bool public useWhitelist;
     bool public enableEmergencyWithdraw;
@@ -88,24 +87,12 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
                                 EVENTS
     ////////////////////////////////////////////////////////////// */
 
-    /// @notice EIP-4626 version of deposit event
-    /// @param _from user who triggered the deposit
-    /// @param _to user who is able to withdraw the deposited tokens
-    /// @param _value deposited wsFHM value
-    event Deposit(address indexed _from, address indexed _to, uint _value);
-
     /// @notice deposit event
     /// @param _from user who triggered the deposit
     /// @param _to user who is able to withdraw the deposited tokens
     /// @param _value deposited wsFHM value
     /// @param _lastStakeBlockNumber block number of deposit
     event StakingDeposited(address indexed _from, address indexed _to, uint _value, uint _lastStakeBlockNumber);
-
-    /// @notice EIP-4626 version of withdraw event
-    /// @param _owner user who triggered the withdrawal
-    /// @param _to user who received the withdrawn tokens
-    /// @param _value amount in wsFHM token withdrawn
-    event Withdraw(address indexed _owner, address indexed _to, uint _value);
 
     /// @notice withdraw event
     /// @param _owner user who triggered the withdrawal
@@ -191,16 +178,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _noFeeBlocks - 30 days in blocks
     /// @param _unstakeFee - 3000 aka 30%
     /// @param _claimPageSize - 100/1000
-    /// @param _disableContracts - true
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function setParameters(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _disableContracts, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function setParameters(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
         noFeeBlocks = _noFeeBlocks;
         unstakeFee = _unstakeFee;
         claimPageSize = _claimPageSize;
-        disableContracts = _disableContracts;
         useWhitelist = _useWhitelist;
         pauseNewStakes = _pauseNewStakes;
         enableEmergencyWithdraw = _enableEmergencyWithdraw;
@@ -224,24 +209,15 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
     }
 
-    /// @notice fail fast stake/unstake for well known conditions
-    /// @param _stake whether to check for pause contract
-    function checkBefore(bool _stake) private view {
-        // whether to disable contracts to call staking pool
-        if (disableContracts) require(msg.sender == tx.origin, "CONTRACTS_NOT_ALLOWED");
-
-        // temporary disable new stakes, but allow to call claim and unstake
-        require(!(pauseNewStakes && _stake), "PAUSED");
-
-        // allow only whitelisted contracts
-        if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
-    }
-
     /// @notice Insert _amount to the pool, add to your share, need to claim everything before new stake
     /// @param _to user onto which account we want to transfer money
     /// @param _amount how much wsFHM user wants to deposit
-    /// @return _shares not used
-    function deposit(address _to, uint _amount) public nonReentrant returns (uint _shares) {
+    function deposit(address _to, uint _amount) public nonReentrant {
+        // temporary disable new stakes, but allow to call claim and unstake
+        require(!pauseNewStakes, "PAUSED");
+        // allow only whitelisted contracts
+        if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
+
         doClaim(_to, claimPageSize);
 
         // unsure that user claim everything before stake again
@@ -260,10 +236,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         totalStaking = totalStaking.add(_amount);
 
         // and record in history
-        emit Deposit(msg.sender, _to, _amount);
         emit StakingDeposited(msg.sender, _to, _amount, info.lastStakeBlockNumber);
-
-        _shares = 0;
     }
 
     /// @notice Return current TVL of staking contract
@@ -278,7 +251,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return IERC20(wsFHM).balanceOf(address(this));
     }
 
-    /// @notice EIP-4626 underlying token used for accounting
+    /// @notice underlying token used for accounting
     function underlying() public view returns (address) {
         return wsFHM;
     }
@@ -420,8 +393,6 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     // @param _user claiming user
     // @param _claimPageSize page size for iteration loop
     function doClaim(address _user, uint _claimPageSize) private {
-        checkBefore(false);
-
         // clock new tick
         IRewardsHolder(rewardsHolder).newTick();
 
@@ -455,8 +426,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @notice Unstake _amount from staking pool. Automatically call claim.
     /// @param _to user who will receive withdraw amount
     /// @param _amount amount to withdraw
-    /// @return _shares not used
-    function withdraw(address _to, uint256 _amount) public nonReentrant returns (uint _shares) {
+    function withdraw(address _to, uint256 _amount) public nonReentrant {
         address _owner = msg.sender;
         // auto claim before unstake
         doClaim(_owner, claimPageSize);
@@ -499,17 +469,13 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
 
         // and record in history
-        emit Withdraw(_owner, _to, _amount);
         emit StakingWithdraw(_owner, _to, _amount, transferring, block.number);
-
-        _shares = 0;
     }
 
     /// @notice transfers amount to different user with preserving lastStakedBlock
     /// @param _to user transferring amount to
     /// @param _amount wsfhm amount
-    /// @return _shares not used
-    function transfer(address _to, uint _amount) external nonReentrant returns (uint _shares) {
+    function transfer(address _to, uint _amount) external nonReentrant {
         // need to claim before any operation with staked amounts
         // use half of the page size to have same complexity
         uint halfPageSize = claimPageSize.div(2);
@@ -529,8 +495,6 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // and record in history
         emit TokenTransferred(msg.sender, _to, _amount);
-
-        _shares = 0;
     }
 
 
@@ -612,21 +576,23 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         UserInfo storage info = userInfo[_user];
 
+        uint returningBorrowed = _amount;
         // return less then borrow this turn
         if (info.borrowed >= _amount) {
             info.borrowed = info.borrowed.sub(_amount);
         }
         // repay all plus give profit back
         else {
-            uint toStake = _amount.sub(info.borrowed);
+            returningBorrowed = info.borrowed;
+            uint toStake = _amount.sub(returningBorrowed);
             info.staked = info.staked.add(toStake);
             info.borrowed = 0;
             totalStaking = totalStaking.add(toStake);
         }
 
         // subtract it from total balance
-        if (totalBorrowed > _amount) {
-            totalBorrowed = totalBorrowed.sub(_amount);
+        if (totalBorrowed > returningBorrowed) {
+            totalBorrowed = totalBorrowed.sub(returningBorrowed);
         } else {
             totalBorrowed = 0;
         }
@@ -719,7 +685,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         uint toWithdraw = info.staked.sub(info.borrowed);
 
         // clear the data
-        info.staked = 0;
+        info.staked = info.staked.sub(toWithdraw);
 
         // repair total values
         if (totalStaking >= toWithdraw) {
@@ -769,12 +735,6 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         payable(DAO).transfer(amount);
 
         emit EmergencyEthRecovered(DAO, amount);
-    }
-
-    /// @notice Self destructs a Vault, enabling it to be redeployed.
-    /// @dev Caller will receive any ETH held as float in the Vault.
-    function destroy() external onlyOwner {
-        selfdestruct(payable(msg.sender));
     }
 
     /// @notice grants borrower role to given _account
