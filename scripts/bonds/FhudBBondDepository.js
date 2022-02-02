@@ -14,7 +14,7 @@ async function main() {
         fhudMinterAddress,
         twapOracleAddress,
         fhmDaiLpAddress
-    } = require('../networks-fantom-testnet.json');
+    } = require('../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
     // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
