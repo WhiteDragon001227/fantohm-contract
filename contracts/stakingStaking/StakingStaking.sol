@@ -270,7 +270,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // count amount to withdraw from staked tokens except borrowed tokens
         uint toWithdraw = 0;
-        (uint allClaimable, uint lastClaimIndex) = claimable(_user, claimPageSize);
+        (uint allClaimable,) = claimable(_user, claimPageSize);
         uint stakedAndToClaim = info.staked.add(allClaimable);
         if (stakedAndToClaim >= info.borrowed) {
             toWithdraw = stakedAndToClaim.sub(info.borrowed);
@@ -293,7 +293,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _owner The user to get the underlying balance of.
     /// @return The user's Vault balance in underlying tokens.
     function balanceOfUnderlying(address _owner) public view returns (uint) {
-        (uint stakedAndToClaim, uint withdrawable, uint borrowed) = userBalance(_owner);
+        (uint stakedAndToClaim,,) = userBalance(_owner);
         return stakedAndToClaim;
     }
 
@@ -302,7 +302,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _owner The user to get the underlying balance of.
     /// @return Balance in staked token usefull for voting escrow
     function balanceOfVotingToken(address _owner) external override view returns (uint) {
-        (uint stakedAndToClaim, uint withdrawable, uint borrowed) = userBalance(_owner);
+        (uint stakedAndToClaim,,) = userBalance(_owner);
         return IwsFHM(wsFHM).sFHMValue(stakedAndToClaim);
     }
 
@@ -314,8 +314,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return _balanceWithdrawable;
     }
 
-    // @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
-    // @param _rewarded wsFHM amount rewarded
+    /// @notice Rewards holder accumulated enough balance during its period to create new sample, Record our current staking TVL
+    /// @param _rewarded wsFHM amount rewarded
     function newSample(uint _rewarded) public {
         require(hasRole(REWARDS_ROLE, msg.sender), "MISSING_REWARDS_ROLE");
 
@@ -343,10 +343,10 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         emit RewardSampled(block.number, block.timestamp, _rewarded, tvl);
     }
 
-    // @notice Counts claimable tokens from totalPendingClaim tokens for given user
-    // @param _user claiming user
-    // @param _claimPageSize page size for iteration loop
-    // @return claimable amount up to the page size and last claim index
+    /// @notice Counts claimable tokens from totalPendingClaim tokens for given user
+    /// @param _user claiming user
+    /// @param _claimPageSize page size for iteration loop
+    /// @return claimable amount up to the page size and last claim index
     function claimable(address _user, uint _claimPageSize) private view returns (uint, uint){
         UserInfo storage info = userInfo[_user];
 
@@ -389,9 +389,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         doClaim(msg.sender, _claimPageSize);
     }
 
-    // @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
-    // @param _user claiming user
-    // @param _claimPageSize page size for iteration loop
+    /// @notice Claim unprocessed rewards to belong to userInfo staking amount with possibility to choose _claimPageSize
+    /// @param _user claiming user
+    /// @param _claimPageSize page size for iteration loop
     function doClaim(address _user, uint _claimPageSize) private {
         // clock new tick
         IRewardsHolder(rewardsHolder).newTick();
@@ -426,15 +426,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @notice Unstake _amount from staking pool. Automatically call claim.
     /// @param _to user who will receive withdraw amount
     /// @param _amount amount to withdraw
-    function withdraw(address _to, uint256 _amount) public nonReentrant {
+    /// @param _force force withdraw without claiming rewards
+    function withdraw(address _to, uint256 _amount, bool _force) public nonReentrant {
         address _owner = msg.sender;
         // auto claim before unstake
-        doClaim(_owner, claimPageSize);
+        if (!_force) doClaim(_owner, claimPageSize);
 
         UserInfo storage info = userInfo[_owner];
 
         // unsure that user claim everything before unstaking
-        require(info.lastClaimIndex == rewardSamples.length - 1, "CLAIM_PAGE_TOO_SMALL");
+        require(info.lastClaimIndex == rewardSamples.length - 1 || _force, "CLAIM_PAGE_TOO_SMALL");
 
         // count amount to withdraw from staked except borrowed
         uint maxToUnstake = info.staked.sub(info.borrowed);
