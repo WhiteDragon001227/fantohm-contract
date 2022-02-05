@@ -1,8 +1,4 @@
-/**
- *Submitted for verification at Etherscan.io on 2021-04-14
-*/
-
-// SPDX-License-Identifier: AGPL-3.0-or-later\
+// SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
 /**
