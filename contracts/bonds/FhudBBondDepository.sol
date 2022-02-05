@@ -946,8 +946,8 @@ contract FhudBBondDepository is Ownable {
         }
     }
 
-    function circuitBreakerActivated(uint payout) public view returns (bool) {
-        if (soldBondsInHour.length == 0) return payout > terms.soldBondsLimitUsd;
+    function circuitBreakerCurrentPayout() public view returns (uint _amount) {
+        if (soldBondsInHour.length == 0) return 0;
 
         uint max = 0;
         if (soldBondsInHour.length >= 24) max = soldBondsInHour.length - 24;
@@ -957,10 +957,15 @@ contract FhudBBondDepository is Ownable {
         for (uint i = max; i < soldBondsInHour.length; i++) {
             SoldBonds memory soldBonds = soldBondsInHour[i];
             if (soldBonds.timestampFrom >= from && soldBonds.timestampFrom <= to) {
-                payout = payout.add(soldBonds.payoutInUsd);
+                _amount = _amount.add(soldBonds.payoutInUsd);
             }
         }
 
+        return _amount;
+    }
+
+    function circuitBreakerActivated(uint payout) public view returns (bool) {
+        payout = payout.add(circuitBreakerCurrentPayout());
         return payout > terms.soldBondsLimitUsd;
     }
 

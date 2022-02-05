@@ -8,11 +8,9 @@ async function main() {
     const {
         zeroAddress,
         daiAddress,
-        mimAddress,
         fhmAddress,
-        sfhmAddress,
         treasuryAddress,
-        stakingWarmupManagerAddress,
+        stakingHelperAddress,
         fhudMinterAddress,
     } = require('../networks-fantom_testnet.json');
 
@@ -90,7 +88,7 @@ async function main() {
         console.log(`Initialized terms for ${reserve.name} Bond`);
 
         // Set staking for bond
-        await bond.setStaking(stakingWarmupManagerAddress, false);
+        await bond.setStaking(stakingHelperAddress, true);
         console.log(`Set Staking for ${reserve.name} Bond`);
 
         // Approve the treasury to spend deployer's reserve tokens
@@ -100,7 +98,7 @@ async function main() {
         // Approve bonds to spend deployer's reserve tokens
         await reserveToken.approve(bond.address, largeApproval );
         console.log(`Approved bond to spend deployer ${reserve.name}`);
-        
+
         await bond.deposit('1000000000000000000000', '60000', deployer.address );
         console.log(`Deposited from deployer to Bond address: ${bond.address}`);
         //
@@ -110,8 +108,8 @@ async function main() {
 }
 
 main()
-    .then(() => process.exit())
-    .catch(error => {
-        console.error(error);
-        process.exit(1);
-})
+        .then(() => process.exit())
+        .catch(error => {
+            console.error(error);
+            process.exit(1);
+        })

@@ -8,8 +8,8 @@
 	"treasuryAddress" : "0x686AcF5A89d09D936B09e5a5a64Dd6B241CD20c6",
 	"stakingAddress" : "0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581",
 	"stakingHelperAddress" : "0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2",
-	"stakingWarmupManagerAddress" : "0x0000000000000000000000000000000000000000",
+	"stakingWarmupManagerAddress" : "0xeD1f984502f8773Ec950E2D006781D7ce33CEEE4",
 	"fhudMinterAddress" : "0x139ffDD962A2d8D498a92aB33b31ed78397cbae2",
-	"twapOracleAddress" : "0x0000000000000000000000000000000000000000",
-	"fhmDaiLpAddress" : "0x0000000000000000000000000000000000000000"
+	"twapOracleAddress" : "0xc9ca91fe0667bafd4289e082088e41ed86471d79",
+	"fhmDaiLpAddress" : "0xfb7f259e16ce5c3706dfffd0ab73033f58c6ce21"
 }
