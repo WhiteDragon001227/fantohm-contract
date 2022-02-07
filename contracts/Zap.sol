@@ -652,7 +652,7 @@ abstract contract ZapInBaseV3_1 is ZapBaseV2_1 {
         address token,
         uint256 amount
     ) internal returns (uint256) {
-        if (token == address(0)) 
+        if (token == address(0)) {
             require(msg.value > 0, "No eth sent");
             return msg.value;
         }
