@@ -952,7 +952,7 @@ contract FhudBBondDepository is Ownable {
         uint max = 0;
         if (soldBondsInHour.length >= 24) max = soldBondsInHour.length - 24;
 
-        uint to = soldBondsInHour[soldBondsInHour.length - 1].timestampTo;
+        uint to = block.timestamp;
         uint from = to - 24 hours;
         for (uint i = max; i < soldBondsInHour.length; i++) {
             SoldBonds memory soldBonds = soldBondsInHour[i];
