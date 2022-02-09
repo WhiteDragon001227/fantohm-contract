@@ -663,9 +663,9 @@ contract FantohmBondStakingDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
-        uint maximumDiscount; // in thousands of a %, 5000 = 5%
+        uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
 
@@ -949,7 +949,7 @@ contract FantohmBondStakingDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -999,7 +999,13 @@ contract FantohmBondStakingDepository is Ownable {
     function getMinimalBondPrice() public view returns (uint) {
         uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
         uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
-        return marketPrice.sub(discount);
+        uint price = marketPrice.sub(discount);
+
+        if (isLiquidityBond) {
+            return price.mul(10 ** IERC20( principle ).decimals()).div(IBondCalculator(bondCalculator).markdown(principle));
+        } else {
+            return price;
+        }
     }
 
     /**
@@ -1035,7 +1041,7 @@ contract FantohmBondStakingDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IFHMCirculatingSupply(FHM).OHMCirculatingSupply();
+        uint supply = IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply

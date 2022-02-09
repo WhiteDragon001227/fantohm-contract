@@ -750,9 +750,9 @@ contract FhudBBondDepository is Ownable, ReentrancyGuard {
     // Info for creating new bonds
     struct Terms {
         uint vestingTerm; // in blocks
-        uint maximumDiscount; // in thousands of a %, 5000 = 5%
+        uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
         uint soldBondsLimitUsd; //
     }
@@ -1081,7 +1081,7 @@ contract FhudBBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1131,7 +1131,7 @@ contract FhudBBondDepository is Ownable, ReentrancyGuard {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IFHMCirculatingSupply(FHM).OHMCirculatingSupply();
+        uint supply = IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply

@@ -697,7 +697,7 @@ contract NonStablecoinLpBondDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
-        uint maximumDiscount; // in thousands of a %, 5000 = 5%
+        uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
@@ -1000,7 +1000,7 @@ contract NonStablecoinLpBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1049,7 +1049,9 @@ contract NonStablecoinLpBondDepository is Ownable {
     function getMinimalBondPrice() public view returns (uint) {
         uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
         uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
-        return marketPrice.sub(discount);
+        uint price = marketPrice.sub(discount);
+
+        return price.mul(10 ** 18).div(IBondCalculator(bondCalculator).markdown(principle));
     }
 
     /**
@@ -1079,7 +1081,7 @@ contract NonStablecoinLpBondDepository is Ownable {
     function debtRatio() public view returns ( uint debtRatio_ ) {
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
-            IFHMCirculatingSupply(FHM).OHMCirculatingSupply()
+            IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply()
         ).decode112with18().div( 1e18 );
     }
 
