@@ -12,5 +12,6 @@
 	"stakingWarmupManagerAddress" : "0xeD1f984502f8773Ec950E2D006781D7ce33CEEE4",
 	"fhudMinterAddress" : "0x139ffDD962A2d8D498a92aB33b31ed78397cbae2",
 	"twapOracleAddress" : "0xc9ca91fe0667bafd4289e082088e41ed86471d79",
-	"fhmDaiLpAddress" : "0xfb7f259e16ce5c3706dfffd0ab73033f58c6ce21"
+	"fhmDaiLpAddress" : "0xfb7f259e16ce5c3706dfffd0ab73033f58c6ce21",
+	"fhmCirculatingSupply" : "0x88162eb8f6347B9Bb31B4A35434E0C0d5CbD5FE6"
 }

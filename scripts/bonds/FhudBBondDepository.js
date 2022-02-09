@@ -13,7 +13,8 @@ async function main() {
         stakingHelperAddress,
         fhudMinterAddress,
         twapOracleAddress,
-        fhmDaiLpAddress
+        fhmDaiLpAddress,
+        fhmCirculatingSupply
     } = require('../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
@@ -53,6 +54,7 @@ async function main() {
     const soldBondsLimit = '10000000000000000000000';
 
     const useWhitelist = true;
+    const useCircuitBreaker = true;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -63,7 +65,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('FhudBBondDepository');
-    const bond = await Bond.deploy( fhmAddress, fhudAddress, treasury.address, daoAddress, fhudMinterAddress, twapOracleAddress, fhmDaiLpAddress);
+    const bond = await Bond.deploy( fhmAddress, fhudAddress, treasury.address, daoAddress, fhudMinterAddress, fhmCirculatingSupply, twapOracleAddress, fhmDaiLpAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -73,7 +75,7 @@ async function main() {
     console.log(`Toggled ${reserve.name} Bond as reserve manager`);
 
     // // Set bond terms
-    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist);
+    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Set staking for bond

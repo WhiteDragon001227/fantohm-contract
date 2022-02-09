@@ -50,6 +50,7 @@ async function main() {
     const soldBondsLimit = '10000000000000000000000';
 
     const useWhitelist = true;
+    const useCircuitBreaker = false;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -70,7 +71,7 @@ async function main() {
     console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
-    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist);
+    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Approve the treasury to spend deployer's reserve tokens

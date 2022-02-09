@@ -635,6 +635,10 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns (uint);
+}
+
 contract NonStablecoinBondStakingDepository is Ownable {
 
     using FixedPoint for *;
@@ -661,7 +665,8 @@ contract NonStablecoinBondStakingDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // FHM price
+    address public immutable fhudMinter; // FHM market price
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     AggregatorV3Interface internal priceFeed;
 
@@ -720,7 +725,8 @@ contract NonStablecoinBondStakingDepository is Ownable {
         address _treasury,
         address _DAO,
         address _feed,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -736,6 +742,8 @@ contract NonStablecoinBondStakingDepository is Ownable {
         priceFeed = AggregatorV3Interface( _feed );
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
     }
 
     /**
@@ -953,7 +961,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1028,7 +1036,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHM ).totalSupply();
+        uint supply = IFHMCirculatingSupply(FHM).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply

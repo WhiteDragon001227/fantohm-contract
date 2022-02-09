@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
-// Contract logic @ line 607
+// Contract logic was @ line 607
 
 interface IOwnable {
     function policy() external view returns (address);
@@ -640,6 +640,10 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns (uint);
+}
+
 contract NonStablecoinLpBondDepository is Ownable {
 
     using FixedPoint for *;
@@ -665,6 +669,7 @@ contract NonStablecoinLpBondDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable fhudMinter; // FHM price
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     address public immutable bondCalculator; // calculates value of LP tokens
 
@@ -725,7 +730,8 @@ contract NonStablecoinLpBondDepository is Ownable {
         address _treasury,
         address _bondCalculator,
         address _feed,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -735,6 +741,8 @@ contract NonStablecoinLpBondDepository is Ownable {
         treasury = _treasury;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         priceFeed = AggregatorV3Interface( _feed );
@@ -992,7 +1000,7 @@ contract NonStablecoinLpBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1071,7 +1079,7 @@ contract NonStablecoinLpBondDepository is Ownable {
     function debtRatio() public view returns ( uint debtRatio_ ) {
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
-            IERC20(FHM).totalSupply()
+            IFHMCirculatingSupply(FHM).OHMCirculatingSupply()
         ).decode112with18().div( 1e18 );
     }
 

@@ -614,6 +614,65 @@ library FixedPoint {
     }
 }
 
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+abstract contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
+
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    uint256 private _status;
+
+    constructor () internal {
+        _status = _NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and make it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = _NOT_ENTERED;
+    }
+}
+
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
@@ -647,7 +706,7 @@ interface IFHUDMinter {
 
 /// @notice FHUD>$1
 /// @dev this is ISO bond - x% discount with 30 day vesting and also FHUD A, 0.25% discount, instant
-contract FhudABondDepository is Ownable {
+contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -681,6 +740,7 @@ contract FhudABondDepository is Ownable {
     uint public lastDecay; // reference block for debt decay
 
     bool public useWhitelist;
+    bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
 
@@ -698,7 +758,7 @@ contract FhudABondDepository is Ownable {
 
     // Info for bond holder
     struct Bond {
-        uint fhudPayout; // FHUD to be paid
+        uint payout; // FHUD to be paid
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
@@ -745,6 +805,8 @@ contract FhudABondDepository is Ownable {
      *  @param _maxDebt uint
      *  @param _initialDebt uint
      *  @param _soldBondsLimitUsd uint
+     *  @param _useWhitelist bool
+     *  @param _useCircuitBreaker bool
      */
     function initializeBondTerms(
         uint _vestingTerm,
@@ -754,7 +816,8 @@ contract FhudABondDepository is Ownable {
         uint _maxDebt,
         uint _initialDebt,
         uint _soldBondsLimitUsd,
-        bool _useWhitelist
+        bool _useWhitelist,
+        bool _useCircuitBreaker
     ) external onlyPolicy() {
         terms = Terms ({
         vestingTerm: _vestingTerm,
@@ -767,6 +830,7 @@ contract FhudABondDepository is Ownable {
         totalDebt = _initialDebt;
         lastDecay = block.number;
         useWhitelist = _useWhitelist;
+        useCircuitBreaker = _useCircuitBreaker;
     }
 
 
@@ -808,7 +872,7 @@ contract FhudABondDepository is Ownable {
         uint _amount,
         uint _maxPrice,
         address _depositor
-    ) external returns ( uint ) {
+    ) external nonReentrant returns ( uint ) {
         require( _depositor != address(0), "Invalid address" );
         // allow only whitelisted contracts
         if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
@@ -851,14 +915,14 @@ contract FhudABondDepository is Ownable {
         totalDebt = totalDebt.add( value );
 
         // update sold bonds
-        updateSoldBonds(payout);
+        if (useCircuitBreaker) updateSoldBonds(payout);
 
         // depositor info is stored
         bondInfo[ _depositor ] = Bond({
-        fhudPayout: bondInfo[ _depositor ].fhudPayout.add( payout ),
-        vesting: terms.vestingTerm,
-        lastBlock: block.number,
-        pricePaid: priceInUSD
+            payout: bondInfo[ _depositor ].payout.add( payout ),
+            vesting: terms.vestingTerm,
+            lastBlock: block.number,
+            pricePaid: priceInUSD
         });
 
         // indexed events are emitted
@@ -880,11 +944,11 @@ contract FhudABondDepository is Ownable {
         require ( percentVested >= 10000 , "Wait for end of bond") ;
 
         delete bondInfo[ _recipient ]; // delete user info
-        emit BondRedeemed( _recipient, info.fhudPayout, 0 ); // emit bond data
+        emit BondRedeemed( _recipient, info.payout, 0 ); // emit bond data
 
-        IERC20( FHUD ).transfer( _recipient, info.fhudPayout ); // pay user everything due
+        IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
 
-        return info.fhudPayout;
+        return info.payout;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
@@ -952,6 +1016,7 @@ contract FhudABondDepository is Ownable {
     }
 
     function circuitBreakerActivated(uint payout) public view returns (bool) {
+        if (!useCircuitBreaker) return false;
         payout = payout.add(circuitBreakerCurrentPayout());
         return payout > terms.soldBondsLimitUsd;
     }
@@ -1016,11 +1081,11 @@ contract FhudABondDepository is Ownable {
     }
 
     /**
-     *  @notice calculate current ratio of debt to FHM supply
+     *  @notice calculate current ratio of debt to FHUD supply
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHM ).totalSupply();
+        uint supply = IERC20( FHUD ).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1080,7 +1145,7 @@ contract FhudABondDepository is Ownable {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        uint payout = bondInfo[ _depositor ].fhudPayout;
+        uint payout = bondInfo[ _depositor ].payout;
 
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;

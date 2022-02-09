@@ -608,6 +608,10 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns ( uint );
+}
+
 contract FantohmBondStakingDepository is Ownable {
 
     using FixedPoint for *;
@@ -635,6 +639,7 @@ contract FantohmBondStakingDepository is Ownable {
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // FHUD minter
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
@@ -694,7 +699,8 @@ contract FantohmBondStakingDepository is Ownable {
         address _treasury,
         address _DAO,
         address _bondCalculator,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -708,6 +714,8 @@ contract FantohmBondStakingDepository is Ownable {
         DAO = _DAO;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
@@ -941,7 +949,7 @@ contract FantohmBondStakingDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHM ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1027,7 +1035,7 @@ contract FantohmBondStakingDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHM ).totalSupply();
+        uint supply = IFHMCirculatingSupply(FHM).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
