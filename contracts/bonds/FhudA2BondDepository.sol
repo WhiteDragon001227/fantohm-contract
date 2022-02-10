@@ -1260,8 +1260,7 @@ contract FhudA2BondDepository is Ownable, ReentrancyGuard {
             tokens2Trade
         );
 
-        address pair =
-            uniswapFactory.getPair(
+        address pair = uniswapFactory.getPair(
                 _fromTokenContractAddress,
                 _toTokenContractAddress
             );
