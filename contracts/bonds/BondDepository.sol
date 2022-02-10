@@ -606,6 +606,10 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns ( uint );
+}
+
 contract FantohmBondDepository is Ownable {
 
     using FixedPoint for *;
@@ -632,6 +636,7 @@ contract FantohmBondDepository is Ownable {
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // FHM market price
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
@@ -658,9 +663,9 @@ contract FantohmBondDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
-        uint maximumDiscount; // in thousands of a %, 5000 = 5%
+        uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
 
@@ -692,7 +697,8 @@ contract FantohmBondDepository is Ownable {
         address _treasury,
         address _DAO,
         address _bondCalculator,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -704,6 +710,8 @@ contract FantohmBondDepository is Ownable {
         DAO = _DAO;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
@@ -974,7 +982,7 @@ contract FantohmBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1024,7 +1032,13 @@ contract FantohmBondDepository is Ownable {
     function getMinimalBondPrice() public view returns (uint) {
         uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
         uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
-        return marketPrice.sub(discount);
+        uint price = marketPrice.sub(discount);
+
+        if (isLiquidityBond) {
+            return price.mul(10 ** IERC20( principle ).decimals()).div(IBondCalculator(bondCalculator).markdown(principle));
+        } else {
+            return price;
+        }
     }
 
     /**
@@ -1045,7 +1059,7 @@ contract FantohmBondDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20(FHM).totalSupply();
+        uint supply = IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply

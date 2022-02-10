@@ -610,6 +610,10 @@ interface IFHUDMinter {
     function mint(uint256 stableCoinAmount, uint256 minimalTokenPrice) external;
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns ( uint );
+}
+
 contract FHM_FHUDBondStakingDepository is Ownable {
 
     using FixedPoint for *;
@@ -637,6 +641,7 @@ contract FHM_FHUDBondStakingDepository is Ownable {
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // minting FHUD for burning FHM
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     address public staking; // to auto-stake payout
 
@@ -692,7 +697,8 @@ contract FHM_FHUDBondStakingDepository is Ownable {
         address _FHUD,
         address _treasury,
         address _DAO,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -706,6 +712,8 @@ contract FHM_FHUDBondStakingDepository is Ownable {
         DAO = _DAO;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
     }
 
     /**
@@ -979,7 +987,7 @@ contract FHM_FHUDBondStakingDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(FHM).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1061,7 +1069,7 @@ contract FHM_FHUDBondStakingDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20(FHM).totalSupply();
+        uint supply = IFHMCirculatingSupply(FHM).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply

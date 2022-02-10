@@ -12,6 +12,7 @@ async function main() {
         treasuryAddress,
         stakingHelperAddress,
         fhudMinterAddress,
+        fhmCirculatingSupply
     } = require('../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
@@ -74,7 +75,7 @@ async function main() {
 
         // Deploy Bond
         const Bond = await ethers.getContractFactory('FantohmBondDepository');
-        const bond = await Bond.deploy( fhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, fhudMinterAddress);
+        const bond = await Bond.deploy( fhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, fhudMinterAddress, fhmCirculatingSupply);
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor

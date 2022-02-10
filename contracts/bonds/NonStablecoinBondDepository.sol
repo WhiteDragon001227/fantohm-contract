@@ -633,6 +633,10 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IFHMCirculatingSupply {
+    function OHMCirculatingSupply() external view returns ( uint );
+}
+
 contract NonStablecoinBondDepository is Ownable {
 
     using FixedPoint for *;
@@ -658,7 +662,8 @@ contract NonStablecoinBondDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // FHM price
+    address public immutable fhudMinter; // FHM market price
+    address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     AggregatorV3Interface internal priceFeed;
 
@@ -684,7 +689,7 @@ contract NonStablecoinBondDepository is Ownable {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
-        uint maximumDiscount; // in thousands of a %, 5000 = 5%
+        uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
@@ -717,7 +722,8 @@ contract NonStablecoinBondDepository is Ownable {
         address _treasury,
         address _DAO,
         address _feed,
-        address _fhudMinter
+        address _fhudMinter,
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -729,6 +735,8 @@ contract NonStablecoinBondDepository is Ownable {
         DAO = _DAO;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _fhmCirculatingSupply != address(0) );
+        fhmCirculatingSupply = _fhmCirculatingSupply;
         require( _feed != address(0) );
         priceFeed = AggregatorV3Interface( _feed );
     }
@@ -826,9 +834,6 @@ contract NonStablecoinBondDepository is Ownable {
             staking = _staking;
         }
     }
-
-
-
 
     /* ======== USER FUNCTIONS ======== */
 
@@ -985,7 +990,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20(FHM).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1003,15 +1008,8 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
-        if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;
-        }
-
-        uint minimalPrice = getMinimalBondPrice();
-        if (price_ < minimalPrice) {
-            price_ = minimalPrice;
-        }
+        uint assetPrice_ = uint(assetPrice());
+        price_ = bondPriceInUSDCommon(assetPrice_).div(assetPrice_).div(1e6);
     }
 
     /**
@@ -1019,17 +1017,12 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return price_ uint
      */
     function _bondPrice() internal returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
-        if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;
-        } else if ( terms.minimumPrice != 0 ) {
+        uint priceToClear = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
+        if ( priceToClear >= terms.minimumPrice && terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
 
-        uint minimalPrice = getMinimalBondPrice();
-        if (price_ < minimalPrice) {
-            price_ = minimalPrice;
-        }
+        return bondPrice();
     }
 
     function getMinimalBondPrice() public view returns (uint) {
@@ -1051,7 +1044,21 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( uint( assetPrice() ) ).mul( 1e6 );
+        price_ = bondPriceInUSDCommon(uint(assetPrice()));
+    }
+
+    function bondPriceInUSDCommon(uint _assetPrice) internal view returns ( uint price_ ) {
+        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        }
+
+        price_ = price_.mul(_assetPrice).mul( 1e6 );
+
+        uint minimalPrice = getMinimalBondPrice().mul(1e16);
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
 
@@ -1060,7 +1067,7 @@ contract NonStablecoinBondDepository is Ownable {
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20(FHM).totalSupply();
+        uint supply = IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
