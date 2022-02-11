@@ -786,12 +786,8 @@ contract FhudA2BondDepository is Ownable, ReentrancyGuard {
     using SafeMath for uint;
 
     
-    IUniswapV2Factory private constant uniswapFactory =
-         IUniswapV2Factory(0x152eE697f2E276fA89E96742e9bB9aB1F2E61bE3); 
-
-
-    IUniswapV2Router02 private constant uniswapRouter =
-         IUniswapV2Router02(0xF491e7B69E4244ad4002BC14e878a34207E38c29); 
+    IUniswapV2Factory private uniswapFactory;
+    IUniswapV2Router02 private uniswapRouter; 
 
     uint256 private constant deadline =
         0xf000000000000000000000000000000000000000000000000000000000000000;
@@ -861,7 +857,9 @@ contract FhudA2BondDepository is Ownable, ReentrancyGuard {
         address _principle,
         address _treasury,
         address _DAO,
-        address _fhudMinter
+        address _fhudMinter,
+        address _uniswapFactory,
+        address _uniswapRouter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -875,6 +873,10 @@ contract FhudA2BondDepository is Ownable, ReentrancyGuard {
         DAO = _DAO;
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
+        require( _uniswapFactory != address(0) );
+        uniswapFactory = IUniswapV2Factory(_uniswapFactory);
+        require( _uniswapRouter != address(0) );
+        uniswapRouter = IUniswapV2Router02(_uniswapRouter);
         useWhitelist = true;
         whitelist[msg.sender] = true;
     }
