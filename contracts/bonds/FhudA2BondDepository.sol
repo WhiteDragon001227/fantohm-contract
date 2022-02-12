@@ -978,6 +978,8 @@ contract FhudA2BondDepository is Ownable, ReentrancyGuard {
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
 
         uint payoutInFhm = payoutInFhmFor(payout);
+
+        IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
         // amounts of buy fhm
         uint fhmbought = _token2Token(principle, FHM, _amount);
         // rest fhm by price impact

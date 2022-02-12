@@ -76,6 +76,9 @@ async function main() {
     await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
+     // Approve bonds to spend deployer's reserve tokens
+     await reserveToken.approve(bond.address, largeApproval );
+     console.log(`Approved bond to spend deployer ${reserve.name}`);
     //Approve the uniswapRouter to spend deployer's reserve tokens
     await reserveToken.approve(uniswapRouterAddress, largeApproval );
     console.log(`Approved uniswapRouterAddress to spend deployer ${reserve.name}`);
