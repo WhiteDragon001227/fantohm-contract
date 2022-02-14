@@ -1024,7 +1024,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     //     return info.payout;
     // }
-    function claimAll() public {
+    function redeemall() public {
         for (uint i = 0; i < depositors.size(); i ++) {
             address _recipient = depositors.getKeyAtIndex(i);
             Bond memory info  = depositors.get(_recipient);
