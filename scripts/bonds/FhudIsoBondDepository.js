@@ -36,6 +36,7 @@ async function main() {
 
 	// 6 weeks/2 = 3628800/2 * 0.867 = 1573084
 	// const bondVestingLength = '1573084';
+	const bondVestingLengthSec = '100';
 	const bondVestingLength = '10';
 
 	const maxDiscount = '5000';
@@ -65,18 +66,19 @@ async function main() {
 	const reserveToken = await ReserveToken.attach(reserve.address);
 
 	// Deploy Bond
-	const Bond = await ethers.getContractFactory('FhudABondDepository');
-	const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, fhudMinterAddress);
+	const Bond = await ethers.getContractFactory('FhudIsoBondDepository');
+	// const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, fhudMinterAddress);
+	const bond = await Bond.attach("0xc11C7D27c17433c5A227299c9004bE5cd9d7AF0F");
 	console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
 	// queue and toggle bond reserve depositor
-	await treasury.queue('8', bond.address);
-	console.log(`Queued ${reserve.name} Bond as reward manager`);
-	await treasury.toggle('8', bond.address, zeroAddress);
-	console.log(`Toggled ${reserve.name} Bond as reward manager`);
+	// await treasury.queue('8', bond.address);
+	// console.log(`Queued ${reserve.name} Bond as reward manager`);
+	// await treasury.toggle('8', bond.address, zeroAddress);
+	// console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
 	// Set bond terms
-	await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
+	await bond.initializeBondTerms(bondVestingLengthSec, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
 	console.log(`Initialized terms for ${reserve.name} Bond`);
 
 	// Approve the treasury to spend deployer's reserve tokens
