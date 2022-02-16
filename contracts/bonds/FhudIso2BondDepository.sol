@@ -961,18 +961,15 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
         uint payoutInFhm = payoutInFhmFor(payout);
 
-        uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
-        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
-        IERC20( FHM ).safeTransferFrom(address(DAO), address(this), payoutInFhm * 15 / 100);
-        
-        payoutInFhm = payoutInFhm * 115 / 100;
         // profits are calculated
-
+        uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
+        
         IERC20( principle ).safeTransferFrom( msg.sender, address( DAO ), _amount );
+        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
 
         // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), payout * 115 / 100 );
+        IMintable( FHUD ).mint( address(this), payout);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
