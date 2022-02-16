@@ -10,9 +10,11 @@
 	"treasuryAddress" : "0xA3b52d5A6d2f8932a5cD921e09DA840092349D71",
 	"stakingAddress" : "0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2",
 	"stakingHelperAddress" : "0x068e87aa1eABEBBad65378Ede4B5C16E75e5a671",
-	"stakingWarmupManagerAddress" : "0x0000000000000000000000000000000000000000",
+	"stakingWarmupManagerAddress" : "0xd891c2a40c1cc08967bd4aed7c7c12a9d84e67c2",
 	"fhudMinterAddress" : "0xAF4B4A120e343996BFD9Dc48659fdbBd5055a735",
 	"twapOracleAddress" : "0xDbD96B6D422bDa580384885bb82381299539772A",
+	"twapOracleAddressNEW" : "0xA878844cC6da5C2468D93C38837d4378dB41B98b",
 	"fhmDaiLpAddress" : "0xd77fc9c4074b56ecf80009744391942fbfddd88b",
-	"fhmCirculatingSupply" : "0x59EC309001Ec92879790dbdd94d9180B8bCAe908"
+	"fhmCirculatingSupply" : "0x59EC309001Ec92879790dbdd94d9180B8bCAe908",
+	"bondCalculator" : "0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581"
 }

@@ -584,41 +584,14 @@ library FixedPoint {
     }
 }
 
-interface AggregatorV3Interface {
-
-    function decimals() external view returns (uint8);
-    function description() external view returns (string memory);
-    function version() external view returns (uint256);
-
-    // getRoundData and latestRoundData should both raise "No data present"
-    // if they do not have data to report, instead of returning unset values
-    // which could be misinterpreted as actual reported values.
-    function getRoundData(uint80 _roundId)
-    external
-    view
-    returns (
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    );
-    function latestRoundData()
-    external
-    view
-    returns (
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    );
-}
-
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
-    function mintRewards( address _recipient, uint _amount ) external;
+}
+
+interface IBondCalculator {
+    function valuation( address _LP, uint _amount ) external view returns ( uint );
+    function markdown( address _LP ) external view returns ( uint );
 }
 
 interface IsFHM {
@@ -636,10 +609,10 @@ interface IFHUDMinter {
 }
 
 interface IFHMCirculatingSupply {
-    function OHMCirculatingSupply() external view returns (uint);
+    function OHMCirculatingSupply() external view returns ( uint );
 }
 
-contract NonStablecoinBondStakingDepository is Ownable {
+contract FantohmBondStakingDepositoryMovr is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -665,10 +638,11 @@ contract NonStablecoinBondStakingDepository is Ownable {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // FHM market price
+    address public immutable fhudMinter; // FHUD minter
     address public immutable fhmCirculatingSupply; // FHM circulating supply
 
-    AggregatorV3Interface internal priceFeed;
+    bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
+    address public immutable bondCalculator; // calculates value of LP tokens
 
     address public staking; // to auto-stake payout
 
@@ -682,16 +656,16 @@ contract NonStablecoinBondStakingDepository is Ownable {
 
 
 
-
     /* ======== STRUCTS ======== */
 
     // Info for creating new bonds
     struct Terms {
         uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
-        uint minimumPrice; // vs principle value. 4 decimals (1500 = 0.15)
+        uint minimumPrice; // vs principle value
         uint maximumDiscount; // in hundreds of a %, 500 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
     }
 
@@ -724,7 +698,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         address _principle,
         address _treasury,
         address _DAO,
-        address _feed,
+        address _bondCalculator,
         address _fhudMinter,
         address _fhmCirculatingSupply
     ) {
@@ -738,12 +712,13 @@ contract NonStablecoinBondStakingDepository is Ownable {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _feed != address(0) );
-        priceFeed = AggregatorV3Interface( _feed );
         require( _fhudMinter != address(0) );
         fhudMinter = _fhudMinter;
         require( _fhmCirculatingSupply != address(0) );
         fhmCirculatingSupply = _fhmCirculatingSupply;
+        // bondCalculator should be address(0) if not LP bond
+        bondCalculator = _bondCalculator;
+        isLiquidityBond = ( _bondCalculator != address(0) );
     }
 
     /**
@@ -753,6 +728,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @param _minimumPrice uint
      *  @param _maximumDiscount uint
      *  @param _maxPayout uint
+     *  @param _fee uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
      */
@@ -762,6 +738,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         uint _minimumPrice,
         uint _maximumDiscount,
         uint _maxPayout,
+        uint _fee,
         uint _maxDebt,
         uint _initialDebt
     ) external onlyPolicy() {
@@ -771,6 +748,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
         minimumPrice: _minimumPrice,
         maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
+        fee: _fee,
         maxDebt: _maxDebt
         });
         totalDebt = _initialDebt;
@@ -782,7 +760,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, DEBT, MIN_PRICE }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -795,9 +773,12 @@ contract NonStablecoinBondStakingDepository is Ownable {
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
             terms.maxPayout = _input;
-        } else if ( _parameter == PARAMETER.DEBT ) { // 2
+        } else if ( _parameter == PARAMETER.FEE ) { // 2
+            require( _input <= 10000, "DAO fee cannot exceed payout" );
+            terms.fee = _input;
+        } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
-        } else if ( _parameter == PARAMETER.MIN_PRICE ) { // 3
+        }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
             terms.minimumPrice = _input;
         }
     }
@@ -825,7 +806,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
     }
 
     /**
-      *  @notice set contract for auto stake
+     *  @notice set contract for auto stake
      *  @param _staking address
      */
     function setStaking( address _staking ) external onlyPolicy() {
@@ -863,12 +844,22 @@ contract NonStablecoinBondStakingDepository is Ownable {
         require( payout >= 10000000, "Bond too small" ); // must be > 0.01 FHM ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
 
+        // profits are calculated
+        uint fee = payout.mul( terms.fee ).div( 10000 );
+        uint profit = value.sub( payout ).sub( fee );
+
         /**
-            asset carries risk and is not minted against
-            asset transfered to treasury and rewards minted as payout
+            principle is transferred in
+            approved and
+            deposited into the treasury, returning (_amount - profit) FHM
          */
-        IERC20( principle ).safeTransferFrom( msg.sender, treasury, _amount );
-        ITreasury( treasury ).mintRewards( address(this), payout );
+        IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
+        IERC20( principle ).approve( address( treasury ), _amount );
+        ITreasury( treasury ).deposit( _amount, principle, profit );
+
+        if ( fee != 0 ) { // fee is transferred to dao
+            IERC20( FHM ).safeTransfer( DAO, fee );
+        }
 
         // total debt is increased
         totalDebt = totalDebt.add( value );
@@ -914,9 +905,6 @@ contract NonStablecoinBondStakingDepository is Ownable {
         IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
         return _amount;
     }
-
-
-
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
@@ -970,7 +958,7 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return uint
      */
     function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e14 );
+        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
 
 
@@ -979,8 +967,15 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        uint assetPrice_ = uint(assetPrice());
-        price_ = bondPriceInUSDCommon(assetPrice_).div(assetPrice_).div(1e6);
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        }
+
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     /**
@@ -988,26 +983,30 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return price_ uint
      */
     function _bondPrice() internal returns ( uint price_ ) {
-        uint priceToClear = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
-        if ( priceToClear >= terms.minimumPrice && terms.minimumPrice != 0 ) {
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        } else if ( terms.minimumPrice != 0 ) {
             terms.minimumPrice = 0;
         }
 
-        return bondPrice();
+        uint minimalPrice = getMinimalBondPrice();
+        if (price_ < minimalPrice) {
+            price_ = minimalPrice;
+        }
     }
 
     function getMinimalBondPrice() public view returns (uint) {
         uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
         uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
-        return marketPrice.sub(discount);
-    }
+        uint price = marketPrice.sub(discount);
 
-    /**
-     *  @notice get asset price from chainlink
-     */
-    function assetPrice() public view returns (int) {
-        ( , int price, , , ) = priceFeed.latestRoundData();
-        return price;
+        if (isLiquidityBond) {
+            return price.mul(10 ** IERC20( principle ).decimals()).div(IBondCalculator(bondCalculator).markdown(principle))
+                    .div(10**(18-6)); // moonriver LP hack
+        } else {
+            return price;
+        }
     }
 
     /**
@@ -1015,25 +1014,15 @@ contract NonStablecoinBondStakingDepository is Ownable {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPriceInUSDCommon(uint(assetPrice()));
-    }
-
-    function bondPriceInUSDCommon(uint _assetPrice) internal view returns ( uint price_ ) {
-        price_ = terms.controlVariable.mul( debtRatio() ).div( 1e5 );
-        if ( price_ < terms.minimumPrice ) {
-            price_ = terms.minimumPrice;
-        }
-
-        price_ = price_.mul(_assetPrice).mul( 1e6 );
-
-        uint minimalPrice = getMinimalBondPrice().mul(1e16);
-        if (price_ < minimalPrice) {
-            price_ = minimalPrice;
+        if( isLiquidityBond ) {
+            price_ = bondPrice().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 100 );
+        } else {
+            price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div( 100 );
         }
     }
 
     /**
-     *  @notice return bond info with latest sFHM balance calculated from gons
+    *  @notice return bond info with latest sFHM balance calculated from gons
      *  @param _depositor address
      *  @return payout uint
      *  @return vesting uint
@@ -1048,7 +1037,6 @@ contract NonStablecoinBondStakingDepository is Ownable {
         pricePaid = info.pricePaid;
     }
 
-
     /**
      *  @notice calculate current ratio of debt to FHM supply
      *  @return debtRatio_ uint
@@ -1062,11 +1050,15 @@ contract NonStablecoinBondStakingDepository is Ownable {
     }
 
     /**
-     *  @notice debt ratio in same terms as reserve bonds
+     *  @notice debt ratio in same terms for reserve or liquidity bonds
      *  @return uint
      */
     function standardizedDebtRatio() external view returns ( uint ) {
-        return debtRatio().mul( uint( assetPrice() ) ).div( 1e8 ); // ETH feed is 8 decimals
+        if ( isLiquidityBond ) {
+            return debtRatio().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 1e9 );
+        } else {
+            return debtRatio();
+        }
     }
 
     /**
@@ -1122,7 +1114,6 @@ contract NonStablecoinBondStakingDepository is Ownable {
             pendingPayout_ = 0;
         }
     }
-
 
 
 
