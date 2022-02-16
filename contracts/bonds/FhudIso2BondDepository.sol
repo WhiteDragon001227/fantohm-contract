@@ -774,7 +774,7 @@ interface IFHUDMinter {
 
 /// @notice FHUD ISO bond
 /// @dev this is ISO bond - x% discount with 6 weeks vesting
-contract FhudABondDepository is Ownable, ReentrancyGuard {
+contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
