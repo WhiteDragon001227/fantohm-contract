@@ -1008,22 +1008,28 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
         return payout;
     }
-    function redeemAll() public {
-        address[] memory _remove;
-        uint counter = 0;
-        for (uint i = 0; i < depositors.size(); i ++) {
+
+    function redeemAll(uint256 from, uint256 to) public returns(uint256, uint[] memory) {
+        require (from >= 0 && from < depositors.size(), "`from` is invalid");
+        require (to >= 0 && to < depositors.size(), "`to` is invalid");
+        require (from <= to, "`to` should be equal and greater than `from`");
+
+        uint[] memory _removedIndices;
+        uint _counter = 0;
+        for (uint i = from; i <= to; i ++) {
             address _recipient = depositors.getKeyAtIndex(i);
             uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
             uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
             if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                _remove[counter] = _recipient;
-                counter = counter + 1;
+                _removedIndices[_counter] = i;
+                _counter = _counter + 1;
             }
         }
 
-        for (uint i = 0; i < counter; i ++) {
-            address _recipient = _remove[i];
+        for (uint i = 0; i < _counter; i ++) {
+            uint256 index = _removedIndices[i];
+            address _recipient = depositors.getKeyAtIndex(index);
             Bond memory info  = depositors.get(_recipient);
             IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
             
@@ -1031,6 +1037,38 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
             emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
         }
+
+        return (_counter, _removedIndices);
+    }
+
+    function redeem(uint[] memory _newIndices) public returns(uint256, uint[] memory) {
+        require(_newIndices.length > 0, "Redeems unavailable");
+
+        uint[] memory _removedIndices;
+        uint _counter = 0;
+        for (uint i = 0; i <= _newIndices.length; i ++) {
+            address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
+            uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
+            uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+
+            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
+                _removedIndices[_counter] = _newIndices[i];
+                _counter = _counter + 1;
+            }
+        }
+
+        for (uint i = 0; i < _counter; i ++) {
+            uint256 index = _removedIndices[i];
+            address _recipient = depositors.getKeyAtIndex(index);
+            Bond memory info  = depositors.get(_recipient);
+            IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
+            
+            depositors.remove(_recipient);
+
+            emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
+        }
+
+        return (_counter, _removedIndices);
     }
 
     /**
