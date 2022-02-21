@@ -656,7 +656,15 @@ library IterableMapping {
             map.values[key] = val;
         } else {
             map.inserted[key] = true;
-            map.values[key] = val;
+
+            Bond storage _val = map.values[key];
+            _val.payout = val.payout;
+            _val.vesting = val.vesting;
+            _val.lastBlock = val.lastBlock;
+            _val.pricePaid = val.pricePaid;
+            _val.vestingSeconds = val.vestingSeconds;
+            _val.lastTimestamp = val.lastTimestamp;
+            map.values[key] = _val;
             map.indexOf[key] = map.keys.length;
             map.keys.push(key);
         }
@@ -803,7 +811,6 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     Terms public terms; // stores terms for new bonds
 
     IterableMapping.Map private depositors; // stores depositors bond information
-    Bond public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
@@ -812,6 +819,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
+    Bond public _bondInfo;
 
     /* ======== STRUCTS ======== */
 
@@ -985,7 +993,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         if (useCircuitBreaker) updateSoldBonds(payout);
 
         // depositor info is stored
-        bondInfo = Bond({
+        _bondInfo = Bond({
             payout: depositors.get(_depositor).payout.add( payout ),
             vestingSeconds: terms.vestingTermSeconds,
             lastTimestamp: block.timestamp,
@@ -993,49 +1001,56 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
             lastBlock: block.number,
             pricePaid: priceInUSD
         });
-        depositors.set(_depositor, bondInfo);
+
+        depositors.set(_depositor, _bondInfo );
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
 
         return payout;
     }
-
-    // /**
-    //  *  @notice redeem bond for user
-    //  *  @param _recipient address
-    //  *  @param _stake bool
-    //  *  @return uint
-    //  */
-    // function redeem( address _recipient, bool _stake ) external returns ( uint ) {
-    //     Bond memory info = bondInfo[ _recipient ];
-    //     uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
-    //     uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
-
-    //     require ( percentVested >= 10000, "Wait for end timestamp of bond") ;
-    //     require ( percentVestedBlocks >= 10000, "Wait for end block of bond") ;
-
-    //     delete bondInfo[ _recipient ]; // delete user info
-    //     emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
-
-    //     IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
-
-    //     return info.payout;
-    // }
-    function redeemall() public {
+    function redeemAll() public {
+        address[] memory _remove;
+        uint counter = 0;
         for (uint i = 0; i < depositors.size(); i ++) {
             address _recipient = depositors.getKeyAtIndex(i);
-            Bond memory info  = depositors.get(_recipient);
             uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
             uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
             if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                delete bondInfo; // delete user info
-                emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
-
-                IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
-                depositors.remove(_recipient);
+                _remove[counter] = _recipient;
+                counter = counter + 1;
             }
         }
+
+        for (uint i = 0; i < counter; i ++) {
+            address _recipient = _remove[i];
+            Bond memory info  = depositors.get(_recipient);
+            IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
+            
+            depositors.remove(_recipient);
+
+            emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
+        }
+    }
+
+    /**
+    *  @notice return bond info 
+     *  @param _depositor address
+     *  @return payout uint
+     *  @return vestingSeconds uint
+     *  @return lastTimestamp uint
+     *  @return vesting uint
+     *  @return lastBlock uint
+     *  @return pricePaid uint
+     */
+    function bondInfo(address _depositor) public view returns ( uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
+        Bond memory info = depositors.get(_depositor);
+        payout = info.payout;
+        vestingSeconds = info.vestingSeconds;
+        lastTimestamp = info.lastTimestamp;
+        vesting = info.vesting;
+        lastBlock = info.lastBlock;
+        pricePaid = info.pricePaid;
     }
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
