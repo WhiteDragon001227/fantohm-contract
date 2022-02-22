@@ -630,13 +630,13 @@ library IterableMapping {
     // Iterable mapping from address to uint;
     struct Map {
         address[] keys;
-        mapping(address => Bond) values;
+        mapping(address => Bond[]) values;
         mapping(address => uint) indexOf;
         mapping(address => bool) inserted;
     }
 
-    function get(Map storage map, address key) public view returns (Bond storage) {
-        return map.values[key];
+    function get(Map storage map, address key, uint index) public view returns (Bond storage) {
+        return map.values[key][index];
     }
 
     function getKeyAtIndex(Map storage map, uint index) public view returns (address) {
@@ -651,20 +651,14 @@ library IterableMapping {
         Map storage map,
         address key,
         Bond storage val
-    ) public {
+    ) public {    
         if (map.inserted[key]) {
-            map.values[key] = val;
+            map.values[key].push(val);
+
         } else {
             map.inserted[key] = true;
 
-            Bond storage _val = map.values[key];
-            _val.payout = val.payout;
-            _val.vesting = val.vesting;
-            _val.lastBlock = val.lastBlock;
-            _val.pricePaid = val.pricePaid;
-            _val.vestingSeconds = val.vestingSeconds;
-            _val.lastTimestamp = val.lastTimestamp;
-            map.values[key] = _val;
+            map.values[key].push(val);
             map.indexOf[key] = map.keys.length;
             map.keys.push(key);
         }
@@ -820,6 +814,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
     Bond public _bondInfo;
+    uint public bondCount;
 
     /* ======== STRUCTS ======== */
 
@@ -864,6 +859,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         fhudMinter = _fhudMinter;
         useWhitelist = true;
         whitelist[msg.sender] = true;
+        bondCount = 0;
     }
 
     /**
@@ -994,7 +990,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
         // depositor info is stored
         _bondInfo = Bond({
-            payout: depositors.get(_depositor).payout.add( payout ),
+            payout: payout,
             vestingSeconds: terms.vestingTermSeconds,
             lastTimestamp: block.timestamp,
             vesting: terms.vestingTerm,
@@ -1002,7 +998,12 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
             pricePaid: priceInUSD
         });
 
+        // new user bonding
+        if(!depositors.inserted[_depositor]) {
+            bondCount ++; 
+        }
         depositors.set(_depositor, _bondInfo );
+        
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
 
@@ -1012,29 +1013,43 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     function redeemAll(uint256 from, uint256 to) public returns(uint256, uint[] memory) {
         require (from >= 0 && from < depositors.size(), "`from` is invalid");
         require (to >= 0 && to < depositors.size(), "`to` is invalid");
-        require (from <= to, "`to` should be equal and greater than `from`");
+        require (from < to, "`to` should be equal and greater than `from`");
+        require (bondCount >= 0, "No bond to redeem");
 
         uint[] memory _removedIndices;
         uint _counter = 0;
-        for (uint i = from; i <= to; i ++) {
+        for (uint i = from; i < to; i ++) {
             address _recipient = depositors.getKeyAtIndex(i);
-            uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+            Bond[] storage _userBondInfo = depositors.values[_recipient];
+            for (uint index = 0; index < _userBondInfo.length; index++) {
+                uint percentVested = percentVestedFor( _recipient, index ); // (seconds since last interaction / vesting term remaining)
+                uint percentVestedBlocks = percentVestedBlocksFor( _recipient, index ); // (blocks since last interaction / vesting term remaining)
 
-            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                _removedIndices[_counter] = i;
-                _counter = _counter + 1;
+                if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
+                    if(_userBondInfo.length == 1) {
+                        _removedIndices[_counter] = i;
+                        _counter = _counter + 1;
+                    } else {
+                        Bond memory removeMe;
+                        removeMe = _userBondInfo[index];
+                        _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
+                        _userBondInfo[_userBondInfo.length - 1] = removeMe;
+                        _userBondInfo.pop();
+                        IERC20( FHUD ).transfer( _recipient, removeMe.payout);
+                    }
+                
+                }
             }
         }
 
         for (uint i = 0; i < _counter; i ++) {
             uint256 index = _removedIndices[i];
             address _recipient = depositors.getKeyAtIndex(index);
-            Bond memory info  = depositors.get(_recipient);
+            Bond memory info  = depositors.get(_recipient, 0);
             IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
             
             depositors.remove(_recipient);
-
+            bondCount --;
             emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
         }
 
@@ -1048,8 +1063,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         uint _counter = 0;
         for (uint i = 0; i <= _newIndices.length; i ++) {
             address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+            uint percentVested = percentVestedFor( _recipient, 0 ); // (seconds since last interaction / vesting term remaining)
+            uint percentVestedBlocks = percentVestedBlocksFor( _recipient, 0 ); // (blocks since last interaction / vesting term remaining)
 
             if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
                 _removedIndices[_counter] = _newIndices[i];
@@ -1060,11 +1075,11 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         for (uint i = 0; i < _counter; i ++) {
             uint256 index = _removedIndices[i];
             address _recipient = depositors.getKeyAtIndex(index);
-            Bond memory info  = depositors.get(_recipient);
+            Bond memory info  = depositors.get(_recipient, 0);
             IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
             
             depositors.remove(_recipient);
-
+            bondCount --;
             emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
         }
 
@@ -1081,8 +1096,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
      *  @return lastBlock uint
      *  @return pricePaid uint
      */
-    function bondInfo(address _depositor) public view returns ( uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
-        Bond memory info = depositors.get(_depositor);
+    function bondInfo(address _depositor, uint index) public view returns ( uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
+        Bond memory info = depositors.get(_depositor, index);
         payout = info.payout;
         vestingSeconds = info.vestingSeconds;
         lastTimestamp = info.lastTimestamp;
@@ -1265,8 +1280,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
      *  @param _depositor address
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor);
+    function percentVestedFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = depositors.get(_depositor, index);
         uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
         uint vestingSeconds = bond.vestingSeconds;
 
@@ -1277,8 +1292,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor);
+    function percentVestedBlocksFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = depositors.get(_depositor, index);
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1294,10 +1309,10 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor );
-        uint percentVestedBlocks = percentVestedBlocksFor( _depositor );
-        uint payout = depositors.get(_depositor).payout;
+    function pendingPayoutFor( address _depositor, uint index ) external view returns ( uint pendingPayout_ ) {
+        uint percentVested = percentVestedFor( _depositor, index );
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index );
+        uint payout = depositors.get(_depositor, index).payout;
 
         if ( percentVested >= 10000 && percentVestedBlocks >= 10000) {
             pendingPayout_ = payout;
