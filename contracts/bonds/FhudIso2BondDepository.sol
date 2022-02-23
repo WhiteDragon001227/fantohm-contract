@@ -814,7 +814,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
     Bond public _bondInfo;
-    uint public bondCount;
+    uint public usersCount;
 
     /* ======== STRUCTS ======== */
 
@@ -859,7 +859,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         fhudMinter = _fhudMinter;
         useWhitelist = true;
         whitelist[msg.sender] = true;
-        bondCount = 0;
+        usersCount = 0;
     }
 
     /**
@@ -1000,7 +1000,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
         // new user bonding
         if(!depositors.inserted[_depositor]) {
-            bondCount ++; 
+            usersCount ++; 
         }
         depositors.set(_depositor, _bondInfo );
         
@@ -1009,49 +1009,18 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
         return payout;
     }
-
+   
     function redeemAll(uint256 from, uint256 to) public returns(uint256, uint[] memory) {
         require (from >= 0 && from < depositors.size(), "`from` is invalid");
         require (to >= 0 && to < depositors.size(), "`to` is invalid");
         require (from < to, "`to` should be equal and greater than `from`");
-        require (bondCount >= 0, "No bond to redeem");
+        require (usersCount >= 0, "No bond to redeem");
 
+        uint  _counter;
         uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = from; i < to; i ++) {
-            address _recipient = depositors.getKeyAtIndex(i);
-            Bond[] storage _userBondInfo = depositors.values[_recipient];
-            for (uint index = 0; index < _userBondInfo.length; index++) {
-                uint percentVested = percentVestedFor( _recipient, index ); // (seconds since last interaction / vesting term remaining)
-                uint percentVestedBlocks = percentVestedBlocksFor( _recipient, index ); // (blocks since last interaction / vesting term remaining)
-
-                if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                    if(_userBondInfo.length == 1) {
-                        _removedIndices[_counter] = i;
-                        _counter = _counter + 1;
-                    } else {
-                        Bond memory removeMe;
-                        removeMe = _userBondInfo[index];
-                        _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
-                        _userBondInfo[_userBondInfo.length - 1] = removeMe;
-                        _userBondInfo.pop();
-                        IERC20( FHUD ).transfer( _recipient, removeMe.payout);
-                    }
-                
-                }
-            }
-        }
-
-        for (uint i = 0; i < _counter; i ++) {
-            uint256 index = _removedIndices[i];
-            address _recipient = depositors.getKeyAtIndex(index);
-            Bond memory info  = depositors.get(_recipient, 0);
-            IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
-            
-            depositors.remove(_recipient);
-            bondCount --;
-            emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
-        }
+        (_counter, _removedIndices) = getIndicies(from, to);
+        
+        removeUsers(_counter, _removedIndices);
 
         return (_counter, _removedIndices);
     }
@@ -1063,32 +1032,71 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         uint _counter = 0;
         for (uint i = 0; i <= _newIndices.length; i ++) {
             address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            uint percentVested = percentVestedFor( _recipient, 0 ); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor( _recipient, 0 ); // (blocks since last interaction / vesting term remaining)
-
-            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                _removedIndices[_counter] = _newIndices[i];
-                _counter = _counter + 1;
+            if(redeemOne(_recipient)) {
+                _removedIndices[_counter] = i;
+                _counter ++;                
             }
         }
 
-        for (uint i = 0; i < _counter; i ++) {
-            uint256 index = _removedIndices[i];
-            address _recipient = depositors.getKeyAtIndex(index);
-            Bond memory info  = depositors.get(_recipient, 0);
-            IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
-            
-            depositors.remove(_recipient);
-            bondCount --;
-            emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
-        }
+        removeUsers(_counter, _removedIndices);
 
         return (_counter, _removedIndices);
     }
 
+    function redeemOne(address _depositor) public payable returns(bool _singlebond) {
+        require(depositors.values[_depositor].length != 0, "There is no bonding" );
+        Bond[] storage _userBondInfo = depositors.values[_depositor];
+        uint  _finalAmount = 0; 
+        uint  _length = _userBondInfo.length;
+        
+        for (uint index = 0; index < _length; index++) {
+            uint percentVested = percentVestedFor( _depositor, index ); // (seconds since last interaction / vesting term remaining)
+            uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index ); // (blocks since last interaction / vesting term remaining)
+
+            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
+                Bond memory removeMe;
+                removeMe = _userBondInfo[index];
+                _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
+                _userBondInfo[_userBondInfo.length - 1] = removeMe;
+                _userBondInfo.pop();
+                _finalAmount.add(removeMe.payout);
+                _length --;
+            }
+        }
+        if(_length == 0) {
+            _singlebond = true;
+        }
+        IERC20( FHUD ).transfer( _depositor, _finalAmount);
+
+        emit BondRedeemed( _depositor, _finalAmount, 0, 0 );
+
+        return _singlebond;
+    }
+    function getIndicies(uint _from, uint _to) private returns(uint256, uint[] memory) {
+        uint[] memory _removedIndices;
+        uint _counter = 0;
+        for (uint i = _from; i < _to; i ++) {
+            address _recipient = depositors.getKeyAtIndex(i);
+            if(i > depositors.size()) {
+                break;
+            }
+            if(redeemOne(_recipient)) {
+                _removedIndices[_counter] = i;
+                _counter ++;
+            }
+        }
+        return (_counter, _removedIndices);
+    }
+ 
+    function removeUsers(uint _counter, uint[] memory _removedIndices) internal {
+        for (uint i = 0; i < _counter; i ++) { 
+            depositors.remove(depositors.getKeyAtIndex(_removedIndices[i]));
+        }
+    }
     /**
     *  @notice return bond info 
      *  @param _depositor address
+     *  @param index uint
      *  @return payout uint
      *  @return vestingSeconds uint
      *  @return lastTimestamp uint
@@ -1278,6 +1286,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
+     *  @param index uint
      *  @return percentVested_ uint
      */
     function percentVestedFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
@@ -1305,8 +1314,17 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
+     *  @notice users' bond length
+     *  @param _depositor address
+     *  @return  uint
+     */
+     function bondlength( address _depositor) external view returns (uint) {
+        return depositors.values[_depositor].length;
+     }
+    /**
      *  @notice calculate amount of FHM available for claim by depositor
      *  @param _depositor address
+     *  @param index uint
      *  @return pendingPayout_ uint
      */
     function pendingPayoutFor( address _depositor, uint index ) external view returns ( uint pendingPayout_ ) {
