@@ -1010,22 +1010,27 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         return payout;
     }
    
-    function redeemAll(uint256 from, uint256 to) public returns(uint256, uint[] memory) {
-        require (from >= 0 && from < depositors.size(), "`from` is invalid");
-        require (to >= 0 && to < depositors.size(), "`to` is invalid");
-        require (from < to, "`to` should be equal and greater than `from`");
-        require (usersCount >= 0, "No bond to redeem");
+    function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
+        require (_from >= 0 && _from < depositors.size(), "`from` is invalid");
+        require (_to >= 0 && _to < depositors.size(), "`to` is invalid");
+        require (_from < _to, "`to` should be equal and greater than `from`");
 
-        uint  _counter;
         uint[] memory _removedIndices;
-        (_counter, _removedIndices) = getIndicies(from, to);
-        
-        removeUsers(_counter, _removedIndices);
-
-        return (_counter, _removedIndices);
+        uint _counter = 0;
+        for (uint i = _from; i < _to; i ++) {
+            address _recipient = depositors.getKeyAtIndex(i);
+            if(i > depositors.size()) {
+                break;
+            }
+            if(redeemOne(_recipient)) {
+               _removedIndices[_counter++] = i;
+               depositors.remove(_recipient);
+            }
+        }
+        return _removedIndices;
     }
 
-    function redeem(uint[] memory _newIndices) public returns(uint256, uint[] memory) {
+    function redeem(uint[] memory _newIndices) public returns(uint[] memory) {
         require(_newIndices.length > 0, "Redeems unavailable");
 
         uint[] memory _removedIndices;
@@ -1033,19 +1038,16 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         for (uint i = 0; i <= _newIndices.length; i ++) {
             address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
             if(redeemOne(_recipient)) {
-                _removedIndices[_counter] = i;
-                _counter ++;                
+                _removedIndices[_counter++] = i;
+                 depositors.remove(_recipient);
             }
         }
-
-        removeUsers(_counter, _removedIndices);
-
-        return (_counter, _removedIndices);
+        return  _removedIndices;
     }
-
-    function redeemOne(address _depositor) public payable returns(bool _singlebond) {
-        require(depositors.values[_depositor].length != 0, "There is no bonding" );
+    function redeemOne(address _depositor) public returns(bool _toDelete) {
         Bond[] storage _userBondInfo = depositors.values[_depositor];
+        require(_userBondInfo.length > 0, "There is no bonding" );
+
         uint  _finalAmount = 0; 
         uint  _length = _userBondInfo.length;
         
@@ -1059,39 +1061,20 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
                 _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
                 _userBondInfo[_userBondInfo.length - 1] = removeMe;
                 _userBondInfo.pop();
-                _finalAmount.add(removeMe.payout);
+               _finalAmount = _finalAmount.add(removeMe.payout);
                 _length --;
             }
         }
         if(_length == 0) {
-            _singlebond = true;
+            _toDelete = true;
         }
-        IERC20( FHUD ).transfer( _depositor, _finalAmount);
 
-        emit BondRedeemed( _depositor, _finalAmount, 0, 0 );
+        if (_finalAmount > 0) {
+            IERC20( FHUD ).transfer( _depositor, _finalAmount);
+            emit BondRedeemed( _depositor, _finalAmount, 0, 0 );
+        }
 
-        return _singlebond;
-    }
-    function getIndicies(uint _from, uint _to) private returns(uint256, uint[] memory) {
-        uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = _from; i < _to; i ++) {
-            address _recipient = depositors.getKeyAtIndex(i);
-            if(i > depositors.size()) {
-                break;
-            }
-            if(redeemOne(_recipient)) {
-                _removedIndices[_counter] = i;
-                _counter ++;
-            }
-        }
-        return (_counter, _removedIndices);
-    }
- 
-    function removeUsers(uint _counter, uint[] memory _removedIndices) internal {
-        for (uint i = 0; i < _counter; i ++) { 
-            depositors.remove(depositors.getKeyAtIndex(_removedIndices[i]));
-        }
+        return _toDelete;
     }
     /**
     *  @notice return bond info 
