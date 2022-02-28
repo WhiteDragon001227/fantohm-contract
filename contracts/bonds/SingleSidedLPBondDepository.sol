@@ -652,7 +652,7 @@ library IterableMapping {
     function set(
         Map storage map,
         address key,
-        Bond storage val
+        Bond memory val
     ) public {
         if (map.inserted[key]) {
             map.values[key].push(val);
@@ -1105,7 +1105,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         if (useCircuitBreaker) updateSoldBonds(payout);
 
         // depositor info is stored
-        Bond storage info = Bond({
+        Bond memory info = Bond({
             payout: payout,
             payoutLpTokens: _lpTokenAmount,
             vestingSeconds: terms.vestingTermSeconds,
@@ -1131,7 +1131,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     function insertSort(address[] memory data) internal pure {
         uint length = data.length;
         for (uint i = 1; i < length; i++) {
-            uint key = data[i];
+            address key = data[i];
             uint j = i - 1;
             while ((int(j) >= 0) && (data[j] > key)) {
                 data[j + 1] = data[j];
@@ -1146,12 +1146,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IERC20(principle).safeApprove(balancerVault, _principleAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
-        address[] memory tokens = [FHUD, principle];
-        insertSort(tokens);
-        uint[] calldata rawAmounts = [_principleAmount, _principleAmount];
-        bytes calldata userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
+        address[] memory tokens = new address[](2);
+        tokens[0] = FHUD;
+        tokens[1] = principle;
 
-        JoinPoolRequest calldata request = JoinPoolRequest({
+        insertSort(tokens);
+        uint[] memory rawAmounts = new uint[](2);
+        rawAmounts[0] = _principleAmount;
+        rawAmounts[1] = _principleAmount;
+
+        bytes memory userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
+
+        JoinPoolRequest memory request = JoinPoolRequest({
             assets: tokens,
             maxAmountsIn: rawAmounts,
             userData: userDataEncoded,
@@ -1169,21 +1175,25 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
-        address[] memory tokens = [FHUD, principle];
+        address[] memory tokens = new address[](2);
+        tokens[0] = FHUD;
+        tokens[1] = principle;
         insertSort(tokens);
 
-        bytes calldata userDataEncoded = abi.encode(1 /* EXACT_BPT_IN_FOR_TOKENS_OUT */, _lpTokensAmount);
+        uint[] memory minAmountsOut = new uint[](2);
 
-        ExitPoolRequest calldata request = ExitPoolRequest({
+        bytes memory userDataEncoded = abi.encode(1 /* EXACT_BPT_IN_FOR_TOKENS_OUT */, _lpTokensAmount);
+
+        ExitPoolRequest memory request = ExitPoolRequest({
             assets: tokens,
-            minAmountsOut: [0, 0],
+            minAmountsOut: minAmountsOut,
             userData: userDataEncoded,
             toInternalBalance: false
         });
 
         uint fhudBefore = IERC20(FHUD).balanceOf(address(this));
         uint principleBefore = IERC20(principle).balanceOf(address(this));
-        IVault(balancerVault).exitPool(IStablePool(lpToken).getPoolId(), address(this), address(this), request);
+        IVault(balancerVault).exitPool(IStablePool(lpToken).getPoolId(), address(this), payable(address(this)), request);
         uint fhudAfter = IERC20(FHUD).balanceOf(address(this));
         uint principleAfter = IERC20(principle).balanceOf(address(this));
 
