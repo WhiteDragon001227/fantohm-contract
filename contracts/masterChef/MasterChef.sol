@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity 0.7.5;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -13,118 +12,6 @@ interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
     function mintRewards( address _recipient, uint _amount ) external;
-}
-
-interface IFHUDMinter {
-    function getMarketPrice() external view returns (uint);
-}
-
-interface IMintable {
-    function mint(address to, uint256 amount) external;
-}
-
-interface IBurnable {
-    function burn(uint256 amount) external;
-}
-
-struct JoinPoolRequest {
-    address[] assets;
-    uint256[] maxAmountsIn;
-    bytes userData;
-    bool fromInternalBalance;
-}
-
-struct ExitPoolRequest {
-    address[] assets;
-    uint256[] minAmountsOut;
-    bytes userData;
-    bool toInternalBalance;
-}
-
-interface IVault {
-
-    /**
-     * @dev Called by users to join a Pool, which transfers tokens from `sender` into the Pool's balance. This will
-     * trigger custom Pool behavior, which will typically grant something in return to `recipient` - often tokenized
-     * Pool shares.
-     *
-     * If the caller is not `sender`, it must be an authorized relayer for them.
-     *
-     * The `assets` and `maxAmountsIn` arrays must have the same length, and each entry indicates the maximum amount
-     * to send for each asset. The amounts to send are decided by the Pool and not the Vault: it just enforces
-     * these maximums.
-     *
-     * If joining a Pool that holds WETH, it is possible to send ETH directly: the Vault will do the wrapping. To enable
-     * this mechanism, the IAsset sentinel value (the zero address) must be passed in the `assets` array instead of the
-     * WETH address. Note that it is not possible to combine ETH and WETH in the same join. Any excess ETH will be sent
-     * back to the caller (not the sender, which is important for relayers).
-     *
-     * `assets` must have the same length and order as the array returned by `getPoolTokens`. This prevents issues when
-     * interacting with Pools that register and deregister tokens frequently. If sending ETH however, the array must be
-     * sorted *before* replacing the WETH address with the ETH sentinel value (the zero address), which means the final
-     * `assets` array might not be sorted. Pools with no registered tokens cannot be joined.
-     *
-     * If `fromInternalBalance` is true, the caller's Internal Balance will be preferred: ERC20 transfers will only
-     * be made for the difference between the requested amount and Internal Balance (if any). Note that ETH cannot be
-     * withdrawn from Internal Balance: attempting to do so will trigger a revert.
-     *
-     * This causes the Vault to call the `IBasePool.onJoinPool` hook on the Pool's contract, where Pools implement
-     * their own custom logic. This typically requires additional information from the user (such as the expected number
-     * of Pool shares). This can be encoded in the `userData` argument, which is ignored by the Vault and passed
-     * directly to the Pool's contract, as is `recipient`.
-     *
-     * Emits a `PoolBalanceChanged` event.
-     */
-    function joinPool(
-        bytes32 poolId,
-        address sender,
-        address recipient,
-        JoinPoolRequest memory request
-    ) external payable;
-
-    /**
-     * @dev Called by users to exit a Pool, which transfers tokens from the Pool's balance to `recipient`. This will
-     * trigger custom Pool behavior, which will typically ask for something in return from `sender` - often tokenized
-     * Pool shares. The amount of tokens that can be withdrawn is limited by the Pool's `cash` balance (see
-     * `getPoolTokenInfo`).
-     *
-     * If the caller is not `sender`, it must be an authorized relayer for them.
-     *
-     * The `tokens` and `minAmountsOut` arrays must have the same length, and each entry in these indicates the minimum
-     * token amount to receive for each token contract. The amounts to send are decided by the Pool and not the Vault:
-     * it just enforces these minimums.
-     *
-     * If exiting a Pool that holds WETH, it is possible to receive ETH directly: the Vault will do the unwrapping. To
-     * enable this mechanism, the IAsset sentinel value (the zero address) must be passed in the `assets` array instead
-     * of the WETH address. Note that it is not possible to combine ETH and WETH in the same exit.
-     *
-     * `assets` must have the same length and order as the array returned by `getPoolTokens`. This prevents issues when
-     * interacting with Pools that register and deregister tokens frequently. If receiving ETH however, the array must
-     * be sorted *before* replacing the WETH address with the ETH sentinel value (the zero address), which means the
-     * final `assets` array might not be sorted. Pools with no registered tokens cannot be exited.
-     *
-     * If `toInternalBalance` is true, the tokens will be deposited to `recipient`'s Internal Balance. Otherwise,
-     * an ERC20 transfer will be performed. Note that ETH cannot be deposited to Internal Balance: attempting to
-     * do so will trigger a revert.
-     *
-     * `minAmountsOut` is the minimum amount of tokens the user expects to get out of the Pool, for each token in the
-     * `tokens` array. This array must match the Pool's registered tokens.
-     *
-     * This causes the Vault to call the `IBasePool.onExitPool` hook on the Pool's contract, where Pools implement
-     * their own custom logic. This typically requires additional information from the user (such as the expected number
-     * of Pool shares to return). This can be encoded in the `userData` argument, which is ignored by the Vault and
-     * passed directly to the Pool's contract.
-     *
-     * Emits a `PoolBalanceChanged` event.
-     */
-    function exitPool(
-        bytes32 poolId,
-        address sender,
-        address payable recipient,
-        ExitPoolRequest memory request
-    ) external;
-
-
 }
 
 // MasterChef is the master of FHM. He can make FHM and he is a fair guy.
@@ -174,11 +61,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     uint public constant BONUS_MULTIPLIER = 1;
     // Deposit Fee address
     address public feeAddress;
-
-    address public immutable fhud; // FIXME init
-    address public immutable treasury; // FIXME init
-    address public immutable fhudMinter; // FIXME init
-    address public immutable balancerVault; // FIXME init
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -382,80 +264,4 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         emit UpdateEmissionRate(msg.sender, _fhmPerBlock);
     }
 
-    /// @notice https://medium.com/coinmonks/sorting-in-solidity-without-comparison-4eb47e04ff0d
-    function insertSort(address[] memory data) internal pure {
-        uint length = data.length;
-        for (uint i = 1; i < length; i++) {
-            uint key = data[i];
-            uint j = i - 1;
-            while ((int(j) >= 0) && (data[j] > key)) {
-                data[j + 1] = data[j];
-                j--;
-            }
-            data[j + 1] = key;
-        }
-    }
-
-    function getMarketPrice() public view returns (uint _marketPrice) {
-        _marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
-    }
-
-    function joinPool(uint _pid, address _lpToken, address _principle, uint _amount) external nonReentrant returns (uint _lpTokenAmount) {
-        // FIXME transferFrom msg.sender amount of token to this contract, so its here
-        require(_amount > 0.01 ether, "MIN_TOKENS");
-
-        // FIXME fhud mint should go to the bond source code
-        uint fhmValue = _amount.mul(10**2).div(getMarketPrice());
-        ITreasury(treasury).mintRewards(address(this), fhmValue);
-        IMintable(fhud).mint(address(this), _amount);
-        IBurnable(fhm).burn(fhmValue);
-
-        IERC20(fhud).safeApprove(balancerVault, _amount);
-        IERC20(_principle).safeApprove(balancerVault, _amount);
-
-        // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
-        address[] memory tokens = [fhud, _principle];
-        insertSort(tokens);
-        uint[] calldata rawAmounts = [_amount, _amount];
-        bytes calldata userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
-
-        JoinPoolRequest calldata request = JoinPoolRequest({
-            assets: tokens,
-            maxAmountsIn: userDataEncoded,
-            userData: userDataEncoded,
-            fromInternalBalance: false
-        });
-
-        uint tokensBefore = IERC20(_lpToken).balanceOf(address(this));
-        IVault(balancerVault).joinPool(_pid, address(this), address(this), request);
-        uint tokensAfter = IERC20(_lpToken).balanceOf(address(this));
-
-        _lpTokenAmount = tokensAfter.sub(tokensBefore);
-    }
-
-    function exitPool(uint _pid, address _lpToken, address _principle, uint _amount) external nonReentrant returns (uint _fhudAmount, uint _principleAmount) {
-        IERC20(_lpToken).safeApprove(balancerVault, _amount);
-
-        // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
-        address[] memory tokens = [fhud, _principle];
-        insertSort(tokens);
-
-        bytes calldata userDataEncoded = abi.encode(1 /* EXACT_BPT_IN_FOR_TOKENS_OUT */, _amount);
-
-        ExitPoolRequest calldata request = ExitPoolRequest({
-            assets: tokens,
-            minAmountsOut: [0, 0],
-            userData: userDataEncoded,
-            toInternalBalance: false
-        });
-
-        uint fhudBefore = IERC20(fhud).balanceOf(address(this));
-        uint principleBefore = IERC20(_principle).balanceOf(address(this));
-        IVault(balancerVault).exitPool(_pid, address(this), address(this), request);
-        uint fhudAfter = IERC20(fhud).balanceOf(address(this));
-        uint principleAfter = IERC20(_principle).balanceOf(address(this));
-
-        _fhudAmount = fhudAfter.sub(fhudBefore);
-        _principleAmount = principleAfter.sub(principleBefore);
-    }
 }
