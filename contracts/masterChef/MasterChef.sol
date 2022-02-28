@@ -53,9 +53,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
 
     // The FHM TOKEN!
     IERC20 public fhm;
-    // Dev address.
-    address public devaddr;
-    // LQDR tokens created per block.
+    // Treasury address.
+    address public treasuryAddress;
+    // Fhm tokens created per block.
     uint public fhmPerBlock;
     // Bonus muliplier for early FHM makers.
     uint public constant BONUS_MULTIPLIER = 1;
@@ -75,18 +75,18 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     event Withdraw(address indexed user, uint indexed pid, uint amount);
     event EmergencyWithdraw(address indexed user, uint indexed pid, uint amount);
     event SetFeeAddress(address indexed user, address indexed newAddress);
-    event SetDevAddress(address indexed user, address indexed newAddress);
+    event SetTreasuryAddress( address indexed oldAddress, address indexed newAddress);
     event UpdateEmissionRate(address indexed user, uint fhmPerBlock);
 
     constructor(
         IERC20 _fhm,
-        address _devaddr,
+        address _treasuryAddress,
         address _feeAddress,
         uint _fhmPerBlock,
         uint _startBlock
     ) public {
         fhm = _fhm;
-        devaddr = _devaddr;
+        treasuryAddress = _treasuryAddress;
         feeAddress = _feeAddress;
         fhmPerBlock = _fhmPerBlock;
         startBlock = _startBlock;
@@ -120,7 +120,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         }));
     }
 
-    // Update the given pool's LQDR allocation point and deposit fee. Can only be called by the owner.
+    // Update the given pool's Fhm allocation point and deposit fee. Can only be called by the owner.
     function set(uint _pid, uint _allocPoint, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
         if (_withUpdate) {
@@ -137,7 +137,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     // View function to see pending FHMs on frontend.
-    function pendingLqdr(uint _pid, address _user) external view returns (uint) {
+    function pendingFhm(uint _pid, address _user) external view returns (uint) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint accFhmPerShare = pool.accFhmPerShare;
@@ -171,17 +171,17 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         }
         uint multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint fhmReward = multiplier.mul(fhmPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        // FIMXE mint with treasury
-        fhm.mint(devaddr, fhmReward.div(12));
-        fhm.mint(address(this), fhmReward);
+       //Mint Fhm rewards.
+        ITreasury( treasuryAddress ).mintRewards( treasuryAddress, fhmReward.div(12) );
+        ITreasury( treasuryAddress ).mintRewards( address(this), fhmReward );
         pool.accFhmPerShare = pool.accFhmPerShare.add(fhmReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
 
     // Deposit LP tokens to MasterChef for FHM allocation.
-    function deposit(uint _pid, uint _amount) public nonReentrant {
+    function deposit(uint _pid, uint _amount, address _user) public onlyOwner nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
+        UserInfo storage user = userInfo[_pid][_user];
         updatePool(_pid);
         if (user.amount > 0) {
             uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -200,13 +200,13 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             }
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Deposit(msg.sender, _pid, _amount);
+        emit Deposit(_user, _pid, _amount);
     }
 
     // Withdraw LP tokens from MasterChef.
-    function withdraw(uint _pid, uint _amount) public nonReentrant {
+    function withdraw(uint _pid, uint _amount, address _user) public onlyOwner nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
+        UserInfo storage user = userInfo[_pid][_user];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
         uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -218,18 +218,18 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Withdraw(msg.sender, _pid, _amount);
+        emit Withdraw(_user, _pid, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint _pid) public nonReentrant {
+    function emergencyWithdraw(uint _pid, address _user) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
+        UserInfo storage user = userInfo[_pid][_user];
         uint amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(msg.sender, _pid, amount);
+        emit EmergencyWithdraw(_user , _pid, amount);
     }
 
     // Safe FHM transfer function, just in case if rounding error causes pool to not have enough FHMs.
@@ -244,11 +244,10 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         require(transferSuccess, "safeFHMTransfer: transfer failed");
     }
 
-    // Update dev address by the previous dev.
-    function dev(address _devaddr) public {
-        require(msg.sender == devaddr, "dev: wut?");
-        devaddr = _devaddr;
-        emit SetDevAddress(msg.sender, _devaddr);
+    // Update treasury address by the owner.
+    function treasury(address _treasuryAddress) public onlyOwner {
+        treasuryAddress = _treasuryAddress;
+        emit SetTreasuryAddress(treasuryAddress, _treasuryAddress);
     }
 
     function setFeeAddress(address _feeAddress) public {
