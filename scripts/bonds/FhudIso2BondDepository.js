@@ -64,8 +64,15 @@ async function main() {
 	const ReserveToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
 	const reserveToken = await ReserveToken.attach(reserve.address);
 
+	const Library = await ethers.getContractFactory("IterableMapping");
+  	const library = await Library.deploy();
+  	await library.deployed();
 	// Deploy Bond
-	const Bond = await ethers.getContractFactory('FhudABondDepository');
+	const Bond = await ethers.getContractFactory('FhudABondDepository', {
+		libraries: {
+    		IterableMapping: library.address,
+  		},
+	});
 	const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, fhudMinterAddress);
 	console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
