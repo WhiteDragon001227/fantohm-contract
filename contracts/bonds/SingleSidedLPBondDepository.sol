@@ -626,8 +626,7 @@ struct Bond {
     uint payoutLpTokens; // direct payout of LP tokens
 }
 
-library IterableMapping {
-
+library IterableMappingSingleSided {
 
     // Iterable mapping from address to uint;
     struct Map {
@@ -885,7 +884,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
-    using IterableMapping for IterableMapping.Map;
+    using IterableMappingSingleSided for IterableMappingSingleSided.Map;
 
 
 
@@ -911,7 +910,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     Terms public terms; // stores terms for new bonds
 
-    IterableMapping.Map private depositors; // stores depositors bond information
+    IterableMappingSingleSided.Map private depositors; // stores depositors bond information
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
