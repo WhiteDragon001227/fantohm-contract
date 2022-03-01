@@ -172,14 +172,14 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         uint multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint fhmReward = multiplier.mul(fhmPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
        //Mint Fhm rewards.
-        ITreasury( treasuryAddress ).mintRewards( treasuryAddress, fhmReward.div(12) );
+        ITreasury( treasuryAddress ).mintRewards( feeAddress, fhmReward.div(12) );
         ITreasury( treasuryAddress ).mintRewards( address(this), fhmReward );
         pool.accFhmPerShare = pool.accFhmPerShare.add(fhmReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
 
     // Deposit LP tokens to MasterChef for FHM allocation.
-    function deposit(uint _pid, uint _amount, address _user) public onlyOwner nonReentrant {
+    function deposit(uint _pid, uint _amount, address _user) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         updatePool(_pid);
@@ -222,7 +222,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint _pid, address _user) public nonReentrant {
+    function emergencyWithdraw(uint _pid, address _user) public onlyOwner nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint amount = user.amount;
@@ -255,7 +255,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         feeAddress = _feeAddress;
         emit SetFeeAddress(msg.sender, _feeAddress);
     }
-
     //Pancake has to add hidden dummy pools inorder to alter the emission, here we make it simple and transparent to all.
     function updateEmissionRate(uint _fhmPerBlock) public onlyOwner {
         massUpdatePools();
