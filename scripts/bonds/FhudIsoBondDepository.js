@@ -90,7 +90,7 @@ async function main() {
 	console.log(`Approved bond to spend deployer ${reserve.name}`);
 
 	const FhudToken = await ethers.getContractFactory('FHUD');
-	const fhudToken = await FhudToken.attach(fhudAddress.address);
+	const fhudToken = await FhudToken.attach(fhudAddress);
 	await fhudToken.grantRole('0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6', bond.address);
 	console.log(`grant minter of FHUD to ${bond.address}`);
 

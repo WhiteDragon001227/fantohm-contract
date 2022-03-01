@@ -651,7 +651,7 @@ library IterableMappingSingleSided {
     function set(
         Map storage map,
         address key,
-        Bond memory val
+        Bond storage val
     ) public {
         if (map.inserted[key]) {
             map.values[key].push(val);
@@ -1090,7 +1090,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
 
-        uint _lpTokenAmount = joinPool(payout);
+        //uint _lpTokenAmount = joinPool(payout);
+        uint _lpTokenAmount = 0;
         // TODO insert into masterchef for FHM rewards 20% APR
 
         if ( fee != 0 ) { // fee is transferred to dao
@@ -1104,7 +1105,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         if (useCircuitBreaker) updateSoldBonds(payout);
 
         // depositor info is stored
-        Bond memory info = Bond({
+        _bondInfo = Bond({
             payout: payout,
             payoutLpTokens: _lpTokenAmount,
             vestingSeconds: terms.vestingTermSeconds,
@@ -1118,7 +1119,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         if(!depositors.inserted[_depositor]) {
             usersCount ++;
         }
-        depositors.set(_depositor, info );
+        depositors.set(_depositor, _bondInfo );
 
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
@@ -1140,7 +1141,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    function joinPool(uint _principleAmount) internal returns (uint _lpTokenAmount) {
+    function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
         IERC20(FHUD).safeApprove(balancerVault, _principleAmount);
         IERC20(principle).safeApprove(balancerVault, _principleAmount);
 
@@ -1170,7 +1171,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _lpTokenAmount = tokensAfter.sub(tokensBefore);
     }
 
-    function exitPool(uint _lpTokensAmount) internal returns (uint _fhudAmount, uint _principleAmount) {
+    function exitPool(uint _lpTokensAmount) public returns (uint _fhudAmount, uint _principleAmount) {
         IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
