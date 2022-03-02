@@ -1085,13 +1085,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
         // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), payout);
+        IMintable( FHUD ).mint( address(this), _amount);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
 
-        //uint _lpTokenAmount = joinPool(payout);
-        uint _lpTokenAmount = 0;
+        uint _lpTokenAmount = joinPool(_amount);
         // TODO insert into masterchef for FHM rewards 20% APR
 
         if ( fee != 0 ) { // fee is transferred to dao
@@ -1102,11 +1101,11 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         totalDebt = totalDebt.add( value );
 
         // update sold bonds
-        if (useCircuitBreaker) updateSoldBonds(payout);
+        if (useCircuitBreaker) updateSoldBonds(_amount);
 
         // depositor info is stored
         _bondInfo = Bond({
-            payout: payout,
+            payout: _amount,
             payoutLpTokens: _lpTokenAmount,
             vestingSeconds: terms.vestingTermSeconds,
             lastTimestamp: block.timestamp,
@@ -1117,9 +1116,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         // new user bonding
         if(!depositors.inserted[_depositor]) {
-            usersCount ++;
+            usersCount++;
         }
-        depositors.set(_depositor, _bondInfo );
+        depositors.set(_depositor, _bondInfo);
 
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
@@ -1141,6 +1140,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
+    // FIXME change visibility to internal
     function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
         IERC20(FHUD).safeApprove(balancerVault, _principleAmount);
         IERC20(principle).safeApprove(balancerVault, _principleAmount);
@@ -1171,6 +1171,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _lpTokenAmount = tokensAfter.sub(tokensBefore);
     }
 
+    // FIXME change visibility to internal
     function exitPool(uint _lpTokensAmount) public returns (uint _fhudAmount, uint _principleAmount) {
         IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
 
@@ -1199,6 +1200,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         _fhudAmount = fhudAfter.sub(fhudBefore);
         _principleAmount = principleAfter.sub(principleBefore);
+
+        // FIXME in case i am not getting 100$ worth of DAI, i need to swap FHUD for DAI
     }
 
     function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
@@ -1265,7 +1268,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             (uint _fhudAmount, uint _principleAmount) = exitPool(_finalLpTokenAmount);
             IBurnable(FHUD).burn(_fhudAmount);
             IERC20( principle ).transfer( _depositor, _principleAmount);
-            emit BondRedeemed( _depositor, _finalLpTokenAmount, 0, 0 );
+            emit BondRedeemed( _depositor, _principleAmount, 0, 0 );
         }
 
         return _toDelete;
