@@ -227,17 +227,11 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     function deposit(uint _pid, uint _amount, address _claimable) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        address caller = msg.sender;
+        
+        UserClaimInfo storage userClaim = userClaimInfo[_pid][_claimable];
+        userClaim.bondInfo = msg.sender == _claimable;
+        userClaim.contractAddress = msg.sender;
 
-        if(caller.isContract()) {
-            UserClaimInfo storage userClaim = userClaimInfo[_pid][_claimable];
-            userClaim.bondInfo = true;
-            userClaim.contractAddress = msg.sender;
-        } else {
-            UserClaimInfo storage userClaim = userClaimInfo[_pid][msg.sender];
-            userClaim.bondInfo = false;
-            userClaim.contractAddress = address(0);
-        }
         updatePool(_pid);
         if (user.amount > 0) {
             uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -281,13 +275,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     function harvest(uint256 _pid, address _to) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserClaimInfo storage userClaim = userClaimInfo[_pid][msg.sender];
-        UserInfo storage user;
-
-        if(userClaim.bondInfo == false) {
-            user = userInfo[_pid][msg.sender];
-        } else {
-            user = userInfo[_pid][userClaim.contractAddress];
-        }
+        UserInfo storage user = userInfo[_pid][userClaim.contractAddress];
 
         updatePool(_pid);
         // this would  be the amount if the user joined right from the start of the farm
@@ -299,7 +287,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         user.rewardDebt = accumulatedFhm;
 
         if (eligibleFhm > 0) {
-            if(userClaim.bondInfo == false ) {
+            if(userClaim.bondInfo == true ) {
                 safeFhmTransfer(_to, eligibleFhm);
             } else {
                 safeFhmTransfer(userClaim.contractAddress, eligibleFhm);

@@ -615,75 +615,6 @@ library FixedPoint {
     }
 }
 
-/// @notice Info for bond holder
-struct Bond {
-    uint payout; // FHUD to be paid
-    uint vesting; // Blocks left to vest
-    uint lastBlock; // Last interaction
-    uint pricePaid; // In DAI, for front end viewing
-    uint vestingSeconds; // Blocks left to vest
-    uint lastTimestamp; // Last interaction
-    uint payoutLpTokens; // direct payout of LP tokens
-}
-
-library IterableMappingSingleSided {
-
-    // Iterable mapping from address to uint;
-    struct Map {
-        address[] keys;
-        mapping(address => Bond[]) values;
-        mapping(address => uint) indexOf;
-        mapping(address => bool) inserted;
-    }
-
-    function get(Map storage map, address key, uint index) public view returns (Bond storage) {
-        return map.values[key][index];
-    }
-
-    function getKeyAtIndex(Map storage map, uint index) public view returns (address) {
-        return map.keys[index];
-    }
-
-    function size(Map storage map) public view returns (uint) {
-        return map.keys.length;
-    }
-
-    function set(
-        Map storage map,
-        address key,
-        Bond storage val
-    ) public {
-        if (map.inserted[key]) {
-            map.values[key].push(val);
-
-        } else {
-            map.inserted[key] = true;
-
-            map.values[key].push(val);
-            map.indexOf[key] = map.keys.length;
-            map.keys.push(key);
-        }
-    }
-
-    function remove(Map storage map, address key) public {
-        if (!map.inserted[key]) {
-            return;
-        }
-
-        delete map.inserted[key];
-        delete map.values[key];
-
-        uint index = map.indexOf[key];
-        uint lastIndex = map.keys.length - 1;
-        address lastKey = map.keys[lastIndex];
-
-        map.indexOf[lastKey] = index;
-        delete map.indexOf[key];
-
-        map.keys[index] = lastKey;
-        map.keys.pop();
-    }
-}
 
 /**
  * @dev Contract module that helps prevent reentrant calls to a function.
@@ -881,6 +812,8 @@ interface IMasterChef {
     function deposit(uint _pid, uint _amount) external;
     function withdraw(uint _pid, uint _amount) external;
     function claim(uint256 _pid, address _to) external;
+    function harvest(uint256 _pid, address _to) external; 
+    function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint256);
 }
 
 
@@ -890,9 +823,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
-    using IterableMappingSingleSided for IterableMappingSingleSided.Map;
-
-
 
     /* ======== EVENTS ======== */
 
@@ -901,7 +831,16 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
 
 
-
+    /// @notice Info for bond holder
+    struct Bond {
+        uint payout; // FHUD to be paid
+        uint vesting; // Blocks left to vest
+        uint lastBlock; // Last interaction
+        uint pricePaid; // In DAI, for front end viewing
+        uint vestingSeconds; // Blocks left to vest
+        uint lastTimestamp; // Last interaction
+        uint payoutLpTokens; // direct payout of LP tokens
+    }
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // token given as payment for bond
@@ -917,7 +856,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     Terms public terms; // stores terms for new bonds
 
-    IterableMappingSingleSided.Map private depositors; // stores depositors bond information
+    mapping( address => Bond ) public _bondInfo; // stores depositor bond information
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
@@ -926,8 +865,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
-    Bond public _bondInfo;
-    uint public usersCount;
 
     /* ======== STRUCTS ======== */
 
@@ -981,7 +918,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         masterChef = _masterChef;
         useWhitelist = true;
         whitelist[msg.sender] = true;
-        usersCount = 0;
     }
 
     /**
@@ -1102,7 +1038,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         uint _lpTokenAmount = joinPool(_amount);
         // TODO insert into masterchef for FHM rewards 20% APR
-        IMasterChef(masterChef).deposit(uint256(IStablePool(lpToken).getPoolId()), _lpTokenAmount);
+        uint poolId = IMasterChef(masterChef).getPoolIdForLpToken(IERC20(lpToken));
+        IMasterChef(masterChef).deposit(poolId, _lpTokenAmount);
 
 
         if ( fee != 0 ) { // fee is transferred to dao
@@ -1116,7 +1053,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         if (useCircuitBreaker) updateSoldBonds(_amount);
 
         // depositor info is stored
-        _bondInfo = Bond({
+        _bondInfo[_depositor] = Bond({
             payout: _amount,
             payoutLpTokens: _lpTokenAmount,
             vestingSeconds: terms.vestingTermSeconds,
@@ -1125,12 +1062,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             lastBlock: block.number,
             pricePaid: priceInUSD
         });
-
-        // new user bonding
-        if(!depositors.inserted[_depositor]) {
-            usersCount++;
-        }
-        depositors.set(_depositor, _bondInfo);
 
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
@@ -1215,83 +1146,38 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         // FIXME in case i am not getting 100$ worth of DAI, i need to swap FHUD for DAI
     }
+     /**
+     *  @notice redeem bond for user
+     *  @param _depositor address
+     *  @param _stake bool
+     */
+    function redeem(address _depositor, bool _stake) public {
+        
+        Bond memory info = _bondInfo[ _depositor];
+        
+        uint percentVested = percentVestedFor( _depositor ); // (seconds since last interaction / vesting term remaining)
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor); // (blocks since last interaction / vesting term remaining)
 
-    function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
-        require (_from >= 0 && _from < depositors.size(), "`from` is invalid");
-        require (_to >= 0 && _to < depositors.size(), "`to` is invalid");
-        require (_from <= _to, "`to` should be equal and greater than `from`");
+        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require ( percentVestedBlocks >= 10000 , "Wait for end of bond") ;
 
-        uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = _from; i <= _to; i ++) {
-            address _recipient = depositors.getKeyAtIndex(i);
-            if(i > depositors.size()) {
-                break;
-            }
-            if(redeemOne(_recipient, false)) {
-                _removedIndices[_counter++] = i;
-                depositors.remove(_recipient);
-            }
-        }
-        return _removedIndices;
-    }
+        uint lptokenAmount = info.payoutLpTokens;
+        // TODO remove from master chef
+        uint poolId = IMasterChef(masterChef).getPoolIdForLpToken(IERC20(lpToken));
+        IMasterChef(masterChef).withdraw(poolId, lptokenAmount);
 
-    function redeem(uint[] memory _newIndices) public returns(uint[] memory) {
-        require(_newIndices.length > 0, "Redeems unavailable");
+        (uint _fhudAmount, uint _principleAmount) = exitPool(lptokenAmount);
+        IBurnable(FHUD).burn(_fhudAmount);
+        IERC20( principle ).transfer( _depositor, _principleAmount);
 
-        uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = 0; i <= _newIndices.length; i ++) {
-            address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            if(redeemOne(_recipient, false)) {
-                _removedIndices[_counter++] = i;
-                depositors.remove(_recipient);
-            }
-        }
-        return  _removedIndices;
-    }
-    function redeemOne(address _depositor, bool _stake) public returns(bool _toDelete) {
-        Bond[] storage _userBondInfo = depositors.values[_depositor];
-        require(_userBondInfo.length > 0, "There is no bonding" );
-
-        uint _finalLpTokenAmount = 0;
-        uint  _length = _userBondInfo.length;
-
-        for (uint index = 0; index < _length; index++) {
-            uint percentVested = percentVestedFor( _depositor, index ); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index ); // (blocks since last interaction / vesting term remaining)
-
-            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                Bond memory removeMe;
-                removeMe = _userBondInfo[index];
-                _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
-                _userBondInfo[_userBondInfo.length - 1] = removeMe;
-                _userBondInfo.pop();
-                _finalLpTokenAmount = _finalLpTokenAmount.add(removeMe.payoutLpTokens);
-                _length --;
-            }
-        }
-        if(_length == 0) {
-            _toDelete = true;
-        }
-
-        if (_finalLpTokenAmount > 0) {
-            // TODO remove from master chef
-            IMasterChef(masterChef).withdraw(uint256(IStablePool(lpToken).getPoolId()), _finalLpTokenAmount);
-
-            (uint _fhudAmount, uint _principleAmount) = exitPool(_finalLpTokenAmount);
-            IBurnable(FHUD).burn(_fhudAmount);
-            IERC20( principle ).transfer( _depositor, _principleAmount);
-            emit BondRedeemed( _depositor, _principleAmount, 0, 0 );
-        }
-
-        return _toDelete;
+        delete _bondInfo[ _depositor ];
+        emit BondRedeemed( _depositor, _principleAmount, 0, 0 );
+    
     }
 
     /**
      *  @notice return bond info
      *  @param _depositor address
-     *  @param index uint
      *  @return payout uint
      *  @return payoutLpTokens uint
      *  @return vestingSeconds uint
@@ -1300,9 +1186,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return lastBlock uint
      *  @return pricePaid uint
      */
-    function bondInfo(address _depositor, uint index) public view returns ( uint payout, uint payoutLpTokens, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
-        require(index < depositors.values[_depositor].length, "Exceed the bond size");
-        Bond memory info = depositors.get(_depositor, index);
+    function bondInfo(address _depositor ) public view returns ( uint payout, uint payoutLpTokens, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
+        Bond memory info = _bondInfo[_depositor];
         payout = info.payout;
         payoutLpTokens = info.payoutLpTokens;
         vestingSeconds = info.vestingSeconds;
@@ -1485,11 +1370,10 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
-     *  @param index uint
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor, index);
+    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _bondInfo[_depositor];
         uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
         uint vestingSeconds = bond.vestingSeconds;
 
@@ -1500,8 +1384,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    function percentVestedBlocksFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor, index);
+    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _bondInfo[_depositor];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1513,23 +1397,14 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice users' bond length
-     *  @param _depositor address
-     *  @return  uint
-     */
-    function bondlength( address _depositor) external view returns (uint) {
-        return depositors.values[_depositor].length;
-    }
-    /**
      *  @notice calculate amount of FHM available for claim by depositor
      *  @param _depositor address
-     *  @param index uint
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor, uint index ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor, index );
-        uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index );
-        uint payout = depositors.get(_depositor, index).payout;
+    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
+        uint percentVested = percentVestedFor( _depositor );
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor );
+        uint payout = _bondInfo[_depositor].payout;
 
         if ( percentVested >= 10000 && percentVestedBlocks >= 10000) {
             pendingPayout_ = payout;
