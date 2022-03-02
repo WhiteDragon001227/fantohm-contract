@@ -55,10 +55,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         //   3. User's `amount` gets updated.
         //   4. User's `rewardDebt` gets updated.
     }
-    struct UserClaimInfo {
-        bool bondInfo; // check who belong the lp tokens
-        address contractAddress;
-    }
     // Info of each pool.
     struct PoolInfo {
         IERC20 lpToken;           // Address of LP token contract.
@@ -85,8 +81,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
     mapping(uint => mapping(address => UserInfo)) public userInfo;
-    // Info of claimable user
-    mapping(uint => mapping(address => UserClaimInfo)) public userClaimInfo;
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint public totalAllocPoint = 0;
     // The block number when FHM mining starts.
@@ -226,17 +220,13 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     // Deposit LP tokens to MasterChef for FHM allocation.
     function deposit(uint _pid, uint _amount, address _claimable) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
+        UserInfo storage user = userInfo[_pid][_claimable];
         
-        UserClaimInfo storage userClaim = userClaimInfo[_pid][_claimable];
-        userClaim.bondInfo = msg.sender == _claimable;
-        userClaim.contractAddress = msg.sender;
-
         updatePool(_pid);
         if (user.amount > 0) {
             uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
-                safeFhmTransfer(msg.sender, pending);
+                safeFhmTransfer(_claimable, pending);
             }
         }
         if (_amount > 0) {
@@ -250,32 +240,31 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             }
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Deposit(msg.sender, _pid, _amount);
+        emit Deposit(_claimable, _pid, _amount);
     }
 
     // Withdraw LP tokens from MasterChef.
-    function withdraw(uint _pid, uint _amount) public nonReentrant {
+    function withdraw(uint _pid, uint _amount, address _claimable) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
+        UserInfo storage user = userInfo[_pid][_claimable];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
         uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0) {
-            safeFhmTransfer(msg.sender, pending);
+            safeFhmTransfer(_claimable, pending);
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Withdraw(msg.sender, _pid, _amount);
+        emit Withdraw(_claimable, _pid, _amount);
     }
 
     //Claim fhm rewards
     function harvest(uint256 _pid, address _to) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserClaimInfo storage userClaim = userClaimInfo[_pid][msg.sender];
-        UserInfo storage user = userInfo[_pid][userClaim.contractAddress];
+        UserInfo storage user = userInfo[_pid][msg.sender];
 
         updatePool(_pid);
         // this would  be the amount if the user joined right from the start of the farm
@@ -287,11 +276,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         user.rewardDebt = accumulatedFhm;
 
         if (eligibleFhm > 0) {
-            if(userClaim.bondInfo == true ) {
                 safeFhmTransfer(_to, eligibleFhm);
-            } else {
-                safeFhmTransfer(userClaim.contractAddress, eligibleFhm);
-            }
         }
 
 
