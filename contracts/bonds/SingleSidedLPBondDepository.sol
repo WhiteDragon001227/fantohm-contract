@@ -877,6 +877,12 @@ interface IVault {
 interface IStablePool {
     function getPoolId() external returns (bytes32);
 }
+interface IMasterChef {
+    function deposit(uint _pid, uint _amount) external;
+    function withdraw(uint _pid, uint _amount) external;
+    function claim(uint256 _pid, address _to) external;
+}
+
 
 /// @notice FantOHM PRO - Single sided stable bond
 contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
@@ -904,7 +910,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // receives profit share from bond
-
+    address public immutable masterChef; //MasterChef
+    
     address public immutable balancerVault; // beets vault to add/remove LPs
     address public immutable lpToken; // FHUD/principle LP token
 
@@ -951,7 +958,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         address _DAO,
         address _fhudMinter,
         address _balancerVault,
-        address _lpToken
+        address _lpToken,
+        address _masterChef
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -969,6 +977,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         balancerVault = _balancerVault;
         require( _lpToken != address(0) );
         lpToken = _lpToken;
+        require( _masterChef != address(0) );
+        masterChef = _masterChef;
         useWhitelist = true;
         whitelist[msg.sender] = true;
         usersCount = 0;
@@ -1092,6 +1102,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         uint _lpTokenAmount = joinPool(_amount);
         // TODO insert into masterchef for FHM rewards 20% APR
+        IMasterChef(masterChef).deposit(uint256(IStablePool(lpToken).getPoolId()), _lpTokenAmount);
+
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
@@ -1207,16 +1219,16 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
         require (_from >= 0 && _from < depositors.size(), "`from` is invalid");
         require (_to >= 0 && _to < depositors.size(), "`to` is invalid");
-        require (_from < _to, "`to` should be equal and greater than `from`");
+        require (_from <= _to, "`to` should be equal and greater than `from`");
 
         uint[] memory _removedIndices;
         uint _counter = 0;
-        for (uint i = _from; i < _to; i ++) {
+        for (uint i = _from; i <= _to; i ++) {
             address _recipient = depositors.getKeyAtIndex(i);
             if(i > depositors.size()) {
                 break;
             }
-            if(redeemOne(_recipient)) {
+            if(redeemOne(_recipient, false)) {
                 _removedIndices[_counter++] = i;
                 depositors.remove(_recipient);
             }
@@ -1231,14 +1243,14 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         uint _counter = 0;
         for (uint i = 0; i <= _newIndices.length; i ++) {
             address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            if(redeemOne(_recipient)) {
+            if(redeemOne(_recipient, false)) {
                 _removedIndices[_counter++] = i;
                 depositors.remove(_recipient);
             }
         }
         return  _removedIndices;
     }
-    function redeemOne(address _depositor) public returns(bool _toDelete) {
+    function redeemOne(address _depositor, bool _stake) public returns(bool _toDelete) {
         Bond[] storage _userBondInfo = depositors.values[_depositor];
         require(_userBondInfo.length > 0, "There is no bonding" );
 
@@ -1265,6 +1277,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         if (_finalLpTokenAmount > 0) {
             // TODO remove from master chef
+            IMasterChef(masterChef).withdraw(uint256(IStablePool(lpToken).getPoolId()), _finalLpTokenAmount);
+
             (uint _fhudAmount, uint _principleAmount) = exitPool(_finalLpTokenAmount);
             IBurnable(FHUD).burn(_fhudAmount);
             IERC20( principle ).transfer( _depositor, _principleAmount);
@@ -1279,15 +1293,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @param _depositor address
      *  @param index uint
      *  @return payout uint
+     *  @return payoutLpTokens uint
      *  @return vestingSeconds uint
      *  @return lastTimestamp uint
      *  @return vesting uint
      *  @return lastBlock uint
      *  @return pricePaid uint
      */
-    function bondInfo(address _depositor, uint index) public view returns ( uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
+    function bondInfo(address _depositor, uint index) public view returns ( uint payout, uint payoutLpTokens, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
+        require(index < depositors.values[_depositor].length, "Exceed the bond size");
         Bond memory info = depositors.get(_depositor, index);
         payout = info.payout;
+        payoutLpTokens = info.payoutLpTokens;
         vestingSeconds = info.vestingSeconds;
         lastTimestamp = info.lastTimestamp;
         vesting = info.vesting;

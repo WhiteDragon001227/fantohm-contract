@@ -7,11 +7,24 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
     function mintRewards( address _recipient, uint _amount ) external;
+}
+interface IMigratorChef {
+    // Perform LP token migration from legacy PancakeSwap to CakeSwap.
+    // Take the current LP token address and return the new LP token address.
+    // Migrator should have full access to the caller's LP token.
+    // Return the new LP token address.
+    //
+    // XXX Migrator must have allowance access to PancakeSwap LP tokens.
+    // CakeSwap must mint EXACTLY the same amount of CakeSwap LP tokens or
+    // else something bad will happen. Traditional PancakeSwap does not
+    // do that so be careful!
+    function migrate(IERC20 token) external returns (IERC20);
 }
 
 // MasterChef is the master of FHM. He can make FHM and he is a fair guy.
@@ -24,6 +37,7 @@ interface ITreasury {
 contract MasterChefV2 is Ownable, ReentrancyGuard {
     using SafeMath for uint;
     using SafeERC20 for IERC20;
+    using Address for address;
 
     // Info of each user.
     struct UserInfo {
@@ -61,7 +75,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     uint public constant BONUS_MULTIPLIER = 1;
     // Deposit Fee address
     address public feeAddress;
-
+    // The migrator contract. It has a lot of power. Can only be set through governance (owner).
+    IMigratorChef public migrator;
+    
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
@@ -73,6 +89,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
 
     event Deposit(address indexed user, uint indexed pid, uint amount);
     event Withdraw(address indexed user, uint indexed pid, uint amount);
+    event Claim(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint indexed pid, uint amount);
     event SetFeeAddress(address indexed user, address indexed newAddress);
     event SetTreasuryAddress( address indexed oldAddress, address indexed newAddress);
@@ -130,7 +147,22 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
     }
+    // Set the migrator contract. Can only be called by the owner.
+    function setMigrator(IMigratorChef _migrator) public onlyOwner {
+        migrator = _migrator;
+    }
 
+    // Migrate lp token to another lp contract. Can be called by anyone. We trust that migrator contract is good.
+    function migrate(uint256 _pid) public {
+        require(address(migrator) != address(0), "migrate: no migrator");
+        PoolInfo storage pool = poolInfo[_pid];
+        IERC20 lpToken = pool.lpToken;
+        uint256 bal = lpToken.balanceOf(address(this));
+        lpToken.safeApprove(address(migrator), bal);
+        IERC20 newLpToken = migrator.migrate(lpToken);
+        require(bal == newLpToken.balanceOf(address(this)), "migrate: bad");
+        pool.lpToken = newLpToken;
+    }
     // Return reward multiplier over the given _from to _to block.
     function getMultiplier(uint _from, uint _to) public view returns (uint) {
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
@@ -179,9 +211,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     // Deposit LP tokens to MasterChef for FHM allocation.
-    function deposit(uint _pid, uint _amount, address _user) public nonReentrant {
+    function deposit(uint _pid, uint _amount) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         if (user.amount > 0) {
             uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -200,13 +232,13 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             }
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Deposit(_user, _pid, _amount);
+        emit Deposit(msg.sender, _pid, _amount);
     }
 
     // Withdraw LP tokens from MasterChef.
-    function withdraw(uint _pid, uint _amount, address _user) public onlyOwner nonReentrant {
+    function withdraw(uint _pid, uint _amount) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
         uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -218,11 +250,34 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Withdraw(_user, _pid, _amount);
+        emit Withdraw(msg.sender, _pid, _amount);
     }
 
-    // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint _pid, address _user) public onlyOwner nonReentrant {
+    //Claim fhm rewards
+    function claim(uint256 _pid, address _to) public nonReentrant {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][msg.sender];
+
+        updatePool(_pid);
+        // this would  be the amount if the user joined right from the start of the farm
+        uint256 accumulatedFhm = user.amount.mul(pool.accFhmPerShare).div(1e12);
+        // subtracting the rewards the user is not eligible for
+        uint256 eligibleFhm = accumulatedFhm - user.rewardDebt;
+
+        // we set the new rewardDebt to the current accumulated amount of rewards for his amount of LP token
+        user.rewardDebt = accumulatedFhm;
+
+        if (eligibleFhm > 0) {
+            safeFhmTransfer(_to, eligibleFhm);
+        }
+
+
+        emit Claim(msg.sender, _pid, eligibleFhm);
+    }
+
+     // Withdraw without caring about rewards. EMERGENCY ONLY.
+    function emergencyWithdrawContract(uint _pid, address _user) public onlyOwner nonReentrant {
+        require(_user.isContract());
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint amount = user.amount;
@@ -230,6 +285,16 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         user.rewardDebt = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
         emit EmergencyWithdraw(_user , _pid, amount);
+    }
+
+  function emergencyWithdraw(uint _pid) public nonReentrant {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][msg.sender];
+        uint amount = user.amount;
+        user.amount = 0;
+        user.rewardDebt = 0;
+        pool.lpToken.safeTransfer(address(msg.sender), amount);
+        emit EmergencyWithdraw(msg.sender , _pid, amount);
     }
 
     // Safe FHM transfer function, just in case if rounding error causes pool to not have enough FHMs.
@@ -250,8 +315,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         emit SetTreasuryAddress(treasuryAddress, _treasuryAddress);
     }
 
-    function setFeeAddress(address _feeAddress) public {
-        require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
+    function setFeeAddress(address _feeAddress) public onlyOwner {
         feeAddress = _feeAddress;
         emit SetFeeAddress(msg.sender, _feeAddress);
     }
