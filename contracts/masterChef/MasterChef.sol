@@ -285,7 +285,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
 
      // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdrawContract(uint _pid, address _user) public onlyOwner nonReentrant {
-        require(_user.isContract());
+        require(_user.isContract(), "emergencyWithdrawContract: not contract");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint amount = user.amount;
