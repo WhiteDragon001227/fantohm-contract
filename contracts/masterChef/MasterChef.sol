@@ -10,10 +10,13 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
-    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
-    function mintRewards( address _recipient, uint _amount ) external;
+    function deposit(uint _amount, address _token, uint _profit) external returns (uint send_);
+
+    function valueOf(address _token, uint _amount) external view returns (uint value_);
+
+    function mintRewards(address _recipient, uint _amount) external;
 }
+
 interface IMigratorChef {
     // Perform LP token migration from legacy PancakeSwap to CakeSwap.
     // Take the current LP token address and return the new LP token address.
@@ -76,7 +79,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     address public feeAddress;
     // The migrator contract. It has a lot of power. Can only be set through governance (owner).
     IMigratorChef public migrator;
-    
+
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
@@ -91,7 +94,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     event Harvest(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint indexed pid, uint amount);
     event SetFeeAddress(address indexed user, address indexed newAddress);
-    event SetTreasuryAddress( address indexed oldAddress, address indexed newAddress);
+    event SetTreasuryAddress(address indexed oldAddress, address indexed newAddress);
     event UpdateEmissionRate(address indexed user, uint fhmPerBlock);
 
     constructor(
@@ -113,10 +116,10 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     mapping(IERC20 => bool) public poolExistence;
-       
+
     // Pool ID Tracker Mapper
     mapping(IERC20 => uint256) public poolIdForLpAddress;
-    
+
     function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint256) {
         require(poolExistence[_lpToken] != false, "getPoolIdForLpToken: do not exist");
         return poolIdForLpAddress[_lpToken];
@@ -210,9 +213,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         }
         uint multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint fhmReward = multiplier.mul(fhmPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-       //Mint Fhm rewards.
-        ITreasury( treasuryAddress ).mintRewards( feeAddress, fhmReward.div(12) );
-        ITreasury( treasuryAddress ).mintRewards( address(this), fhmReward );
+        //Mint Fhm rewards.
+        ITreasury(treasuryAddress).mintRewards(feeAddress, fhmReward.div(12));
+        ITreasury(treasuryAddress).mintRewards(address(this), fhmReward);
         pool.accFhmPerShare = pool.accFhmPerShare.add(fhmReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -221,7 +224,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     function deposit(uint _pid, uint _amount, address _claimable) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_claimable];
-        
+
         updatePool(_pid);
         if (user.amount > 0) {
             uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -245,6 +248,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
 
     // Withdraw LP tokens from MasterChef.
     function withdraw(uint _pid, uint _amount, address _claimable) public nonReentrant {
+        // FIXME need to rewrite logic to withdraw by _withdrawable
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_claimable];
         require(user.amount >= _amount, "withdraw: not good");
@@ -276,14 +280,16 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         user.rewardDebt = accumulatedFhm;
 
         if (eligibleFhm > 0) {
-                safeFhmTransfer(_to, eligibleFhm);
+            safeFhmTransfer(_to, eligibleFhm);
         }
 
 
         emit Harvest(msg.sender, _pid, eligibleFhm);
     }
 
-     // Withdraw without caring about rewards. EMERGENCY ONLY.
+    // FIXME need to write logic how many LP tokens _user have
+
+    // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdrawContract(uint _pid, address _user) public onlyOwner nonReentrant {
         require(_user.isContract(), "emergencyWithdrawContract: not contract");
         PoolInfo storage pool = poolInfo[_pid];
@@ -292,17 +298,18 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(_user , _pid, amount);
+        emit EmergencyWithdraw(_user, _pid, amount);
     }
 
-  function emergencyWithdraw(uint _pid) public nonReentrant {
+    function emergencyWithdraw(uint _pid) public nonReentrant {
+        // FIXME need to rewrite logic to withdraw by _withdrawable
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         uint amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(msg.sender , _pid, amount);
+        emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
     // Safe FHM transfer function, just in case if rounding error causes pool to not have enough FHMs.
