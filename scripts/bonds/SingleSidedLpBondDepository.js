@@ -1,5 +1,10 @@
 const { ethers } = require("hardhat");
 
+// npx hardhat console --network rinkeby
+// const ProjectX = await ethers.getContractFactory("SingleSidedLPBondDepository",{ libraries: { IterableMappingSingleSided: "0x41aBeEDDbE70d49Ea52dF49Df7D452647cfbb1F8" }})
+// const ProjectX = await ethers.getContractFactory("SingleSidedLPBondDepository",{ libraries: { IterableMappingSingleSided: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
+// const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
+
 async function main() {
 
 	let [deployer] = await ethers.getSigners();
@@ -12,7 +17,9 @@ async function main() {
 		fhudAddress,
 		treasuryAddress,
 		fhudMinterAddress,
-	} = require('../networks-fantom_testnet.json');
+		balancerVaultAddress,
+		fhudDaiLpAddress,
+	} = require('../networks-rinkeby.json');
 
 	const daoAddress = deployer.address;
 	// const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
@@ -39,7 +46,7 @@ async function main() {
 	const bondVestingLengthSec = '100';
 	const bondVestingLength = '10';
 
-	const maxDiscount = '5000';
+	const maxDiscount = '0';
 
 	// Max bond payout
 	const maxBondPayout = '100000'
@@ -65,17 +72,27 @@ async function main() {
 	const ReserveToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
 	const reserveToken = await ReserveToken.attach(reserve.address);
 
+	const Library = await ethers.getContractFactory("IterableMappingSingleSided");
+  	const library = await Library.attach("0xbc2447965a97caa40c5c6d7971c680cf4b03d40c");
+  	// const library = await Library.deploy();
+  	// await library.deployed();
 	// Deploy Bond
-	const Bond = await ethers.getContractFactory('FhudIsoBondDepository');
-	// const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, fhudMinterAddress);
-	const bond = await Bond.attach("0xc11C7D27c17433c5A227299c9004bE5cd9d7AF0F");
+	const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository', {
+		libraries: {
+			IterableMappingSingleSided: library.address,
+		},
+	});
+
+	// const bond = await Bond.deploy( fhmAddress, fhudAddress, reserve.address, treasury.address, daoAddress, fhudMinterAddress, balancerVaultAddress, fhudDaiLpAddress);
+	const bond = await Bond.attach( "0x2155FCD9CF0b95F8EAAe89e312abEf52F02bAd51" );
+	await bond.deployed();
 	console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
 	// queue and toggle bond reserve depositor
 	// await treasury.queue('8', bond.address);
 	// console.log(`Queued ${reserve.name} Bond as reward manager`);
-	// await treasury.toggle('8', bond.address, zeroAddress);
-	// console.log(`Toggled ${reserve.name} Bond as reward manager`);
+	await treasury.toggle('8', bond.address, zeroAddress);
+	console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
 	// Set bond terms
 	await bond.initializeBondTerms(bondVestingLengthSec, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
