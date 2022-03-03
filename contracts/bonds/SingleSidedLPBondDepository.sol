@@ -814,7 +814,6 @@ interface IMasterChef {
     function withdraw(uint _pid, uint _amount, address _claimable) external;
     function harvest(uint _pid, address _to) external;
     function userInfo(uint _pid, address _user) external view returns (uint, uint);
-    function claimableFees(uint _pid, uint _amount) external view returns (uint);
 }
 
 
@@ -1148,15 +1147,11 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
-        (uint wholeAmount,) = _masterChef.userInfo(poolId, _recipient);
-
-        // withdraw deposited amount + fees
-        uint lpTokenBefore = IERC20(lpToken).balanceOf(address(this));
-        _masterChef.withdraw(poolId, wholeAmount, _recipient);
-        uint lpTokenAfter = IERC20(lpToken).balanceOf(address(this));
+        (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _recipient);
+        _masterChef.withdraw(poolId, lpTokenAmount, _recipient);
 
         // disassemble LP into tokens
-        (uint _fhudAmount, uint _principleAmount) = exitPool(lpTokenAfter.sub(lpTokenBefore));
+        (uint _fhudAmount, uint _principleAmount) = exitPool(lpTokenAmount);
 
         // in case of IL we are paying the rest up to deposit amount
         if (_principleAmount < info.payout) {
@@ -1372,10 +1367,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
         (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _depositor);
-        uint feesAmount = _masterChef.claimableFees(poolId, lpTokenAmount);
 
         // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
-        uint payout = Math.max(lpTokenAmount.add(feesAmount).div(2), bondInfo[_depositor].payout);
+        uint payout = Math.max(lpTokenAmount.div(2), bondInfo[_depositor].payout);
 
         if ( percentVested >= 10000) {
             pendingPayout_ = payout;

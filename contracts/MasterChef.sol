@@ -69,7 +69,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         uint lastRewardBlock;   // Last block number that FHMs distribution occurs.
         uint accFhmPerShare;    // Accumulated FHMs per share, times 1e12. See below.
         uint16 depositFeeBP;    // Deposit fee in basis points
-        uint depositedTokens;   // total LP tokens deposited, so rest are fees which should distribute to each holder
         bool whitelistWithdraw; // when set on pool and deposited by whitelisted contract then only this contract can withdraw funds
     }
 
@@ -154,7 +153,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         lastRewardBlock : lastRewardBlock,
         accFhmPerShare : 0,
         depositFeeBP : _depositFeeBP,
-        depositedTokens: 0,
         whitelistWithdraw: _whitelistWithdraw
         }));
     }
@@ -247,7 +245,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
             }
         }
         if (_amount > 0) {
-            pool.depositedTokens = pool.depositedTokens.add(_amount);
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             if (pool.depositFeeBP > 0) {
                 uint depositFee = _amount.mul(pool.depositFeeBP).div(10000);
@@ -265,50 +262,29 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
     }
 
     /// @notice Withdraw LP tokens from MasterChef.
-    function withdraw(uint _pid, uint _minimalAmount, address _claimable) public nonReentrant {
+    function withdraw(uint _pid, uint _amount, address _claimable) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_claimable];
         if (pool.whitelistWithdraw && user.whitelistWithdraw) {
             require(hasRole(WHITELIST_WITHDRAW_ROLE, msg.sender), "WHITELIST_WITHDRAW_ROLE_MISSING");
         }
-        require(user.amount >= _minimalAmount, "withdraw: not good");
+        require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
         uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0) {
             safeFhmTransfer(_claimable, pending);
         }
-        if (_minimalAmount > 0) {
-            if (user.amount > _minimalAmount) {
-                user.amount = user.amount.sub(_minimalAmount);
+        if (_amount > 0) {
+            if (user.amount > _amount) {
+                user.amount = user.amount.sub(_amount);
             } else {
                 user.amount = 0;
                 user.whitelistWithdraw = false;
             }
-            uint transferableAmount = _minimalAmount.add(claimableFees(_pid, _minimalAmount));
-            pool.lpToken.safeTransfer(address(msg.sender), transferableAmount);
-
-            if (_minimalAmount < pool.depositedTokens) {
-                pool.depositedTokens = pool.depositedTokens.sub(_minimalAmount);
-            } else {
-                pool.depositedTokens = 0;
-            }
+            pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
-        emit Withdraw(_claimable, _pid, _minimalAmount);
-    }
-
-    /// @notice shows how many LP tokens belongs to this staking TVL
-    /// @param _pid poolId
-    /// @param _amount amount
-    /// @return claimableAmount
-    function claimableFees(uint _pid, uint _amount) public view returns (uint) {
-        PoolInfo storage pool = poolInfo[_pid];
-        uint totalAmount = pool.lpToken.balanceOf(address(this));
-        uint fees = 0;
-        if (totalAmount > pool.depositedTokens) {
-            fees = totalAmount.sub(pool.depositedTokens);
-        }
-        return fees.mul(pool.depositedTokens).div(_amount);
+        emit Withdraw(_claimable, _pid, _amount);
     }
 
     /// @notice Claim fhm rewards
