@@ -811,8 +811,9 @@ interface IStablePool {
 interface IMasterChef {
     function deposit(uint _pid, uint _amount, address _claimable) external;
     function withdraw(uint _pid, uint _amount, address _claimable) external;
-    function harvest(uint256 _pid, address _to) external;
-    function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint256);
+    function harvest(uint _pid, address _to) external;
+    function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint);
+    function userInfo(uint _pid, address _user) external view returns (uint, uint);
 }
 
 
@@ -1045,10 +1046,10 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-            payout: bondInfo[_depositor].payout.add(_amount),
-            vesting: terms.vestingTerm,
-            lastBlock: block.number,
-            pricePaid: priceInUSD
+        payout: bondInfo[_depositor].payout.add(_amount),
+        vesting: terms.vestingTerm,
+        lastBlock: block.number,
+        pricePaid: priceInUSD
         });
 
         // indexed events are emitted
@@ -1146,10 +1147,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         require ( percentVested >= 10000 , "Wait for end of bond") ;
 
-        uint poolId = IMasterChef(masterChef).getPoolIdForLpToken(IERC20(lpToken));
-        uint lptokenAmount = 0; // FIXME get LP tokens amount
-        IMasterChef(masterChef).withdraw(poolId, lptokenAmount, _recipient);
-        (uint _fhudAmount, uint _principleAmount) = exitPool(lptokenAmount);
+        IMasterChef _masterChef = IMasterChef(masterChef);
+        uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
+        (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _recipient);
+        _masterChef.withdraw(poolId, lpTokenAmount, _recipient);
+        (uint _fhudAmount, uint _principleAmount) = exitPool(lpTokenAmount);
+
+        // in case of IL we are paying the rest up to deposit amount
+        if (_principleAmount < info.payout) {
+            uint toMint = info.payout.sub(_principleAmount);
+            uint fhmAmount = payoutInFhmFor(toMint);
+            ITreasury(treasury).mintRewards(_recipient, fhmAmount);
+        }
 
         delete bondInfo[ _recipient ]; // delete user info
         emit BondRedeemed( _recipient, _principleAmount, 0 ); // emit bond data
@@ -1353,9 +1362,14 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return pendingPayout_ uint
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
-        // FIXME count payout
         uint percentVested = percentVestedFor( _depositor );
-        uint payout = bondInfo[_depositor].payout;
+
+        IMasterChef _masterChef = IMasterChef(masterChef);
+        uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
+        (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _depositor);
+
+        // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
+        uint payout = Math.max(lpTokenAmount.div(2), bondInfo[_depositor].payout);
 
         if ( percentVested >= 10000) {
             pendingPayout_ = payout;

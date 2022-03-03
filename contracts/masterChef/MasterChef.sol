@@ -72,8 +72,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     // Treasury address.
     address public treasuryAddress;
     // Fhm tokens created per block.
+    // FIXME count fhm per block to each pool?
     uint public fhmPerBlock;
-    // Bonus muliplier for early FHM makers.
+    // Bonus multiplier for early FHM makers.
     uint public constant BONUS_MULTIPLIER = 1;
     // Deposit Fee address
     address public feeAddress;
@@ -103,7 +104,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         address _feeAddress,
         uint _fhmPerBlock,
         uint _startBlock
-    ) public {
+    ) {
         fhm = _fhm;
         treasuryAddress = _treasuryAddress;
         feeAddress = _feeAddress;
@@ -174,7 +175,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         pool.lpToken = newLpToken;
     }
     // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(uint _from, uint _to) public view returns (uint) {
+    function getMultiplier(uint _from, uint _to) public pure returns (uint) {
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
     }
 
@@ -282,7 +283,6 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         if (eligibleFhm > 0) {
             safeFhmTransfer(_to, eligibleFhm);
         }
-
 
         emit Harvest(msg.sender, _pid, eligibleFhm);
     }
