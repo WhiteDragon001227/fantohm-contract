@@ -2,10 +2,11 @@
 
 pragma solidity 0.7.5;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
@@ -37,15 +38,18 @@ interface IMigratorChef {
 // distributed and the community can show to govern itself.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
-contract MasterChefV2 is Ownable, ReentrancyGuard {
+contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
     using SafeMath for uint;
     using SafeERC20 for IERC20;
     using Address for address;
 
+    bytes32 public constant WHITELIST_WITHDRAW_ROLE = keccak256("WHITELIST_WITHDRAW_ROLE");
+
     // Info of each user.
     struct UserInfo {
-        uint amount;         // How many LP tokens the user has provided.
-        uint rewardDebt;     // Reward debt. See explanation below.
+        uint amount;            // How many LP tokens the user has provided.
+        uint rewardDebt;        // Reward debt. See explanation below.
+        bool whitelistWithdraw; // if true only whitelisted address can withdraw
         //
         // We do some fancy math here. Basically, any point in time, the amount of FHMs
         // entitled to a user but is pending to be distributed is:
@@ -66,6 +70,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         uint accFhmPerShare;    // Accumulated FHMs per share, times 1e12. See below.
         uint16 depositFeeBP;    // Deposit fee in basis points
         uint depositedTokens;   // total LP tokens deposited, so rest are fees which should distribute to each holder
+        bool whitelistWithdraw; // when set on pool and deposited by whitelisted contract then only this contract can withdraw funds
     }
 
     // The FHM TOKEN!
@@ -111,6 +116,9 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         feeAddress = _feeAddress;
         fhmPerBlock = _fhmPerBlock;
         startBlock = _startBlock;
+
+        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _setupRole(WHITELIST_WITHDRAW_ROLE, _msgSender());
     }
 
     function poolLength() external view returns (uint) {
@@ -132,7 +140,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     /// @notice Add a new lp to the pool. Can only be called by the owner.
-    function add(uint _allocPoint, IERC20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
+    function add(uint _allocPoint, IERC20 _lpToken, uint16 _depositFeeBP, bool _withUpdate, bool _whitelistWithdraw) public onlyOwner nonDuplicated(_lpToken) {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -146,7 +154,8 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         lastRewardBlock : lastRewardBlock,
         accFhmPerShare : 0,
         depositFeeBP : _depositFeeBP,
-        depositedTokens: 0
+        depositedTokens: 0,
+        whitelistWithdraw: _whitelistWithdraw
         }));
     }
 
@@ -249,14 +258,19 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             }
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
+        if (pool.whitelistWithdraw && hasRole(WHITELIST_WITHDRAW_ROLE, msg.sender)) {
+            user.whitelistWithdraw = true;
+        }
         emit Deposit(_claimable, _pid, _amount);
     }
 
     /// @notice Withdraw LP tokens from MasterChef.
     function withdraw(uint _pid, uint _minimalAmount, address _claimable) public nonReentrant {
-        // FIXME need to rewrite logic to withdraw by _withdrawable
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_claimable];
+        if (pool.whitelistWithdraw && user.whitelistWithdraw) {
+            require(hasRole(WHITELIST_WITHDRAW_ROLE, msg.sender), "WHITELIST_WITHDRAW_ROLE_MISSING");
+        }
         require(user.amount >= _minimalAmount, "withdraw: not good");
         updatePool(_pid);
         uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
@@ -264,7 +278,12 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             safeFhmTransfer(_claimable, pending);
         }
         if (_minimalAmount > 0) {
-            user.amount = user.amount.sub(_minimalAmount);
+            if (user.amount > _minimalAmount) {
+                user.amount = user.amount.sub(_minimalAmount);
+            } else {
+                user.amount = 0;
+                user.whitelistWithdraw = false;
+            }
             uint transferableAmount = _minimalAmount.add(claimableFees(_pid, _minimalAmount));
             pool.lpToken.safeTransfer(address(msg.sender), transferableAmount);
 
@@ -284,7 +303,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     /// @return claimableAmount
     function claimableFees(uint _pid, uint _amount) public view returns (uint) {
         PoolInfo storage pool = poolInfo[_pid];
-        uint totalAmount = IERC20(pool.lpToken).balanceOf(address(this));
+        uint totalAmount = pool.lpToken.balanceOf(address(this));
         uint fees = 0;
         if (totalAmount > pool.depositedTokens) {
             fees = totalAmount.sub(pool.depositedTokens);
@@ -327,9 +346,11 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
 
     /// @notice Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint _pid) public nonReentrant {
-        // FIXME need to rewrite logic to withdraw by _withdrawable
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
+        if (pool.whitelistWithdraw && user.whitelistWithdraw) {
+            require(hasRole(WHITELIST_WITHDRAW_ROLE, msg.sender), "WHITELIST_WITHDRAW_ROLE_MISSING");
+        }
         uint amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
@@ -365,6 +386,18 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         massUpdatePools();
         fhmPerBlock = _fhmPerBlock;
         emit UpdateEmissionRate(msg.sender, _fhmPerBlock);
+    }
+
+    /// @notice grants WhitelistWithdraw role to given _account
+    /// @param _account WhitelistWithdraw contract
+    function grantRoleWhitelistWithdraw(address _account) external {
+        grantRole(WHITELIST_WITHDRAW_ROLE, _account);
+    }
+
+    /// @notice revoke WhitelistWithdraw role to given _account
+    /// @param _account WhitelistWithdraw contract
+    function revokeRoleWhitelistWithdraw(address _account) external {
+        revokeRole(WHITELIST_WITHDRAW_ROLE, _account);
     }
 
 }
