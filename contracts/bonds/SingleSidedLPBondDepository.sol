@@ -702,7 +702,7 @@ interface IBurnable {
     function burn(uint256 amount) external;
 }
 
-interface IFHUDMinter {
+interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
@@ -818,7 +818,7 @@ interface IMasterChef {
 
 
 /// @notice FantOHM PRO - Single sided stable bond
-/// @dev based on FhudABondDepository
+/// @dev based on UsdbABondDepository
 contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
@@ -836,15 +836,15 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // token given as payment for bond
-    address public immutable FHUD; // FHUD
+    address public immutable USDB; // USDB
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // receives profit share from bond
-    address public immutable masterChef; //MasterChef
+    address public immutable usdbMinter; // receives profit share from bond
+    address public immutable masterChef; // MasterChef
     
     address public immutable balancerVault; // beets vault to add/remove LPs
-    address public immutable lpToken; // FHUD/principle LP token
+    address public immutable lpToken; // USDB/principle LP token
 
     Terms public terms; // stores terms for new bonds
 
@@ -888,27 +888,27 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     constructor (
         address _FHM,
-        address _FHUD,
+        address _USDB,
         address _principle,
         address _treasury,
         address _DAO,
-        address _fhudMinter,
+        address _usdbMinter,
         address _balancerVault,
         address _lpToken,
         address _masterChef
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
-        require( _FHUD != address(0) );
-        FHUD = _FHUD;
+        require( _USDB != address(0) );
+        USDB = _USDB;
         require( _principle != address(0) );
         principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _fhudMinter != address(0) );
-        fhudMinter = _fhudMinter;
+        require( _usdbMinter != address(0) );
+        usdbMinter = _usdbMinter;
         require( _balancerVault != address(0) );
         balancerVault = _balancerVault;
         require( _lpToken != address(0) );
@@ -1024,8 +1024,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
-        // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), _amount);
+        // mint USDB with guaranteed discount
+        IMintable(USDB).mint( address(this), _amount);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
@@ -1074,12 +1074,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     // FIXME change visibility to internal
     function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
-        IERC20(FHUD).safeApprove(balancerVault, _principleAmount);
+        IERC20(USDB).safeApprove(balancerVault, _principleAmount);
         IERC20(principle).safeApprove(balancerVault, _principleAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
         address[] memory tokens = new address[](2);
-        tokens[0] = FHUD;
+        tokens[0] = USDB;
         tokens[1] = principle;
 
         insertSort(tokens);
@@ -1104,12 +1104,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     // FIXME change visibility to internal
-    function exitPool(uint _lpTokensAmount) public returns (uint _fhudAmount, uint _principleAmount) {
+    function exitPool(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
         IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
         address[] memory tokens = new address[](2);
-        tokens[0] = FHUD;
+        tokens[0] = USDB;
         tokens[1] = principle;
         insertSort(tokens);
 
@@ -1124,13 +1124,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             toInternalBalance: false
         });
 
-        uint fhudBefore = IERC20(FHUD).balanceOf(address(this));
+        uint usdbBefore = IERC20(USDB).balanceOf(address(this));
         uint principleBefore = IERC20(principle).balanceOf(address(this));
         IVault(balancerVault).exitPool(IStablePool(lpToken).getPoolId(), address(this), payable(address(this)), request);
-        uint fhudAfter = IERC20(FHUD).balanceOf(address(this));
+        uint usdbAfter = IERC20(USDB).balanceOf(address(this));
         uint principleAfter = IERC20(principle).balanceOf(address(this));
 
-        _fhudAmount = fhudAfter.sub(fhudBefore);
+        _usdbAmount = usdbAfter.sub(usdbBefore);
         _principleAmount = principleAfter.sub(principleBefore);
     }
      /**
@@ -1151,7 +1151,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _masterChef.withdraw(poolId, lpTokenAmount, _recipient);
 
         // disassemble LP into tokens
-        (uint _fhudAmount, uint _principleAmount) = exitPool(lpTokenAmount);
+        (uint _usdbAmount, uint _principleAmount) = exitPool(lpTokenAmount);
 
         // in case of IL we are paying the rest up to deposit amount
         if (_principleAmount < info.payout) {
@@ -1163,7 +1163,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         delete bondInfo[ _recipient ]; // delete user info
         emit BondRedeemed( _recipient, _principleAmount, 0 ); // emit bond data
 
-        IBurnable(FHUD).burn(_fhudAmount);
+        IBurnable(USDB).burn(_usdbAmount);
         IERC20( principle ).transfer( _recipient, _principleAmount);
 
         return _principleAmount;
@@ -1240,7 +1240,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     function getMarketPrice() public view returns (uint _marketPrice) {
-        _marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        _marketPrice = IUsdbMinter(usdbMinter).getMarketPrice();
     }
 
     /**
@@ -1261,7 +1261,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHUD ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20(USDB).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1273,8 +1273,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
 
-    function payoutInFhmFor( uint _fhudValue ) public view returns ( uint ) {
-        return FixedPoint.fraction( _fhudValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
+        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
     }
 
 
@@ -1299,11 +1299,11 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice calculate current ratio of debt to FHUD supply
+     *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHUD ).totalSupply();
+        uint supply = IERC20(USDB).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1386,7 +1386,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM );
-        require( _token != FHUD );
+        require( _token != USDB);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;

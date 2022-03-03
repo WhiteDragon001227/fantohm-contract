@@ -1,9 +1,5 @@
 const {ethers} = require("hardhat");
 
-// npx hardhat console --network rinkeby
-// const ProjectX = await ethers.getContractFactory("SingleSidedLPBondDepository",{ libraries: { IterableMappingSingleSided: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
-// const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
-
 async function main() {
 
     let [deployer] = await ethers.getSigners();
@@ -16,9 +12,7 @@ async function main() {
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-        balancerVaultAddress,
-        usdbDaiLpAddress,
-    } = require('../networks-rinkeby.json');
+    } = require('../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
     // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
@@ -45,7 +39,7 @@ async function main() {
     const bondVestingLengthSec = '100';
     const bondVestingLength = '10';
 
-    const maxDiscount = '0';
+    const maxDiscount = '5000';
 
     // Max bond payout
     const maxBondPayout = '100000'
@@ -72,11 +66,9 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     // Deploy Bond
-    const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-
-    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress);
-    // const bond = await Bond.attach( "0x2155FCD9CF0b95F8EAAe89e312abEf52F02bAd51" );
-    await bond.deployed();
+    const Bond = await ethers.getContractFactory('UsdbIsoBondDepository');
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
+    // const bond = await Bond.attach("0xc11C7D27c17433c5A227299c9004bE5cd9d7AF0F");
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -92,7 +84,7 @@ async function main() {
     // Approve the treasury to spend deployer's reserve tokens
     await reserveToken.approve(treasury.address, largeApproval);
     console.log(`Approved treasury to spend deployer ${reserve.name}`);
-    //
+
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);

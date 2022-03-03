@@ -1,9 +1,5 @@
 const {ethers} = require("hardhat");
 
-// npx hardhat console --network rinkeby
-// const ProjectX = await ethers.getContractFactory("SingleSidedLPBondDepository",{ libraries: { IterableMappingSingleSided: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
-// const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
-
 async function main() {
 
     let [deployer] = await ethers.getSigners();
@@ -16,9 +12,7 @@ async function main() {
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-        balancerVaultAddress,
-        usdbDaiLpAddress,
-    } = require('../networks-rinkeby.json');
+    } = require('../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
     // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
@@ -42,10 +36,9 @@ async function main() {
 
     // 6 weeks/2 = 3628800/2 * 0.867 = 1573084
     // const bondVestingLength = '1573084';
-    const bondVestingLengthSec = '100';
     const bondVestingLength = '10';
 
-    const maxDiscount = '0';
+    const maxDiscount = '5000';
 
     // Max bond payout
     const maxBondPayout = '100000'
@@ -57,7 +50,7 @@ async function main() {
     const maxBondDebt = '50000000000000000000000';
 
     // Initial Bond debt
-    const intialBondDebt = '0';
+    const initialBondDebt = '0';
 
     const soldBondsLimit = '10000000000000000000000';
 
@@ -71,12 +64,16 @@ async function main() {
     const ReserveToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
     const reserveToken = await ReserveToken.attach(reserve.address);
 
+    const Library = await ethers.getContractFactory("IterableMapping");
+    const library = await Library.deploy();
+    await library.deployed();
     // Deploy Bond
-    const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-
-    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress);
-    // const bond = await Bond.attach( "0x2155FCD9CF0b95F8EAAe89e312abEf52F02bAd51" );
-    await bond.deployed();
+    const Bond = await ethers.getContractFactory('TradFiBondDepository', {
+        libraries: {
+            IterableMapping: library.address,
+        },
+    });
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -86,7 +83,7 @@ async function main() {
     console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
-    await bond.initializeBondTerms(bondVestingLengthSec, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
+    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Approve the treasury to spend deployer's reserve tokens
@@ -107,6 +104,23 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    // redeemall
+    const pageSize = 1000;
+    var count = await bond.bondCount(deployer.address);
+    const min = (a, b) => (a < b ? a : b);
+    for (var i = 0; i <= count / pageSize; i++) {
+        const start = i * pageSize;
+        const end = min(start + pageSize, count);
+        var result = await bond.redeemAll(start, end, deployer.address);
+        var num = result[0], indices = result[1];
+        while (num > 0) {
+            result = await bond.redeem(indices, deployer.address);
+            num = result[0];
+            indices = result[1];
+        }
+    }
+
 }
 
 main()

@@ -6,16 +6,19 @@
 	"sfhmAddress" : "0xF5C7D63C5Fc0aD4b7Cef7d8904239860725Ebc87",
 	"wsfhmAddress": "0xefa60366a9C414A584375721125a8A42aDb663C0",
 	"fhudAddress": "0x1F43eeBFF4af237FD28FDb25eC11f148462DED52",
+	"usdbAddress": "0xE827c1D2da22496A09055140c2454c953710751C",
 	"treasuryAddress" : "0x686AcF5A89d09D936B09e5a5a64Dd6B241CD20c6",
 	"stakingAddress" : "0xf7595d3D87D976CA011E89Ca6A95e827E31Dd581",
 	"stakingHelperAddress" : "0xcb9297425C889A7CbBaa5d3DB97bAb4Ea54829c2",
 	"stakingWarmupManagerAddress" : "0xeD1f984502f8773Ec950E2D006781D7ce33CEEE4",
-	"fhudMinterAddress" : "0x139ffDD962A2d8D498a92aB33b31ed78397cbae2",
+	"fhudMinterAddress": "0x139ffDD962A2d8D498a92aB33b31ed78397cbae2",
+	"usdbMinterAddress" : "0x05db87C4Cbb198717F590AabA613cdD2180483Ce",
 	"twapOracleAddress" : "0xc9ca91fe0667bafd4289e082088e41ed86471d79",
 	"fhmDaiLpAddress" : "0xfb7f259e16ce5c3706dfffd0ab73033f58c6ce21",
 	"fhmCirculatingSupply" : "0x88162eb8f6347B9Bb31B4A35434E0C0d5CbD5FE6",
 	"uniswapFactoryAddress" : "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
 	"uniswapRouterAddress" : "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
 	"balancerVaultAddress" : "0xF07513C68C55A31337E3b58034b176A15Dce16eD",
-	"fhudDaiLpAddress" : "0x76AA5Da8A3ab80c16Da3E418b5fd1dD9d457ecB1"
+	"fhudDaiLpAddress" : "0x76AA5Da8A3ab80c16Da3E418b5fd1dD9d457ecB1",
+	"usdbDaiLpAddress" : "0x76AA5Da8A3ab80c16Da3E418b5fd1dD9d457ecB1"
 }

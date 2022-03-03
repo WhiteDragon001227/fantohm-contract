@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat");
+const {ethers} = require("hardhat");
 
 async function main() {
 
@@ -7,15 +7,14 @@ async function main() {
 
     const {
         zeroAddress,
+        daiAddress,
         fhmAddress,
-        fhudAddress,
+        usdbAddress,
         treasuryAddress,
-        stakingHelperAddress,
-        fhudMinterAddress,
-        twapOracleAddress,
-        fhmDaiLpAddress,
-        fhmCirculatingSupply
-    } = require('../networks-fantom_testnet.json');
+        usdbMinterAddress,
+        uniswapFactoryAddress,
+        uniswapRouterAddress,
+    } = require('./networks-rinkeby.json');
 
     const daoAddress = deployer.address;
     // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
@@ -23,8 +22,8 @@ async function main() {
     // Reserve addresses
     const reserve =
         {
-            name: 'FHUD',
-            address: fhudAddress,
+            name: 'DAI',
+            address: daiAddress,
             bondBCV: '10000',
             depositAmount: '100000000000000000000000',
             depositProfit: '0',
@@ -36,8 +35,7 @@ async function main() {
     // Bond vesting length in blocks. 33110 ~ 5 days
     const bondVestingLength = '1';
 
-    // Min bond price
-    const maxDiscount = '8000';
+    const maxDiscount = '0';
 
     // Max bond payout
     const maxBondPayout = '100000'
@@ -49,12 +47,12 @@ async function main() {
     const maxBondDebt = '50000000000000000000000';
 
     // Initial Bond debt
-    const intialBondDebt = '0';
+    const initialBondDebt = '0';
 
     const soldBondsLimit = '10000000000000000000000';
 
     const useWhitelist = true;
-    const useCircuitBreaker = true;
+    const useCircuitBreaker = false;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -64,29 +62,33 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     // Deploy Bond
-    const Bond = await ethers.getContractFactory('FhudBBondDepository');
-    const bond = await Bond.deploy( fhmAddress, fhudAddress, treasury.address, daoAddress, fhudMinterAddress, fhmCirculatingSupply, twapOracleAddress, fhmDaiLpAddress);
+    const Bond = await ethers.getContractFactory('UsdbA2BondDepository');
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapFactoryAddress, uniswapRouterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
-    // queue and toggle bond reserve depositor
-    await treasury.queue('0', bond.address);
-    console.log(`Queued ${reserve.name} Bond as reserve manager`);
-    await treasury.toggle('0', bond.address, zeroAddress);
-    console.log(`Toggled ${reserve.name} Bond as reserve manager`);
+    //queue and toggle bond reserve depositor
+    await treasury.queue('8', bond.address);
+    console.log(`Queued ${reserve.name} Bond as reward manager`);
+    await treasury.toggle('8', bond.address, zeroAddress);
+    console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
-    // // Set bond terms
-    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
+    // Set bond terms
+    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
-    // Set staking for bond
-    await bond.setStaking(stakingHelperAddress, true);
-    console.log(`Set Staking for ${reserve.name} Bond`);
-
     // Approve bonds to spend deployer's reserve tokens
-    await reserveToken.approve(bond.address, largeApproval );
+    await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
+    // Approve the uniswapRouter to spend deployer's reserve tokens
+    await reserveToken.approve(uniswapRouterAddress, largeApproval);
+    console.log(`Approved uniswapRouterAddress to spend deployer ${reserve.name}`);
 
-    await bond.deposit('10000000000000000000', '10000', deployer.address );
+    const UsdbToken = await ethers.getContractFactory('USDB');
+    const usdbToken = await UsdbToken.attach(usdbAddress);
+    await usdbToken.grantRoleMinter(bond.address);
+    console.log(`grant minter of USDB to ${bond.address}`);
+
+    await bond.deposit('1000000000000000000000', '100', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE
@@ -98,4 +100,4 @@ main()
     .catch(error => {
         console.error(error);
         process.exit(1);
-})
+    })

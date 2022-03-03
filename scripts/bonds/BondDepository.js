@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat");
+const {ethers} = require("hardhat");
 
 async function main() {
 
@@ -11,7 +11,7 @@ async function main() {
         fhmAddress,
         treasuryAddress,
         stakingHelperAddress,
-        fhudMinterAddress,
+        usdbMinterAddress,
         fhmCirculatingSupply
     } = require('../networks-fantom_testnet.json');
 
@@ -75,7 +75,7 @@ async function main() {
 
         // Deploy Bond
         const Bond = await ethers.getContractFactory('FantohmBondDepository');
-        const bond = await Bond.deploy( fhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, fhudMinterAddress, fhmCirculatingSupply);
+        const bond = await Bond.deploy(fhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply);
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor
@@ -93,14 +93,14 @@ async function main() {
         console.log(`Set Staking for ${reserve.name} Bond`);
 
         // Approve the treasury to spend deployer's reserve tokens
-        await reserveToken.approve(treasury.address, largeApproval );
+        await reserveToken.approve(treasury.address, largeApproval);
         console.log(`Approved treasury to spend deployer ${reserve.name}`);
 
         // Approve bonds to spend deployer's reserve tokens
-        await reserveToken.approve(bond.address, largeApproval );
+        await reserveToken.approve(bond.address, largeApproval);
         console.log(`Approved bond to spend deployer ${reserve.name}`);
 
-        await bond.deposit('1000000000000000000000', '60000', deployer.address );
+        await bond.deposit('1000000000000000000000', '60000', deployer.address);
         console.log(`Deposited from deployer to Bond address: ${bond.address}`);
         //
         // DONE
@@ -109,8 +109,8 @@ async function main() {
 }
 
 main()
-        .then(() => process.exit())
-        .catch(error => {
-            console.error(error);
-            process.exit(1);
-        })
+    .then(() => process.exit())
+    .catch(error => {
+        console.error(error);
+        process.exit(1);
+    })

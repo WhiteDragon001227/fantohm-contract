@@ -1,8 +1,5 @@
 const { ethers } = require("hardhat");
 
-//Deployed FHUD to: 0x471D67Af380f4C903aD74944D08cB00d0D07853a
-//Deployed FHUDMinter to: 0x6039910e36D1f5823f88006eeaC13d0A486Aa0Bc
-
 async function main() {
 
     let [deployer] = await ethers.getSigners();
