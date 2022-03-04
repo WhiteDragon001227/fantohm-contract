@@ -40,6 +40,9 @@ contract USDBMinter is Ownable, AccessControl {
     uint256 public decimals;
     bool public doDiv;
 
+    mapping(address => bool) mintByFhudWhitelist;
+    bool mintByFhudWhitelistEnabled;
+
     event USDBMintedFromFHM(
         uint256 timestamp,
         address minter,
@@ -55,6 +58,7 @@ contract USDBMinter is Ownable, AccessControl {
     );
 
     constructor() {
+        mintByFhudWhitelistEnabled = true;
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(MINTER_ROLE, _msgSender());
     }
@@ -84,10 +88,10 @@ contract USDBMinter is Ownable, AccessControl {
     // 10,000 usd / 100.00 usd/fhm
     // 10,000.000,000,000,000,000,000 / 100.00
     function mintFromFHM(uint256 _stableCoinAmount, uint256 _minimalTokenPrice) external {
-        require(hasRole(MINTER_ROLE, _msgSender()), "USDBMinter: must have minter role to mint");
+        require(hasRole(MINTER_ROLE, _msgSender()), "MINTER_ROLE_MISSING");
 
         uint256 marketPrice = getMarketPrice();
-        require(marketPrice >= _minimalTokenPrice, "Slip page not met");
+        require(marketPrice >= _minimalTokenPrice, "SLIPPAGE_NOT_MET");
 
         uint256 fhmAmount = getFhmAmount(_stableCoinAmount, marketPrice);
         IBurnable(fhmAddress).burnFrom(msg.sender, fhmAmount);
@@ -97,6 +101,9 @@ contract USDBMinter is Ownable, AccessControl {
     }
 
     function mintFromFHUD(uint _fhudAmount) external {
+        if (mintByFhudWhitelistEnabled) {
+            require(mintByFhudWhitelist[msg.sender], "MISSING_IN_WHITELIST");
+        }
         IBurnable(fhudAddress).burnFrom(msg.sender, _fhudAmount);
         IMintable(usdbAddress).mint(msg.sender, _fhudAmount);
 
@@ -113,6 +120,20 @@ contract USDBMinter is Ownable, AccessControl {
 
     function setFhudAddress(address _fhudAddress) external virtual onlyOwner {
         fhudAddress = _fhudAddress;
+    }
+
+    function setMintByFhudEnabled(bool _mintByFhudWhitelistEnabled) external virtual onlyOwner {
+        mintByFhudWhitelistEnabled = _mintByFhudWhitelistEnabled;
+    }
+
+    function modifyWhitelist(address user, bool add) external onlyOwner {
+        if (add) {
+            require(!mintByFhudWhitelist[user], "ALREADY_IN_WHITELIST");
+            mintByFhudWhitelist[user] = true;
+        } else {
+            require(mintByFhudWhitelist[user], "NOT_IN_WHITELIST");
+            delete mintByFhudWhitelist[user];
+        }
     }
 
     function setFhmLpAddress(address _fhmLpAddress, uint256 _decimals, bool _doDiv) external virtual onlyOwner {
