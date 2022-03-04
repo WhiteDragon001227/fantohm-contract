@@ -6,48 +6,46 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
-        mimAddress,
+        usdbAddress,
         fhmAddress,
         sfhmAddress,
         treasuryAddress,
         stakingWarmupManagerAddress,
         usdbMinterAddress,
         fhmCirculatingSupply
-    } = require('../networks-fantom_testnet.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
-
+    } = require('../networks-fantom.json');
 
     // Reserve addresses
     const reserves = [
-        {
-            name: 'DAI',
-            address: daiAddress,
-            bondBCV: '10000',
-            depositAmount: '100000000000000000000000',
-            depositProfit: '0',
-        },
         // {
-        //     name: 'MIM',
-        //     address: mimAddress,
+        //     name: 'DAI',
+        //     address: daiAddress,
         //     bondBCV: '10000',
         //     depositAmount: '100000000000000000000000',
         //     depositProfit: '0',
         // },
+        {
+            name: 'USDB',
+            address: usdbAddress,
+            bondBCV: '10000',
+            depositAmount: '100000000000000000000000',
+            depositProfit: '0',
+        },
     ];
 
     // Large number for approval for reserve tokens
     const largeApproval = '100000000000000000000000000000000';
 
     // Bond vesting length in blocks. 33110 ~ 5 days
-    const bondVestingLength = '8640';
-    // const bondVestingLength = '498300';
+    // const bondVestingLength = '8640';
+    const bondVestingLength = '498300';
+    // const bondVestingLength = '29400';
 
     // Min bond price
-    const minBondPrice = '10000';
+    const minBondPrice = '2000';
 
     const maxDiscount = '800';
 

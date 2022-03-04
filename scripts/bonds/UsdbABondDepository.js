@@ -6,16 +6,14 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
         fhmAddress,
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-    } = require('../networks-fantom_testnet.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
+    } = require('../networks-fantom.json');
 
     // Reserve addresses
     const reserve =
