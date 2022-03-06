@@ -700,13 +700,13 @@ interface IBurnable {
     function burn(uint256 amount) external;
 }
 
-interface IFHUDMinter {
+interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-/// @notice FHUD>$1
-/// @dev this is ISO bond - x% discount with 30 day vesting and also FHUD A, 0.25% discount, instant
-contract FhudABondDepository is Ownable, ReentrancyGuard {
+/// @notice USDB ISO bond
+/// @dev this is ISO bond - x% discount with 6 weeks vesting
+contract UsdbIsoBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -717,8 +717,8 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payout, uint remaining );
+    event BondCreated( uint deposit, uint indexed payout, uint indexed expiresTimestamp, uint expiresBlock, uint indexed priceInUSD );
+    event BondRedeemed( address indexed recipient, uint payout, uint remainingSeconds, uint remainingBlocks );
 
 
 
@@ -726,11 +726,11 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // token given as payment for bond
-    address public immutable FHUD; // FHUD
+    address public immutable USDB; // USDB
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // receives profit share from bond
+    address public immutable usdbMinter; // receives profit share from bond
 
     Terms public terms; // stores terms for new bonds
 
@@ -748,7 +748,8 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     // Info for creating new bonds
     struct Terms {
-        uint vestingTerm; // in blocks
+        uint vestingTermSeconds; // in seconds
+        uint vestingTerm; // safeguard, use some vestingTermSeconds/2 in blocks
         uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
@@ -758,10 +759,12 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     // Info for bond holder
     struct Bond {
-        uint payout; // FHUD to be paid
+        uint payout; // USDB to be paid
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
+        uint vestingSeconds; // Blocks left to vest
+        uint lastTimestamp; // Last interaction
     }
 
     struct SoldBonds {
@@ -774,30 +777,31 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     constructor (
         address _FHM,
-        address _FHUD,
+        address _USDB,
         address _principle,
         address _treasury,
         address _DAO,
-        address _fhudMinter
+        address _usdbMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
-        require( _FHUD != address(0) );
-        FHUD = _FHUD;
+        require( _USDB != address(0) );
+        USDB = _USDB;
         require( _principle != address(0) );
         principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _fhudMinter != address(0) );
-        fhudMinter = _fhudMinter;
+        require( _usdbMinter != address(0) );
+        usdbMinter = _usdbMinter;
         useWhitelist = true;
         whitelist[msg.sender] = true;
     }
 
     /**
      *  @notice initializes bond parameters
+     *  @param _vestingTermSeconds uint
      *  @param _vestingTerm uint
      *  @param _discount uint
      *  @param _maxPayout uint
@@ -809,6 +813,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      *  @param _useCircuitBreaker bool
      */
     function initializeBondTerms(
+        uint _vestingTermSeconds,
         uint _vestingTerm,
         uint _discount,
         uint _maxPayout,
@@ -820,6 +825,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
         bool _useCircuitBreaker
     ) external onlyPolicy() {
         terms = Terms ({
+        vestingTermSeconds: _vestingTermSeconds,
         vestingTerm: _vestingTerm,
         discount: _discount,
         maxPayout: _maxPayout,
@@ -838,7 +844,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, VESTING_SECONDS }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -856,6 +862,8 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
             terms.fee = _input;
         } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
+        } else if ( _parameter == PARAMETER.VESTING_SECONDS ) { // 4
+            terms.vestingTermSeconds = _input;
         }
     }
 
@@ -888,7 +896,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
         uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 FHUD ( underflow protection )
+        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 USDB ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
 
@@ -901,8 +909,8 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
 
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
-        // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), payout );
+        // mint USDB with guaranteed discount
+        IMintable(USDB).mint( address(this), payout );
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
@@ -920,13 +928,15 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
         // depositor info is stored
         bondInfo[ _depositor ] = Bond({
             payout: bondInfo[ _depositor ].payout.add( payout ),
+            vestingSeconds: terms.vestingTermSeconds,
+            lastTimestamp: block.timestamp,
             vesting: terms.vestingTerm,
             lastBlock: block.number,
             pricePaid: priceInUSD
         });
 
         // indexed events are emitted
-        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
 
         return payout;
     }
@@ -939,14 +949,16 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      */
     function redeem( address _recipient, bool _stake ) external returns ( uint ) {
         Bond memory info = bondInfo[ _recipient ];
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+        uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
+        uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
-        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require ( percentVested >= 10000, "Wait for end timestamp of bond") ;
+        require ( percentVestedBlocks >= 10000, "Wait for end block of bond") ;
 
         delete bondInfo[ _recipient ]; // delete user info
-        emit BondRedeemed( _recipient, info.payout, 0 ); // emit bond data
+        emit BondRedeemed( _recipient, info.payout, 0, 0 ); // emit bond data
 
-        IERC20( FHUD ).transfer( _recipient, info.payout); // pay user everything due
+        IERC20(USDB).transfer( _recipient, info.payout); // pay user everything due
 
         return info.payout;
     }
@@ -1022,7 +1034,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
     }
 
     function getMarketPrice() public view returns (uint _marketPrice) {
-        _marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        _marketPrice = IUsdbMinter(usdbMinter).getMarketPrice();
     }
 
     /**
@@ -1043,7 +1055,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHUD ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20(USDB).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1055,8 +1067,8 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
 
-    function payoutInFhmFor( uint _fhudValue ) public view returns ( uint ) {
-        return FixedPoint.fraction( _fhudValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
+        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
     }
 
 
@@ -1081,11 +1093,11 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice calculate current ratio of debt to FHUD supply
+     *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHUD ).totalSupply();
+        uint supply = IERC20(USDB).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1128,6 +1140,18 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      */
     function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = bondInfo[ _depositor ];
+        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
+        uint vestingSeconds = bond.vestingSeconds;
+
+        if ( vestingSeconds > 0 ) {
+            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
+        } else {
+            percentVested_ = 0;
+        }
+    }
+
+    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1145,9 +1169,10 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor );
         uint payout = bondInfo[ _depositor ].payout;
 
-        if ( percentVested >= 10000 ) {
+        if ( percentVested >= 10000 && percentVestedBlocks >= 10000) {
             pendingPayout_ = payout;
         } else {
             pendingPayout_ = 0;
@@ -1165,7 +1190,7 @@ contract FhudABondDepository is Ownable, ReentrancyGuard {
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM );
-        require( _token != FHUD );
+        require( _token != USDB);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;

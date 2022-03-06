@@ -39,7 +39,7 @@ module.exports = {
       accounts: [`${privateKey}`]
     },
     moonriver: {
-      url: `https://rpc.moonriver.moonbeam.network`,
+      url: `https://rpc.api.moonriver.moonbeam.network`,
       accounts: [`${privateKey}`],
       chainId: 1285,
     },

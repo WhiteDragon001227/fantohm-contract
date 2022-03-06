@@ -616,7 +616,7 @@ library FixedPoint {
 
 // Info for bond holder
 struct Bond {
-    uint payout; // FHUD to be paid
+    uint payout; // USDB to be paid
     uint vesting; // Blocks left to vest
     uint lastBlock; // Last interaction
     uint pricePaid; // In DAI, for front end viewing
@@ -770,13 +770,13 @@ interface IBurnable {
     function burn(uint256 amount) external;
 }
 
-interface IFHUDMinter {
+interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-/// @notice FHUD ISO bond
+/// @notice Traditional Finance bond
 /// @dev this is ISO bond - x% discount with 6 weeks vesting
-contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
+contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -796,11 +796,11 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // token given as payment for bond
-    address public immutable FHUD; // FHUD
+    address public immutable USDB; // USDB
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // receives profit share from bond
+    address public immutable usdbMinter; // receives profit share from bond
 
     Terms public terms; // stores terms for new bonds
 
@@ -839,24 +839,24 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
 
     constructor (
         address _FHM,
-        address _FHUD,
+        address _USDB,
         address _principle,
         address _treasury,
         address _DAO,
-        address _fhudMinter
+        address _usdbMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
-        require( _FHUD != address(0) );
-        FHUD = _FHUD;
+        require( _USDB != address(0) );
+        USDB = _USDB;
         require( _principle != address(0) );
         principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _fhudMinter != address(0) );
-        fhudMinter = _fhudMinter;
+        require( _usdbMinter != address(0) );
+        usdbMinter = _usdbMinter;
         useWhitelist = true;
         whitelist[msg.sender] = true;
         usersCount = 0;
@@ -959,7 +959,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 FHUD ( underflow protection )
+        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 USDB ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
 
@@ -972,8 +972,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
 
-        // mint FHUD with guaranteed discount
-        IMintable( FHUD ).mint( address(this), payout);
+        // mint USDB with guaranteed discount
+        IMintable(USDB).mint( address(this), payout);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
@@ -1070,14 +1070,14 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         }
 
         if (_finalAmount > 0) {
-            IERC20( FHUD ).transfer( _depositor, _finalAmount);
+            IERC20(USDB).transfer( _depositor, _finalAmount);
             emit BondRedeemed( _depositor, _finalAmount, 0, 0 );
         }
 
         return _toDelete;
     }
     /**
-    *  @notice return bond info 
+     *  @notice return bond info
      *  @param _depositor address
      *  @param index uint
      *  @return payout uint
@@ -1096,6 +1096,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         lastBlock = info.lastBlock;
         pricePaid = info.pricePaid;
     }
+
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
     function modifyWhitelist(address user, bool add) external onlyPolicy {
@@ -1167,7 +1168,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     }
 
     function getMarketPrice() public view returns (uint _marketPrice) {
-        _marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        _marketPrice = IUsdbMinter(usdbMinter).getMarketPrice();
     }
 
     /**
@@ -1188,7 +1189,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function maxPayout() public view returns ( uint ) {
-        return IERC20( FHUD ).totalSupply().mul( terms.maxPayout ).div( 100000 );
+        return IERC20(USDB).totalSupply().mul( terms.maxPayout ).div( 100000 );
     }
 
     /**
@@ -1200,8 +1201,8 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
 
-    function payoutInFhmFor( uint _fhudValue ) public view returns ( uint ) {
-        return FixedPoint.fraction( _fhudValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
+        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
     }
 
 
@@ -1226,11 +1227,11 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice calculate current ratio of debt to FHUD supply
+     *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
      */
     function debtRatio() public view returns ( uint debtRatio_ ) {
-        uint supply = IERC20( FHUD ).totalSupply();
+        uint supply = IERC20(USDB).totalSupply();
         debtRatio_ = FixedPoint.fraction(
             currentDebt().mul( 1e9 ),
             supply
@@ -1333,7 +1334,7 @@ contract FhudIso2BondDepository is Ownable, ReentrancyGuard {
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM );
-        require( _token != FHUD );
+        require( _token != USDB);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;

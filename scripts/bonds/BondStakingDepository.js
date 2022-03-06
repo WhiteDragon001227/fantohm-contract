@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat");
+const {ethers} = require("hardhat");
 
 async function main() {
 
@@ -6,48 +6,46 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
-        mimAddress,
+        usdbAddress,
         fhmAddress,
         sfhmAddress,
         treasuryAddress,
         stakingWarmupManagerAddress,
-        fhudMinterAddress,
+        usdbMinterAddress,
         fhmCirculatingSupply
-    } = require('../networks-fantom_testnet.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
-
+    } = require('../networks-fantom.json');
 
     // Reserve addresses
     const reserves = [
-        {
-            name: 'DAI',
-            address: daiAddress,
-            bondBCV: '10000',
-            depositAmount: '100000000000000000000000',
-            depositProfit: '0',
-        },
         // {
-        //     name: 'MIM',
-        //     address: mimAddress,
+        //     name: 'DAI',
+        //     address: daiAddress,
         //     bondBCV: '10000',
         //     depositAmount: '100000000000000000000000',
         //     depositProfit: '0',
         // },
+        {
+            name: 'USDB',
+            address: usdbAddress,
+            bondBCV: '10000',
+            depositAmount: '100000000000000000000000',
+            depositProfit: '0',
+        },
     ];
 
     // Large number for approval for reserve tokens
     const largeApproval = '100000000000000000000000000000000';
 
     // Bond vesting length in blocks. 33110 ~ 5 days
-    const bondVestingLength = '8640';
-    // const bondVestingLength = '498300';
+    // const bondVestingLength = '8640';
+    const bondVestingLength = '498300';
+    // const bondVestingLength = '29400';
 
     // Min bond price
-    const minBondPrice = '10000';
+    const minBondPrice = '2000';
 
     const maxDiscount = '800';
 
@@ -77,7 +75,7 @@ async function main() {
 
         // Deploy Bond
         const Bond = await ethers.getContractFactory('FantohmBondStakingDepository');
-        const bond = await Bond.deploy( fhmAddress, sfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, fhudMinterAddress, fhmCirculatingSupply);
+        const bond = await Bond.deploy(fhmAddress, sfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply);
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor
@@ -95,14 +93,14 @@ async function main() {
         console.log(`Set Staking for ${reserve.name} Bond`);
 
         // Approve the treasury to spend deployer's reserve tokens
-        await reserveToken.approve(treasury.address, largeApproval );
+        await reserveToken.approve(treasury.address, largeApproval);
         console.log(`Approved treasury to spend deployer ${reserve.name}`);
 
         // Approve bonds to spend deployer's reserve tokens
-        await reserveToken.approve(bond.address, largeApproval );
+        await reserveToken.approve(bond.address, largeApproval);
         console.log(`Approved bond to spend deployer ${reserve.name}`);
-        
-        await bond.deposit('1000000000000000000000', '60000', deployer.address );
+
+        await bond.deposit('1000000000000000000000', '60000', deployer.address);
         console.log(`Deposited from deployer to Bond address: ${bond.address}`);
         //
         // DONE
@@ -115,4 +113,4 @@ main()
     .catch(error => {
         console.error(error);
         process.exit(1);
-})
+    })
