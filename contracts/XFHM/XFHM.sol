@@ -6,6 +6,7 @@ import '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/Initializable.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
+import "@openzeppelin/contracts/math/SafeMath.sol";
 import './XERC20Upgradeable.sol';
 import './Whitelist.sol';
 
@@ -31,13 +32,7 @@ library Math {
         return ((x * y) + (WAD / 2)) / WAD;
     }
 }
-interface IMasterChef {
-    function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint);
-    function deposit(uint _pid, uint _amount, address _claimable) external;
-    function withdraw(uint _pid, uint _amount, address _claimable) external;
-    function harvest(uint _pid, address _to) external;
-    function userInfo(uint _pid, address _user) external view returns (uint, uint);
-}
+
 interface IXFhm is IXERC20 {
     function isUser(address _addr) external view returns (bool);
 
@@ -48,7 +43,12 @@ interface IXFhm is IXERC20 {
     function withdraw(uint256 _amount) external;
 
     function getStakedFhm(address _addr) external view returns (uint256);
+
     function getVotes(address _account) external view returns (uint256);
+}
+
+interface IVotingEscrow {
+    function balanceOfVotingToken(address _owner) external view returns (uint);
 }
 
 /// @title XFhm
@@ -67,21 +67,19 @@ contract XFhm is
     ReentrancyGuardUpgradeable,
     PausableUpgradeable,
     XERC20Upgradeable,
-    IXFhm
+    IXFhm,
+    IVotingEscrow
 {
+    using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     struct UserInfo {
         uint256 amount; // FHM staked by user
         uint256 lastRelease; // time of last XFHM claim or first deposit if user has not claimed yet
-        
     }
 
     /// @notice the fhm token
     IERC20 public fhm;
-
-    /// @notice the masterChef contract
-    IMasterChef public masterChef;
 
     /// @notice max xFhm to staked Fhm ratio
     /// Note if user has 10 fhm staked, they can only have a max of 10 * maxCap xFhm in balance
@@ -111,10 +109,8 @@ contract XFhm is
     event Claimed(address indexed user, uint256 indexed amount);
 
     function initialize(
-        IERC20 _fhm,
-        IMasterChef _masterChef
+        IERC20 _fhm
     ) public initializer {
-        require(address(_masterChef) != address(0), 'zero address');
         require(address(_fhm) != address(0), 'zero address');
 
         // Initialize XFhm
@@ -133,9 +129,6 @@ contract XFhm is
         // invVoteThreshold = 20 => th = 5
         invVoteThreshold = 20;
 
-        // set masterChef
-        masterChef = _masterChef;
-
         // set Fhm
         fhm = _fhm;
 
@@ -153,13 +146,6 @@ contract XFhm is
      */
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    /// @notice sets masterChef address
-    /// @param _masterChef the new masterChef address
-    function setMasterChef(IMasterChef _masterChef) external onlyOwner {
-        require(address(_masterChef) != address(0), 'zero address');
-        masterChef = _masterChef;
     }
 
     /// @notice sets whitelist address
@@ -229,7 +215,7 @@ contract XFhm is
             // if user exists, first, claim his XFhm
             _claim(msg.sender);
             // then, increment his holdings
-            users[msg.sender].amount += _amount;
+            users[msg.sender].amount = users[msg.sender].amount.add(_amount);
         } else {
             // add new user to mapping
             users[msg.sender].lastRelease = block.timestamp;
@@ -238,9 +224,11 @@ contract XFhm is
 
         // Request Fhm from user
         fhm.safeTransferFrom(msg.sender, address(this), _amount);
+
+        emit Staked(msg.sender, _amount);
     }
 
-    /// @notice asserts addres in param is not a smart contract.
+    /// @notice asserts address in param is not a smart contract.
     /// @notice if it is a smart contract, check that it is whitelisted
     /// @param _addr the address to check
     function _assertNotContract(address _addr) private view {
@@ -296,13 +284,13 @@ contract XFhm is
         uint256 userXFhmBalance = balanceOf(_addr);
 
         // user XFhm balance cannot go above user.amount * maxCap
-        uint256 maxXFhmCap = user.amount * maxCap;
+        uint256 maxXFhmCap = user.amount.mul(maxCap);
 
         // first, check that user hasn't reached the max limit yet
         if (userXFhmBalance < maxXFhmCap) {
             // then, check if pending amount will make user balance overpass maximum amount
-            if ((userXFhmBalance + pending) > maxXFhmCap) {
-                return maxXFhmCap - userXFhmBalance;
+            if ((userXFhmBalance.add(pending)) > maxXFhmCap) {
+                return maxXFhmCap.sub(userXFhmBalance);
             } else {
                 return pending;
             }
@@ -321,7 +309,7 @@ contract XFhm is
         users[msg.sender].lastRelease = block.timestamp;
 
         // update his balance before burning or sending back Fhm
-        users[msg.sender].amount -= _amount;
+        users[msg.sender].amount = users[msg.sender].amount.sub(_amount);
 
         // get user XFhm balance that must be burned
         uint256 userXFhmBalance = balanceOf(msg.sender);
@@ -330,28 +318,26 @@ contract XFhm is
 
         // send back the staked fhm
         fhm.safeTransfer(msg.sender, _amount);
-    }
 
-    /// @notice hook called after token operation mint/burn
-    /// @dev updates masterChef
-    /// @param _account the account being affected
-    /// @param _newBalance the newXFhmBalance of the user
-    // function _afterTokenOperation(address _account, uint256 _newBalance) internal override {
-    //     masterChef.updateFactor(_account, _newBalance);
-    // }
+        emit Unstaked(msg.sender, _amount);
+    }
 
     /// @notice get votes for xFhm
     /// @dev votes should only count if account has > threshold% of current cap reached
     /// @dev invVoteThreshold = (1/threshold%)*100
     /// @return the valid votes
-    function getVotes(address _account) external view virtual override returns (uint256) {
+    function getVotes(address _account) public view virtual override returns (uint256) {
         uint256 xFhmBalance = balanceOf(_account);
 
         // check that user has more than voting treshold of maxCap and has fhm in stake
-        if (xFhmBalance * invVoteThreshold > users[_account].amount * maxCap && isUser(_account)) {
+        if (xFhmBalance.mul(invVoteThreshold) > users[_account].amount.mul(maxCap) && isUser(_account)) {
             return xFhmBalance;
         } else {
             return 0;
         }
+    }
+
+    function balanceOfVotingToken(address _account) external virtual override view returns (uint) {
+        return getVotes(_account);
     }
 }
