@@ -19,6 +19,18 @@ interface IBurnable {
 
 interface IBeetsMasterChef {
     function harvest(uint _pid, address _to) external;
+
+    function deposit(
+        uint256 _pid,
+        uint256 _amount,
+        address _to
+    ) external;
+
+    function withdrawAndHarvest(
+        uint256 _pid,
+        uint256 _amount,
+        address _to
+    ) external;
 }
 
 interface IsfBeets {
@@ -26,6 +38,7 @@ interface IsfBeets {
 }
 
 /// @notice Manager of sfBeets
+/// @author pwntr0n
 contract LendingManager is Ownable, ReentrancyGuard {
 
     using SafeMath for uint;
@@ -39,6 +52,7 @@ contract LendingManager is Ownable, ReentrancyGuard {
 
     uint public pid; // mastechef pool id
     uint public fee; // service fee, 5% is 500
+    bool public enableEmergencyWithdraw;
 
     /// @notice data structure holding info about all rewards gathered during time
     struct SampleInfo {
@@ -89,6 +103,22 @@ contract LendingManager is Ownable, ReentrancyGuard {
     /// @param _claimed how many wsFHM claimed
     event RewardClaimed(address indexed _wallet, uint indexed _startClaimIndex, uint indexed _lastClaimIndex, uint _claimed);
 
+    /// @notice emergency token transferred
+    /// @param _token ERC20 token
+    /// @param _recipient recipient of transaction
+    /// @param _amount token amount
+    event EmergencyTokenRecovered(address indexed _token, address indexed _recipient, uint _amount);
+
+    /// @notice emergency withdraw of unclaimed rewards
+    /// @param _recipient recipient of transaction
+    /// @param _rewarded beets amount of unclaimed rewards transferred
+    event EmergencyRewardsWithdraw(address indexed _recipient, uint _rewarded);
+
+    // @notice emergency withdraw of ETH
+    /// @param _recipient recipient of transaction
+    /// @param _amount ether value of transaction
+    event EmergencyEthRecovered(address indexed _recipient, uint _amount);
+
     constructor(address _beets, address _fBeets, address _sfBeets, address _multisig, address _beetsMasterChef) {
         require(_beets != address(0));
         beets = _beets;
@@ -102,9 +132,10 @@ contract LendingManager is Ownable, ReentrancyGuard {
         beetsMasterChef = _beetsMasterChef;
     }
 
-    function setup(uint _pid, uint _fee) external onlyOwner {
+    function setup(uint _pid, uint _fee, bool _enableEmergencyWithdraw) external onlyOwner {
         pid = _pid;
         fee = _fee;
+        enableEmergencyWithdraw = _enableEmergencyWithdraw;
     }
 
     /// @notice deposit fBeets into SC to get sfBeets and beeing able to claim rewards
@@ -117,12 +148,15 @@ contract LendingManager is Ownable, ReentrancyGuard {
         UserInfo storage info = userInfo[msg.sender];
         info.staked = info.staked.add(_amount);
 
-        // burn/mint if can
         if (_amount > 0) {
+            // burn/mint if can
             IERC20(fBeets).safeTransferFrom(msg.sender, address(this), _amount);
             IMintable(sfBeets).mint(msg.sender, _amount);
 
-            // FIMXE deposit into masterchef
+            // deposit into masterchef
+            // https://ftmscan.com/tx/0x44a223cc525fa2433e9021894f84e12fa2c267174e831ce6880c817044304e2c
+            IERC20(fBeets).approve(beetsMasterChef, _amount);
+            IBeetsMasterChef(beetsMasterChef).deposit(pid, _amount, address(this));
         }
 
         // and persist in history
@@ -191,7 +225,7 @@ contract LendingManager is Ownable, ReentrancyGuard {
         // already claimed last sample
         if (info.lastClaimIndex == rewardSamples.length - 1 || info.staked == 0) return 0;
 
-        for (uint i=info.lastClaimIndex; i < rewardSamples.length; i++) {
+        for (uint i = info.lastClaimIndex; i < rewardSamples.length; i++) {
             SampleInfo memory sample = rewardSamples[i];
             uint part = sample.totalRewarded.mul(info.staked).div(sample.tvl);
             _amount = _amount.add(part);
@@ -214,17 +248,82 @@ contract LendingManager is Ownable, ReentrancyGuard {
             info.staked = 0;
         }
 
-        // mint/burn if can do it
         if (_amount > 0) {
+            // withdraw from master chef
+            IBeetsMasterChef(beetsMasterChef).withdrawAndHarvest(pid, _amount, address(this));
+
+            // mint/burn if can do it
             IBurnable(sfBeets).burnFrom(msg.sender, _amount);
             IERC20(fBeets).safeTransferFrom(address(this), msg.sender, _amount);
-
-            // FIXME remove from masterchef
         }
 
         // and persist in the history
         emit StakingWithdraw(msg.sender, _amount, block.number);
     }
 
-    // FIXME emergency exit pool
+    /* ///////////////////////////////////////////////////////////////
+                               EMERGENCY FUNCTIONS
+        ////////////////////////////////////////////////////////////// */
+
+    /// @notice emergency withdraw of user holding
+    function emergencyWithdraw() external {
+        require(enableEmergencyWithdraw, "EMERGENCY_WITHDRAW_NOT_ENABLED");
+
+        UserInfo storage info = userInfo[msg.sender];
+
+        uint toWithdraw = info.staked;
+
+        // clear the data
+        info.staked = info.staked.sub(toWithdraw);
+
+        // withdraw from master chef
+        IBeetsMasterChef(beetsMasterChef).withdrawAndHarvest(pid, toWithdraw, address(this));
+
+        // mint/burn if can do it
+        IBurnable(sfBeets).burnFrom(msg.sender, toWithdraw);
+        IERC20(fBeets).safeTransferFrom(address(this), msg.sender, toWithdraw);
+
+        // and record in history
+        emit StakingWithdraw(msg.sender, toWithdraw, block.number);
+    }
+
+
+    /// @dev Once called, any user who not claimed cannot claim/withdraw, should be used only in emergency.
+    function emergencyWithdrawRewards() external onlyOwner {
+        require(enableEmergencyWithdraw, "EMERGENCY_WITHDRAW_NOT_ENABLED");
+
+        uint amount = IERC20(beets).balanceOf(address(this));
+
+        // erc20 transfer
+        IERC20(beets).safeTransfer(multisig, amount);
+
+        emit EmergencyRewardsWithdraw(multisig, amount);
+    }
+
+    /// @notice Been able to recover any token which is sent to contract by mistake
+    /// @param token erc20 token
+    function emergencyRecoverToken(address token) external virtual onlyOwner {
+        require(token != beets);
+
+        uint amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(multisig, amount);
+
+        emit EmergencyTokenRecovered(token, multisig, amount);
+    }
+
+    /// @notice Been able to recover any ftm/movr token sent to contract by mistake
+    function emergencyRecoverEth() external virtual onlyOwner {
+        uint amount = address(this).balance;
+
+        payable(multisig).transfer(amount);
+
+        emit EmergencyEthRecovered(multisig, amount);
+    }
+
+    /* ///////////////////////////////////////////////////////////////
+                           RECEIVE ETHER LOGIC
+   ////////////////////////////////////////////////////////////// */
+
+    /// @dev Required for the Vault to receive unwrapped ETH.
+    receive() external payable {}
 }
