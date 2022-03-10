@@ -7,44 +7,224 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IMintable {
-    function mint(address to, uint256 amount) external;
+    function mint(address to, uint amount) external;
 }
 
 interface IBurnable {
-    function burnFrom(address account, uint256 amount) external;
+    function burnFrom(address account, uint amount) external;
 }
 
-contract LendingManager is Ownable {
+interface IBeetsMasterChef {
+    function harvest(uint _pid, address _to) external;
+}
+
+interface IsfBeets {
+    function setHarvested(uint _amount) external;
+}
+
+/// @notice Manager of sfBeets
+contract LendingManager is Ownable, ReentrancyGuard {
 
     using SafeMath for uint;
     using SafeERC20 for IERC20;
 
-    address public immutable multisig;
+    address public immutable beets;
     address public immutable fBeets;
     address public immutable sfBeets;
+    address public immutable multisig;
+    address public immutable beetsMasterChef;
 
-    constructor(address _multisig, address _fBeets, address _sfBeets) {
-        require(_multisig != address (0));
-        multisig = _multisig;
-        require(_fBeets != address (0));
+    uint public pid; // mastechef pool id
+    uint public fee; // service fee, 5% is 500
+
+    /// @notice data structure holding info about all rewards gathered during time
+    struct SampleInfo {
+        uint blockNumber; // time of newSample tick
+        uint timestamp; // time of newSample tick as unix timestamp
+
+        uint totalRewarded; // absolute number of Beets transferred during newSample
+
+        uint tvl; // sfBeets supply staking contract is holding from which rewards will be dispersed
+    }
+
+    SampleInfo[] public rewardSamples;
+
+    struct UserInfo {
+        uint staked; // absolute number of fBeets user deposited
+
+        uint lastClaimIndex; // index in rewardSamples last claimed
+    }
+
+    mapping(address => UserInfo) public userInfo;
+
+    /* ///////////////////////////////////////////////////////////////
+                                EVENTS
+    ////////////////////////////////////////////////////////////// */
+
+    /// @notice deposit event
+    /// @param _user user who triggered the deposit
+    /// @param _value deposited wsFHM value
+    event StakingDeposited(address indexed _user, uint _value);
+
+    /// @notice withdraw event
+    /// @param _user user who received the withdrawn tokens
+    /// @param _value amount in fBeets token to be withdrawn
+    /// @param _unstakeBlock block number of event generated
+    event StakingWithdraw(address indexed _user, uint _value, uint _unstakeBlock);
+
+    /// @notice new rewards were sampled and prepared for claim
+    /// @param _blockNumber  block number of event generated
+    /// @param _blockTimestamp  block timestamp of event generated
+    /// @param _rewarded  block timestamp of event generated
+    /// @param _tvl  sfBeets supply in the time of sample
+    event RewardSampled(uint _blockNumber, uint _blockTimestamp, uint _rewarded, uint _tvl);
+
+    /// @notice reward claimed during one claim() method
+    /// @param _wallet  user who triggered the claim
+    /// @param _startClaimIndex first rewards which were claimed
+    /// @param _lastClaimIndex last rewards which were claimed
+    /// @param _claimed how many wsFHM claimed
+    event RewardClaimed(address indexed _wallet, uint indexed _startClaimIndex, uint indexed _lastClaimIndex, uint _claimed);
+
+    constructor(address _beets, address _fBeets, address _sfBeets, address _multisig, address _beetsMasterChef) {
+        require(_beets != address(0));
+        beets = _beets;
+        require(_fBeets != address(0));
         fBeets = _fBeets;
-        require(_sfBeets != address (0));
+        require(_sfBeets != address(0));
         sfBeets = _sfBeets;
+        require(_multisig != address(0));
+        multisig = _multisig;
+        require(_beetsMasterChef != address(0));
+        beetsMasterChef = _beetsMasterChef;
     }
 
+    function setup(uint _pid, uint _fee) external onlyOwner {
+        pid = _pid;
+        fee = _fee;
+    }
+
+    /// @notice deposit fBeets into SC to get sfBeets and beeing able to claim rewards
+    /// @param _amount fBeets amount
     function deposit(uint _amount) external {
-        IERC20(fBeets).safeTransferFrom(msg.sender, multisig, _amount);
-        IMintable(sfBeets).mint(msg.sender, _amount);
+        // try claim anything
+        doClaim();
+
+        // add to staking amount
+        UserInfo storage info = userInfo[msg.sender];
+        info.staked = info.staked.add(_amount);
+
+        // burn/mint if can
+        if (_amount > 0) {
+            IERC20(fBeets).safeTransferFrom(msg.sender, address(this), _amount);
+            IMintable(sfBeets).mint(msg.sender, _amount);
+
+            // FIMXE deposit into masterchef
+        }
+
+        // and persist in history
+        emit StakingDeposited(msg.sender, _amount);
     }
 
-    function harvest() external {
-        IERC20(sfBeets).balanceOf(msg.sender);
+    /// @notice claim beets rewards from our fBeets pool in masterchef and send service fee to multisig
+    function claimUpstream() public nonReentrant {
+        doClaimUpstream();
     }
 
-    function withdraw(uint _amount) external {
-        IBurnable(sfBeets).burnFrom(msg.sender, _amount);
-        IERC20(fBeets).safeTransferFrom(multisig, msg.sender, _amount);
+    function doClaimUpstream() private {
+        uint beetsBefore = IERC20(beets).balanceOf(address(this));
+        IBeetsMasterChef(beetsMasterChef).harvest(pid, address(this));
+        uint beetsAfter = IERC20(beets).balanceOf(address(this));
+
+        uint harvested = beetsAfter.sub(beetsBefore);
+        if (harvested > 0) {
+            uint serviceFeeAmount = harvested.mul(fee).div(10000);
+            IERC20(beets).safeTransfer(multisig, serviceFeeAmount);
+
+            uint totalRewarded = harvested.sub(serviceFeeAmount);
+            uint tvl = IERC20(sfBeets).totalSupply();
+
+            rewardSamples.push(SampleInfo({
+            blockNumber : block.number,
+            timestamp : block.timestamp,
+            totalRewarded : totalRewarded,
+            tvl : tvl
+            }));
+
+            emit RewardSampled(block.number, block.timestamp, totalRewarded, tvl);
+        }
     }
+
+    /// @notice claim/harvest rewards for given user
+    /// @dev https://ftmscan.com/tx/0x2ceed357d8dd5ab713d404c4c4d2428c93d7a708ef38732d8a0b689dc2a11684
+    function claim() external nonReentrant {
+        doClaim();
+    }
+
+    function doClaim() private {
+        // claim pending rewards
+        doClaimUpstream();
+
+        UserInfo storage info = userInfo[msg.sender];
+        // already claimed last sample
+        if (info.lastClaimIndex == rewardSamples.length - 1) return;
+
+        // count from last claim to present
+        uint amount = claimable(msg.sender);
+        uint indexStart = info.lastClaimIndex;
+        info.lastClaimIndex = rewardSamples.length - 1;
+
+        // sent only if have something
+        if (amount > 0) {
+            IERC20(beets).safeTransfer(msg.sender, amount);
+        }
+
+        // and persist in history
+        emit RewardClaimed(msg.sender, indexStart, rewardSamples.length - 1, amount);
+    }
+
+    function claimable(address _user) public view returns (uint _amount){
+        UserInfo memory info = userInfo[_user];
+        // already claimed last sample
+        if (info.lastClaimIndex == rewardSamples.length - 1 || info.staked == 0) return 0;
+
+        for (uint i=info.lastClaimIndex; i < rewardSamples.length; i++) {
+            SampleInfo memory sample = rewardSamples[i];
+            uint part = sample.totalRewarded.mul(info.staked).div(sample.tvl);
+            _amount = _amount.add(part);
+        }
+
+        return _amount;
+    }
+
+    /// @notice withdraw fBeets and burn sfBeets
+    /// @param _amount sfBeets amount
+    /// @param _force if true do not harvest rewards, just withdraw it now
+    function withdraw(uint _amount, bool _force) external nonReentrant {
+        if (!_force) doClaim();
+
+        // subtract from deposited amount
+        UserInfo storage info = userInfo[msg.sender];
+        if (_amount < info.staked) {
+            info.staked = info.staked.sub(_amount);
+        } else {
+            info.staked = 0;
+        }
+
+        // mint/burn if can do it
+        if (_amount > 0) {
+            IBurnable(sfBeets).burnFrom(msg.sender, _amount);
+            IERC20(fBeets).safeTransferFrom(address(this), msg.sender, _amount);
+
+            // FIXME remove from masterchef
+        }
+
+        // and persist in the history
+        emit StakingWithdraw(msg.sender, _amount, block.number);
+    }
+
+    // FIXME emergency exit pool
 }
