@@ -36,6 +36,7 @@ interface IBeetsMasterChef {
 /// @notice Manager of sfBeets
 /// @author pwntr0n
 /// FIXME add b1 optional zap from beets or ftm
+/// FIXME page size and stack rewards for some time
 contract SfBeetsManager is Ownable, ReentrancyGuard {
 
     using SafeMath for uint;

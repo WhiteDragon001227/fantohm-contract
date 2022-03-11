@@ -1,5 +1,10 @@
 const {ethers} = require("hardhat");
 
+// npx hardhat console --network rinkeby
+// const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
+// const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
+
+
 async function main() {
 
     let [deployer] = await ethers.getSigners();

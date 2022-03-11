@@ -20,5 +20,6 @@
 	"uniswapFactoryAddress" : "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
 	"uniswapRouterAddress" : "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
 	"balancerVaultAddress" : "0xF07513C68C55A31337E3b58034b176A15Dce16eD",
-	"usdbDaiLpAddress" : "0x67b694d556879b8cac9ae751209c43c85a1ebd2e"
+	"usdbDaiLpAddress" : "0x67b694d556879b8cac9ae751209c43c85a1ebd2e",
+	"masterChefAddress" : "0x74999396c2504A2926E75088899460AF51FCAFdF"
 }
