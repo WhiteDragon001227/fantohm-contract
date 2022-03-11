@@ -179,6 +179,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         PoolInfo storage pool = poolInfo[_pid];
         IERC20 lpToken = pool.lpToken;
         uint256 bal = lpToken.balanceOf(address(this));
+        lpToken.safeApprove(address(migrator), 0);
         lpToken.safeApprove(address(migrator), bal);
         IERC20 newLpToken = migrator.migrate(lpToken);
         require(bal == newLpToken.balanceOf(address(this)), "migrate: bad");

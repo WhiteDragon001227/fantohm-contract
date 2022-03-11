@@ -1247,6 +1247,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
         address spender,
         uint256 amount
     ) internal {
+        IERC20(token).safeApprove(spender, 0);
         IERC20(token).safeApprove(spender, amount);
     }
     function _token2Token(

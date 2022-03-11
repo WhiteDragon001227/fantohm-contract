@@ -1074,7 +1074,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     // FIXME change visibility to internal
     function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
+        IERC20(USDB).safeApprove(balancerVault, 0);
         IERC20(USDB).safeApprove(balancerVault, _principleAmount);
+        IERC20(principle).safeApprove(balancerVault, 0);
         IERC20(principle).safeApprove(balancerVault, _principleAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
@@ -1105,6 +1107,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     // FIXME change visibility to internal
     function exitPool(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
+        IERC20(lpToken).safeApprove(balancerVault, 0);
         IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
