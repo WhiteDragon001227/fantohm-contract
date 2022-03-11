@@ -436,6 +436,438 @@ library Counters {
         counter._value = counter._value.sub(1);
     }
 }
+library EnumerableSet {
+
+    // To implement this library for multiple types with as little code
+    // repetition as possible, we write it in terms of a generic Set type with
+    // bytes32 values.
+    // The Set implementation uses private functions, and user-facing
+    // implementations (such as AddressSet) are just wrappers around the
+    // underlying Set.
+    // This means that we can only create new EnumerableSets for types that fit
+    // in bytes32.
+    struct Set {
+        // Storage of set values
+        bytes32[] _values;
+
+        // Position of the value in the `values` array, plus 1 because index 0
+        // means a value is not in the set.
+        mapping (bytes32 => uint256) _indexes;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function _add(Set storage set, bytes32 value) private returns (bool) {
+        if (!_contains(set, value)) {
+            set._values.push(value);
+            // The value is stored at length-1, but we add 1 to all indexes
+            // and use 0 as a sentinel value
+            set._indexes[value] = set._values.length;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function _remove(Set storage set, bytes32 value) private returns (bool) {
+        // We read and store the value's index to prevent multiple reads from the same storage slot
+        uint256 valueIndex = set._indexes[value];
+
+        if (valueIndex != 0) { // Equivalent to contains(set, value)
+            // To delete an element from the _values array in O(1), we swap the element to delete with the last one in
+            // the array, and then remove the last element (sometimes called as 'swap and pop').
+            // This modifies the order of the array, as noted in {at}.
+
+            uint256 toDeleteIndex = valueIndex - 1;
+            uint256 lastIndex = set._values.length - 1;
+
+            // When the value to delete is the last one, the swap operation is unnecessary. However, since this occurs
+            // so rarely, we still do the swap anyway to avoid the gas cost of adding an 'if' statement.
+
+            bytes32 lastvalue = set._values[lastIndex];
+
+            // Move the last value to the index where the value to delete is
+            set._values[toDeleteIndex] = lastvalue;
+            // Update the index for the moved value
+            set._indexes[lastvalue] = toDeleteIndex + 1; // All indexes are 1-based
+
+            // Delete the slot where the moved value was stored
+            set._values.pop();
+
+            // Delete the index for the deleted slot
+            delete set._indexes[value];
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function _contains(Set storage set, bytes32 value) private view returns (bool) {
+        return set._indexes[value] != 0;
+    }
+
+    /**
+     * @dev Returns the number of values on the set. O(1).
+     */
+    function _length(Set storage set) private view returns (uint256) {
+        return set._values.length;
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function _at(Set storage set, uint256 index) private view returns (bytes32) {
+        require(set._values.length > index, "EnumerableSet: index out of bounds");
+        return set._values[index];
+    }
+
+    function _getValues( Set storage set_ ) private view returns ( bytes32[] storage ) {
+        return set_._values;
+    }
+
+    // TODO needs insert function that maintains order.
+    // TODO needs NatSpec documentation comment.
+    /**
+     * Inserts new value by moving existing value at provided index to end of array and setting provided value at provided index
+     */
+    function _insert(Set storage set_, uint256 index_, bytes32 valueToInsert_ ) private returns ( bool ) {
+        require(  set_._values.length > index_ );
+        require( !_contains( set_, valueToInsert_ ), "Remove value you wish to insert if you wish to reorder array." );
+        bytes32 existingValue_ = _at( set_, index_ );
+        set_._values[index_] = valueToInsert_;
+        return _add( set_, existingValue_);
+    }
+
+    struct Bytes4Set {
+        Set _inner;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function add(Bytes4Set storage set, bytes4 value) internal returns (bool) {
+        return _add(set._inner, value);
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function remove(Bytes4Set storage set, bytes4 value) internal returns (bool) {
+        return _remove(set._inner, value);
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function contains(Bytes4Set storage set, bytes4 value) internal view returns (bool) {
+        return _contains(set._inner, value);
+    }
+
+    /**
+     * @dev Returns the number of values on the set. O(1).
+     */
+    function length(Bytes4Set storage set) internal view returns (uint256) {
+        return _length(set._inner);
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function at(Bytes4Set storage set, uint256 index) internal view returns ( bytes4 ) {
+        return bytes4( _at( set._inner, index ) );
+    }
+
+    function getValues( Bytes4Set storage set_ ) internal view returns ( bytes4[] memory ) {
+        bytes4[] memory bytes4Array_;
+        for( uint256 iteration_ = 0; _length( set_._inner ) > iteration_; iteration_++ ) {
+            bytes4Array_[iteration_] = bytes4( _at( set_._inner, iteration_ ) );
+        }
+        return bytes4Array_;
+    }
+
+    function insert( Bytes4Set storage set_, uint256 index_, bytes4 valueToInsert_ ) internal returns ( bool ) {
+        return _insert( set_._inner, index_, valueToInsert_ );
+    }
+
+    struct Bytes32Set {
+        Set _inner;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function add(Bytes32Set storage set, bytes32 value) internal returns (bool) {
+        return _add(set._inner, value);
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function remove(Bytes32Set storage set, bytes32 value) internal returns (bool) {
+        return _remove(set._inner, value);
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function contains(Bytes32Set storage set, bytes32 value) internal view returns (bool) {
+        return _contains(set._inner, value);
+    }
+
+    /**
+     * @dev Returns the number of values on the set. O(1).
+     */
+    function length(Bytes32Set storage set) internal view returns (uint256) {
+        return _length(set._inner);
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function at(Bytes32Set storage set, uint256 index) internal view returns ( bytes32 ) {
+        return _at(set._inner, index);
+    }
+
+    function getValues( Bytes32Set storage set_ ) internal view returns ( bytes4[] memory ) {
+        bytes4[] memory bytes4Array_;
+
+        for( uint256 iteration_ = 0; _length( set_._inner ) >= iteration_; iteration_++ ){
+            bytes4Array_[iteration_] = bytes4( at( set_, iteration_ ) );
+        }
+
+        return bytes4Array_;
+    }
+
+    function insert( Bytes32Set storage set_, uint256 index_, bytes32 valueToInsert_ ) internal returns ( bool ) {
+        return _insert( set_._inner, index_, valueToInsert_ );
+    }
+
+    // AddressSet
+    struct AddressSet {
+        Set _inner;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function add(AddressSet storage set, address value) internal returns (bool) {
+        return _add(set._inner, bytes32(uint256(value)));
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function remove(AddressSet storage set, address value) internal returns (bool) {
+        return _remove(set._inner, bytes32(uint256(value)));
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function contains(AddressSet storage set, address value) internal view returns (bool) {
+        return _contains(set._inner, bytes32(uint256(value)));
+    }
+
+    /**
+     * @dev Returns the number of values in the set. O(1).
+     */
+    function length(AddressSet storage set) internal view returns (uint256) {
+        return _length(set._inner);
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function at(AddressSet storage set, uint256 index) internal view returns (address) {
+        return address(uint256(_at(set._inner, index)));
+    }
+
+    /**
+     * TODO Might require explicit conversion of bytes32[] to address[].
+     *  Might require iteration.
+     */
+    function getValues( AddressSet storage set_ ) internal view returns ( address[] memory ) {
+
+        address[] memory addressArray;
+
+        for( uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++ ){
+            addressArray[iteration_] = at( set_, iteration_ );
+        }
+
+        return addressArray;
+    }
+
+    function insert(AddressSet storage set_, uint256 index_, address valueToInsert_ ) internal returns ( bool ) {
+        return _insert( set_._inner, index_, bytes32(uint256(valueToInsert_)) );
+    }
+
+
+    // UintSet
+
+    struct UintSet {
+        Set _inner;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function add(UintSet storage set, uint256 value) internal returns (bool) {
+        return _add(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function remove(UintSet storage set, uint256 value) internal returns (bool) {
+        return _remove(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function contains(UintSet storage set, uint256 value) internal view returns (bool) {
+        return _contains(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Returns the number of values on the set. O(1).
+     */
+    function length(UintSet storage set) internal view returns (uint256) {
+        return _length(set._inner);
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function at(UintSet storage set, uint256 index) internal view returns (uint256) {
+        return uint256(_at(set._inner, index));
+    }
+
+    struct UInt256Set {
+        Set _inner;
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function add(UInt256Set storage set, uint256 value) internal returns (bool) {
+        return _add(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Removes a value from a set. O(1).
+     *
+     * Returns true if the value was removed from the set, that is if it was
+     * present.
+     */
+    function remove(UInt256Set storage set, uint256 value) internal returns (bool) {
+        return _remove(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function contains(UInt256Set storage set, uint256 value) internal view returns (bool) {
+        return _contains(set._inner, bytes32(value));
+    }
+
+    /**
+     * @dev Returns the number of values on the set. O(1).
+     */
+    function length(UInt256Set storage set) internal view returns (uint256) {
+        return _length(set._inner);
+    }
+
+    /**
+     * @dev Returns the value stored at position `index` in the set. O(1).
+     *
+     * Note that there are no guarantees on the ordering of values inside the
+     * array, and it may change when more values are added or removed.
+     *
+     * Requirements:
+     *
+     * - `index` must be strictly less than {length}.
+     */
+    function at(UInt256Set storage set, uint256 index) internal view returns (uint256) {
+        return uint256(_at(set._inner, index));
+    }
+}
 
 abstract contract ERC20Permit is ERC20, IERC2612Permit {
     using Counters for Counters.Counter;
@@ -489,6 +921,200 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
 
     function nonces(address owner) public view override returns (uint256) {
         return _nonces[owner].current();
+    }
+}
+/*
+ * @dev Provides information about the current execution context, including the
+ * sender of the transaction and its data. While these are generally available
+ * via msg.sender and msg.data, they should not be accessed in such a direct
+ * manner, since when dealing with GSN meta-transactions the account sending and
+ * paying for execution may not be the actual sender (as far as an application
+ * is concerned).
+ *
+ * This contract is only required for intermediate, library-like contracts.
+ */
+ abstract contract Context {
+    function _msgSender() internal view virtual returns (address payable) {
+        return msg.sender;
+    }
+
+    function _msgData() internal view virtual returns (bytes memory) {
+        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
+        return msg.data;
+    }
+}
+abstract contract AccessControl is Context {
+    using EnumerableSet for EnumerableSet.AddressSet;
+    using Address for address;
+
+    struct RoleData {
+        EnumerableSet.AddressSet members;
+        bytes32 adminRole;
+    }
+
+    mapping (bytes32 => RoleData) private _roles;
+
+    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+
+    /**
+     * @dev Emitted when `newAdminRole` is set as ``role``'s admin role, replacing `previousAdminRole`
+     *
+     * `DEFAULT_ADMIN_ROLE` is the starting admin for all roles, despite
+     * {RoleAdminChanged} not being emitted signaling this.
+     *
+     * _Available since v3.1._
+     */
+    event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
+
+    /**
+     * @dev Emitted when `account` is granted `role`.
+     *
+     * `sender` is the account that originated the contract call, an admin role
+     * bearer except when using {_setupRole}.
+     */
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+
+    /**
+     * @dev Emitted when `account` is revoked `role`.
+     *
+     * `sender` is the account that originated the contract call:
+     *   - if using `revokeRole`, it is the admin role bearer
+     *   - if using `renounceRole`, it is the role bearer (i.e. `account`)
+     */
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+
+    /**
+     * @dev Returns `true` if `account` has been granted `role`.
+     */
+    function hasRole(bytes32 role, address account) public view returns (bool) {
+        return _roles[role].members.contains(account);
+    }
+
+    /**
+     * @dev Returns the number of accounts that have `role`. Can be used
+     * together with {getRoleMember} to enumerate all bearers of a role.
+     */
+    function getRoleMemberCount(bytes32 role) public view returns (uint256) {
+        return _roles[role].members.length();
+    }
+
+    /**
+     * @dev Returns one of the accounts that have `role`. `index` must be a
+     * value between 0 and {getRoleMemberCount}, non-inclusive.
+     *
+     * Role bearers are not sorted in any particular way, and their ordering may
+     * change at any point.
+     *
+     * WARNING: When using {getRoleMember} and {getRoleMemberCount}, make sure
+     * you perform all queries on the same block. See the following
+     * https://forum.openzeppelin.com/t/iterating-over-elements-on-enumerableset-in-openzeppelin-contracts/2296[forum post]
+     * for more information.
+     */
+    function getRoleMember(bytes32 role, uint256 index) public view returns (address) {
+        return _roles[role].members.at(index);
+    }
+
+    /**
+     * @dev Returns the admin role that controls `role`. See {grantRole} and
+     * {revokeRole}.
+     *
+     * To change a role's admin, use {_setRoleAdmin}.
+     */
+    function getRoleAdmin(bytes32 role) public view returns (bytes32) {
+        return _roles[role].adminRole;
+    }
+
+    /**
+     * @dev Grants `role` to `account`.
+     *
+     * If `account` had not been already granted `role`, emits a {RoleGranted}
+     * event.
+     *
+     * Requirements:
+     *
+     * - the caller must have ``role``'s admin role.
+     */
+    function grantRole(bytes32 role, address account) public virtual {
+        require(hasRole(_roles[role].adminRole, _msgSender()), "AccessControl: sender must be an admin to grant");
+
+        _grantRole(role, account);
+    }
+
+    /**
+     * @dev Revokes `role` from `account`.
+     *
+     * If `account` had been granted `role`, emits a {RoleRevoked} event.
+     *
+     * Requirements:
+     *
+     * - the caller must have ``role``'s admin role.
+     */
+    function revokeRole(bytes32 role, address account) public virtual {
+        require(hasRole(_roles[role].adminRole, _msgSender()), "AccessControl: sender must be an admin to revoke");
+
+        _revokeRole(role, account);
+    }
+
+    /**
+     * @dev Revokes `role` from the calling account.
+     *
+     * Roles are often managed via {grantRole} and {revokeRole}: this function's
+     * purpose is to provide a mechanism for accounts to lose their privileges
+     * if they are compromised (such as when a trusted device is misplaced).
+     *
+     * If the calling account had been granted `role`, emits a {RoleRevoked}
+     * event.
+     *
+     * Requirements:
+     *
+     * - the caller must be `account`.
+     */
+    function renounceRole(bytes32 role, address account) public virtual {
+        require(account == _msgSender(), "AccessControl: can only renounce roles for self");
+
+        _revokeRole(role, account);
+    }
+
+    /**
+     * @dev Grants `role` to `account`.
+     *
+     * If `account` had not been already granted `role`, emits a {RoleGranted}
+     * event. Note that unlike {grantRole}, this function doesn't perform any
+     * checks on the calling account.
+     *
+     * [WARNING]
+     * ====
+     * This function should only be called from the constructor when setting
+     * up the initial roles for the system.
+     *
+     * Using this function in any other way is effectively circumventing the admin
+     * system imposed by {AccessControl}.
+     * ====
+     */
+    function _setupRole(bytes32 role, address account) internal virtual {
+        _grantRole(role, account);
+    }
+
+    /**
+     * @dev Sets `adminRole` as ``role``'s admin role.
+     *
+     * Emits a {RoleAdminChanged} event.
+     */
+    function _setRoleAdmin(bytes32 role, bytes32 adminRole) internal virtual {
+        emit RoleAdminChanged(role, _roles[role].adminRole, adminRole);
+        _roles[role].adminRole = adminRole;
+    }
+
+    function _grantRole(bytes32 role, address account) private {
+        if (_roles[role].members.add(account)) {
+            emit RoleGranted(role, account, _msgSender());
+        }
+    }
+
+    function _revokeRole(bytes32 role, address account) private {
+        if (_roles[role].members.remove(account)) {
+            emit RoleRevoked(role, account, _msgSender());
+        }
     }
 }
 
@@ -706,120 +1332,48 @@ interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-struct JoinPoolRequest {
-    address[] assets;
-    uint256[] maxAmountsIn;
-    bytes userData;
-    bool fromInternalBalance;
-}
-
-struct ExitPoolRequest {
-    address[] assets;
-    uint256[] minAmountsOut;
-    bytes userData;
-    bool toInternalBalance;
-}
-
-interface IVault {
-
-    /**
-     * @dev Called by users to join a Pool, which transfers tokens from `sender` into the Pool's balance. This will
-     * trigger custom Pool behavior, which will typically grant something in return to `recipient` - often tokenized
-     * Pool shares.
-     *
-     * If the caller is not `sender`, it must be an authorized relayer for them.
-     *
-     * The `assets` and `maxAmountsIn` arrays must have the same length, and each entry indicates the maximum amount
-     * to send for each asset. The amounts to send are decided by the Pool and not the Vault: it just enforces
-     * these maximums.
-     *
-     * If joining a Pool that holds WETH, it is possible to send ETH directly: the Vault will do the wrapping. To enable
-     * this mechanism, the IAsset sentinel value (the zero address) must be passed in the `assets` array instead of the
-     * WETH address. Note that it is not possible to combine ETH and WETH in the same join. Any excess ETH will be sent
-     * back to the caller (not the sender, which is important for relayers).
-     *
-     * `assets` must have the same length and order as the array returned by `getPoolTokens`. This prevents issues when
-     * interacting with Pools that register and deregister tokens frequently. If sending ETH however, the array must be
-     * sorted *before* replacing the WETH address with the ETH sentinel value (the zero address), which means the final
-     * `assets` array might not be sorted. Pools with no registered tokens cannot be joined.
-     *
-     * If `fromInternalBalance` is true, the caller's Internal Balance will be preferred: ERC20 transfers will only
-     * be made for the difference between the requested amount and Internal Balance (if any). Note that ETH cannot be
-     * withdrawn from Internal Balance: attempting to do so will trigger a revert.
-     *
-     * This causes the Vault to call the `IBasePool.onJoinPool` hook on the Pool's contract, where Pools implement
-     * their own custom logic. This typically requires additional information from the user (such as the expected number
-     * of Pool shares). This can be encoded in the `userData` argument, which is ignored by the Vault and passed
-     * directly to the Pool's contract, as is `recipient`.
-     *
-     * Emits a `PoolBalanceChanged` event.
-     */
-    function joinPool(
-        bytes32 poolId,
-        address sender,
-        address recipient,
-        JoinPoolRequest memory request
-    ) external payable;
-
-    /**
-     * @dev Called by users to exit a Pool, which transfers tokens from the Pool's balance to `recipient`. This will
-     * trigger custom Pool behavior, which will typically ask for something in return from `sender` - often tokenized
-     * Pool shares. The amount of tokens that can be withdrawn is limited by the Pool's `cash` balance (see
-     * `getPoolTokenInfo`).
-     *
-     * If the caller is not `sender`, it must be an authorized relayer for them.
-     *
-     * The `tokens` and `minAmountsOut` arrays must have the same length, and each entry in these indicates the minimum
-     * token amount to receive for each token contract. The amounts to send are decided by the Pool and not the Vault:
-     * it just enforces these minimums.
-     *
-     * If exiting a Pool that holds WETH, it is possible to receive ETH directly: the Vault will do the unwrapping. To
-     * enable this mechanism, the IAsset sentinel value (the zero address) must be passed in the `assets` array instead
-     * of the WETH address. Note that it is not possible to combine ETH and WETH in the same exit.
-     *
-     * `assets` must have the same length and order as the array returned by `getPoolTokens`. This prevents issues when
-     * interacting with Pools that register and deregister tokens frequently. If receiving ETH however, the array must
-     * be sorted *before* replacing the WETH address with the ETH sentinel value (the zero address), which means the
-     * final `assets` array might not be sorted. Pools with no registered tokens cannot be exited.
-     *
-     * If `toInternalBalance` is true, the tokens will be deposited to `recipient`'s Internal Balance. Otherwise,
-     * an ERC20 transfer will be performed. Note that ETH cannot be deposited to Internal Balance: attempting to
-     * do so will trigger a revert.
-     *
-     * `minAmountsOut` is the minimum amount of tokens the user expects to get out of the Pool, for each token in the
-     * `tokens` array. This array must match the Pool's registered tokens.
-     *
-     * This causes the Vault to call the `IBasePool.onExitPool` hook on the Pool's contract, where Pools implement
-     * their own custom logic. This typically requires additional information from the user (such as the expected number
-     * of Pool shares to return). This can be encoded in the `userData` argument, which is ignored by the Vault and
-     * passed directly to the Pool's contract.
-     *
-     * Emits a `PoolBalanceChanged` event.
-     */
-    function exitPool(
-        bytes32 poolId,
-        address sender,
-        address payable recipient,
-        ExitPoolRequest memory request
-    ) external;
-
-}
-
-interface IStablePool {
-    function getPoolId() external returns (bytes32);
-}
 interface ITwapOracle {
     function consult(address _pair, address _token, uint _amountIn) external view returns (uint _amountOut);
+}
+
+interface IUniswapV2Router02 {
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 amountADesired,
+        uint256 amountBDesired,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to,
+        uint256 deadline
+    )
+        external
+        returns (
+            uint256 amountA,
+            uint256 amountB,
+            uint256 liquidity
+        );
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+        ) external returns (uint amountA, uint amountB);
 }
 
 
 /// @notice FantOHM PRO 
 /// @dev based on xfhm
-contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
+contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
+
+    bytes32 public constant WHITELIST_CALL_ROLE = keccak256("WHITELIST_CALL_ROLE");
 
     /* ======== EVENTS ======== */
 
@@ -838,13 +1392,18 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
     address public immutable usdbMinter; // receives profit share from bond
     address public immutable XFHM; // XFHM 
 
-    address public immutable balancerVault; // beets vault to add/remove LPs
+    address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public immutable lpToken; // USDB/principle LP token
+    address public immutable bondCalculator; // calculates value of LP tokens
+    uint256 private constant deadline =
+    0xf000000000000000000000000000000000000000000000000000000000000000;
+
 
     address public immutable twapOracle; // lqdr TWAP price
     Terms public terms; // stores terms for new bonds
 
     mapping( address => Bond ) public bondInfo; // stores bond information for depositors
+    mapping( address => uint) public principlelpAmount; //principle amount regarding lp amount;
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
@@ -889,9 +1448,10 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
         address _principle,
         address _treasury,
         address _DAO,
+        address _bondCalculator,
         address _usdbMinter,
         address _twapOracle,
-        address _balancerVault,
+        address _poolRouter,
         address _lpToken,
         address _XFHM
     ) {
@@ -909,14 +1469,17 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
         usdbMinter = _usdbMinter;
         require( _twapOracle != address(0) );
         twapOracle = _twapOracle;
-        require( _balancerVault != address(0) );
-        balancerVault = _balancerVault;
+        require( _poolRouter != address(0) );
+        poolRouter = _poolRouter;
         require( _lpToken != address(0) );
         lpToken = _lpToken;
         require( _XFHM != address(0) );
         XFHM = _XFHM;
+        bondCalculator = _bondCalculator;
         useWhitelist = true;
         whitelist[msg.sender] = true;
+        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _setupRole(WHITELIST_CALL_ROLE, _msgSender());
     }
 
     /**
@@ -986,22 +1549,22 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
 
     /**
      *  @notice deposit bond
+     *  @param _amount uint
      *  @param _maxPrice uint
-     *  @param _xfhmAmount uint
      *  @param _depositor address
      *  @return uint
      */
     function deposit(
+        uint _amount,
         uint _maxPrice,
-        uint _xfhmAmount,
         address _depositor
     ) external nonReentrant returns ( uint ) {
-        uint depositValue = getMarketPrice().mul(_xfhmAmount.mul(33)).div(10 ** 2); //lqdr deposit value($)
-        uint _amount = depositValue.div(getTwapPrice()); //lqdr amount;
-        require( _depositor != address(0), "Invalid address" );
+        // uint depositValue = getMarketPrice().mul(_xfhmAmount.mul(33)).div(10 ** 2); //lqdr deposit value($)
+        // uint _amount = depositValue.div(getTwapPrice()); //lqdr amount;
+        // require( _depositor != address(0), "Invalid address" );
         // allow only whitelisted contracts
         if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
-
+        require(hasRole(WHITELIST_CALL_ROLE, msg.sender), "Must have role to call function" );
         decayDebt();
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
 
@@ -1027,15 +1590,16 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
         // mint USDB with guaranteed discount
-        IMintable(USDB).mint( address(this), _amount);
+        IMintable(USDB).mint( address(this), payout);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable( FHM ).burn( payoutInFhm ) ;
 
         //burn xfhm deposits
-        IBurnable( XFHM ).burn(_xfhmAmount);
-        uint _lpTokenAmount = joinPool(_amount);
-        
+        //IBurnable( XFHM ).burn(_xfhmAmount);
+        (uint _lpTokenAmount, uint _principlelpAmount) = createLP(_amount, payout);
+        //principleAmount after creating LP TOKEN;
+        principlelpAmount[_depositor] = _principlelpAmount;
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
         }
@@ -1055,87 +1619,46 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
         lastBlock: block.number,
         pricePaid: priceInUSD
         });
-
+        uint depositamount = _amount;
         // indexed events are emitted
-        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+       emit BondCreated( depositamount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
 
         return payout;
     }
 
-    /// @notice https://medium.com/coinmonks/sorting-in-solidity-without-comparison-4eb47e04ff0d
-    function insertSort(address[] memory data) internal pure {
-        uint length = data.length;
-        for (uint i = 1; i < length; i++) {
-            address key = data[i];
-            uint j = i - 1;
-            while ((int(j) >= 0) && (data[j] > key)) {
-                data[j + 1] = data[j];
-                j--;
-            }
-            data[j + 1] = key;
-        }
+
+    // FIXME change visibility to internal
+    function createLP(uint _principleAmount, uint _usdbAmount) public returns (uint _lpTokenAmount, uint _principlelpAmount) {
+        IERC20(USDB).safeApprove(poolRouter, _usdbAmount);
+        IERC20(principle).safeApprove(poolRouter, _principleAmount);
+    
+        (, _principlelpAmount, _lpTokenAmount) =
+            IUniswapV2Router02(poolRouter).addLiquidity(
+                USDB,
+                principle,
+                _usdbAmount,
+                _principleAmount,
+                1,
+                1,
+                address(this),
+                deadline
+            );
     }
 
     // FIXME change visibility to internal
-    function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
-        IERC20(USDB).safeApprove(balancerVault, _principleAmount);
-        IERC20(principle).safeApprove(balancerVault, _principleAmount);
+    function removeLP(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
+        IERC20(lpToken).safeApprove(poolRouter, _lpTokensAmount);
 
-        // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
-        address[] memory tokens = new address[](2);
-        tokens[0] = USDB;
-        tokens[1] = principle;
+        (_usdbAmount, _principleAmount) = IUniswapV2Router02(poolRouter).removeLiquidity(
+            USDB,
+            principle,
+            _lpTokensAmount,
+            1,
+            1,
+            address(this),
+            deadline
+        );
 
-        insertSort(tokens);
-        uint[] memory rawAmounts = new uint[](2);
-        rawAmounts[0] = _principleAmount;
-        rawAmounts[1] = _principleAmount;
-
-        bytes memory userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
-
-        JoinPoolRequest memory request = JoinPoolRequest({
-            assets: tokens,
-            maxAmountsIn: rawAmounts,
-            userData: userDataEncoded,
-            fromInternalBalance: false
-        });
-
-        uint tokensBefore = IERC20(lpToken).balanceOf(address(this));
-        IVault(balancerVault).joinPool(IStablePool(lpToken).getPoolId(), address(this), address(this), request);
-        uint tokensAfter = IERC20(lpToken).balanceOf(address(this));
-
-        _lpTokenAmount = tokensAfter.sub(tokensBefore);
-    }
-
-    // FIXME change visibility to internal
-    function exitPool(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
-        IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
-
-        // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
-        address[] memory tokens = new address[](2);
-        tokens[0] = USDB;
-        tokens[1] = principle;
-        insertSort(tokens);
-
-        uint[] memory minAmountsOut = new uint[](2);
-
-        bytes memory userDataEncoded = abi.encode(1 /* EXACT_BPT_IN_FOR_TOKENS_OUT */, _lpTokensAmount);
-
-        ExitPoolRequest memory request = ExitPoolRequest({
-            assets: tokens,
-            minAmountsOut: minAmountsOut,
-            userData: userDataEncoded,
-            toInternalBalance: false
-        });
-
-        uint usdbBefore = IERC20(USDB).balanceOf(address(this));
-        uint principleBefore = IERC20(principle).balanceOf(address(this));
-        IVault(balancerVault).exitPool(IStablePool(lpToken).getPoolId(), address(this), payable(address(this)), request);
-        uint usdbAfter = IERC20(USDB).balanceOf(address(this));
-        uint principleAfter = IERC20(principle).balanceOf(address(this));
-
-        _usdbAmount = usdbAfter.sub(usdbBefore);
-        _principleAmount = principleAfter.sub(principleBefore);
     }
      /**
      *  @notice redeem bond for user
@@ -1147,12 +1670,13 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
         Bond memory info = bondInfo[ _recipient];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
+        require(hasRole(WHITELIST_CALL_ROLE, msg.sender), "Must have role to call function" );
         require ( percentVested >= 10000 , "Wait for end of bond") ;
 
         uint _lpTokenAmount = info.lpTokenAmount;
 
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = exitPool(_lpTokenAmount);
+        (uint _usdbAmount, uint _principleAmount) = removeLP(_lpTokenAmount);
 
         // in case of IL we are paying the rest up to deposit amount
         if (_principleAmount < info.payout) {
@@ -1287,14 +1811,11 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        price_ = getMarketPrice();
-        uint twap = getTwapPrice();
-        uint minimalPrice = twap.sub(twap.mul(terms.discount).div(10**5));
+        uint _originalPrice = getTwapPrice();
+        _originalPrice = _originalPrice.mul( 10 ** 2 );
 
-        // use 0% discount based on market price with safety check from oracle
-        if (price_ < minimalPrice) {
-            price_ = minimalPrice;
-        }
+        uint _discount = _originalPrice.mul(terms.discount).div(10 ** IERC20(principle).decimals());
+        price_ = _originalPrice.sub(_discount);
     }
 
     /**
@@ -1302,7 +1823,7 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
+        price_ = bondPrice().mul( IBondCalculator( bondCalculator ).markdown( principle ) ).div( 100 );
     }
 
     /**
@@ -1364,16 +1885,15 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice calculate amount of FHM available for claim by depositor
+     *  @notice calculate amount of LQDR available for claim by depositor
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
 
-       uint _lpTokenAmount = bondInfo[_depositor].lpTokenAmount;
-        // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
-        uint payout = Math.max(_lpTokenAmount.div(2), bondInfo[_depositor].payout);
+        // return original amount
+        uint payout = Math.max(principlelpAmount[_depositor], bondInfo[_depositor].payout);
 
         if ( percentVested >= 10000) {
             pendingPayout_ = payout;
@@ -1381,7 +1901,17 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard {
             pendingPayout_ = 0;
         }
     }
+    /// @notice grants WhitelistCall role to given _account
+    /// @param _account WhitelistCall contract
+    function grantRoleWhitelistWithdraw(address _account) external {
+        grantRole(WHITELIST_CALL_ROLE, _account);
+    }
 
+    /// @notice revoke WhitelistCall role to given _account
+    /// @param _account WhitelistCall contract
+    function revokeRoleWhitelistWithdraw(address _account) external {
+        revokeRole(WHITELIST_CALL_ROLE, _account);
+    }
     /* ======= AUXILLIARY ======= */
 
     /**
