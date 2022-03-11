@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/presets/ERC20PresetMinterPauser.sol";
 
 /// @notice recipe for staked fBeets in FantOHM's lending pool
 /// @author pwntr0n
-contract sfBeets is ERC20PresetMinterPauser, Ownable {
+contract SfBeets is ERC20PresetMinterPauser, Ownable {
 
     using SafeMath for uint;
     using SafeERC20 for IERC20;

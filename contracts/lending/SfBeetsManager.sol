@@ -33,13 +33,10 @@ interface IBeetsMasterChef {
     ) external;
 }
 
-interface IsfBeets {
-    function setHarvested(uint _amount) external;
-}
-
 /// @notice Manager of sfBeets
 /// @author pwntr0n
-contract LendingManager is Ownable, ReentrancyGuard {
+/// FIXME add b1 optional zap from beets or ftm
+contract SfBeetsManager is Ownable, ReentrancyGuard {
 
     using SafeMath for uint;
     using SafeERC20 for IERC20;
