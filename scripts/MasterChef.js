@@ -6,16 +6,17 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         fhmAddress,
         treasuryAddress,
         masterChefAddress,
     } = require('./networks-rinkeby.json');
 
-    const fhmPerBlock = 10000000;
+    const fhmPerBlock = 1000000;
     const startBlock = 10311730;
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
-    const masterChefV2 = await MasterChefV2.deploy(fhmAddress, treasuryAddress, treasuryAddress, fhmPerBlock, startBlock);
+    const masterChefV2 = await MasterChefV2.deploy(fhmAddress, treasuryAddress, daoAddress, fhmPerBlock, startBlock);
     // const masterChefV2 = await MasterChefV2.attach(masterChefAddress);
     console.log(`Deployed MasterChefV2 to: ${masterChefV2.address}`);
 
