@@ -706,18 +706,8 @@ interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-struct JoinPoolRequest {
-    address[] assets;
-    uint256[] maxAmountsIn;
-    bytes userData;
-    bool fromInternalBalance;
-}
-
-struct ExitPoolRequest {
-    address[] assets;
-    uint256[] minAmountsOut;
-    bytes userData;
-    bool toInternalBalance;
+interface IAsset {
+    // solhint-disable-previous-line no-empty-blocks
 }
 
 interface IVault {
@@ -761,6 +751,13 @@ interface IVault {
         JoinPoolRequest memory request
     ) external payable;
 
+    struct JoinPoolRequest {
+        IAsset[] assets;
+        uint[] maxAmountsIn;
+        bytes userData;
+        bool fromInternalBalance;
+    }
+
     /**
      * @dev Called by users to exit a Pool, which transfers tokens from the Pool's balance to `recipient`. This will
      * trigger custom Pool behavior, which will typically ask for something in return from `sender` - often tokenized
@@ -803,16 +800,33 @@ interface IVault {
         ExitPoolRequest memory request
     ) external;
 
+    struct ExitPoolRequest {
+        IAsset[] assets;
+        uint[] minAmountsOut;
+        bytes userData;
+        bool toInternalBalance;
+    }
+
+    function getPoolTokens(bytes32 poolId) external view returns (
+        IERC20[] calldata tokens,
+        uint[] calldata balances,
+        uint lastChangeBlock
+    );
 }
 
 interface IStablePool {
-    function getPoolId() external returns (bytes32);
+    function getPoolId() external view returns (bytes32);
 }
+
 interface IMasterChef {
     function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint);
+
     function deposit(uint _pid, uint _amount, address _claimable) external;
+
     function withdraw(uint _pid, uint _amount, address _claimable) external;
+
     function harvest(uint _pid, address _to) external;
+
     function userInfo(uint _pid, address _user) external view returns (uint, uint);
 }
 
@@ -827,10 +841,10 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payout, uint remaining );
+    event BondCreated(uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payout, uint remaining);
 
-
+    uint internal constant max = type(uint).max;
 
 
     /* ======== STATE VARIABLES ======== */
@@ -842,13 +856,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
     address public immutable masterChef; // MasterChef
-    
+
     address public immutable balancerVault; // beets vault to add/remove LPs
     address public immutable lpToken; // USDB/principle LP token
 
     Terms public terms; // stores terms for new bonds
 
-    mapping( address => Bond ) public bondInfo; // stores bond information for depositors
+    mapping(address => Bond) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
@@ -897,26 +911,30 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         address _lpToken,
         address _masterChef
     ) {
-        require( _FHM != address(0) );
+        require(_FHM != address(0));
         FHM = _FHM;
-        require( _USDB != address(0) );
+        require(_USDB != address(0));
         USDB = _USDB;
-        require( _principle != address(0) );
+        require(_principle != address(0));
         principle = _principle;
-        require( _treasury != address(0) );
+        require(_treasury != address(0));
         treasury = _treasury;
-        require( _DAO != address(0) );
+        require(_DAO != address(0));
         DAO = _DAO;
-        require( _usdbMinter != address(0) );
+        require(_usdbMinter != address(0));
         usdbMinter = _usdbMinter;
-        require( _balancerVault != address(0) );
+        require(_balancerVault != address(0));
         balancerVault = _balancerVault;
-        require( _lpToken != address(0) );
+        require(_lpToken != address(0));
         lpToken = _lpToken;
-        require( _masterChef != address(0) );
+        require(_masterChef != address(0));
         masterChef = _masterChef;
         useWhitelist = true;
         whitelist[msg.sender] = true;
+
+        IERC20(_principle).approve(_balancerVault, max);
+        IERC20(_USDB).approve(_balancerVault, max);
+        IERC20(_lpToken).approve(_masterChef, max);
     }
 
     /**
@@ -942,13 +960,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         bool _useWhitelist,
         bool _useCircuitBreaker
     ) external onlyPolicy() {
-        terms = Terms ({
-        vestingTerm: _vestingTerm,
-        discount: _discount,
-        maxPayout: _maxPayout,
-        fee: _fee,
-        maxDebt: _maxDebt,
-        soldBondsLimitUsd: _soldBondsLimitUsd
+        terms = Terms({
+        vestingTerm : _vestingTerm,
+        discount : _discount,
+        maxPayout : _maxPayout,
+        fee : _fee,
+        maxDebt : _maxDebt,
+        soldBondsLimitUsd : _soldBondsLimitUsd
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
@@ -961,23 +979,23 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT }
+    enum PARAMETER {VESTING, PAYOUT, FEE, DEBT}
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
      *  @param _input uint
      */
-    function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
-        if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
+    function setBondTerms(PARAMETER _parameter, uint _input) external onlyPolicy() {
+        if (_parameter == PARAMETER.VESTING) {// 0
+            require(_input >= 10000, "Vesting must be longer than 10000 blocks");
             terms.vestingTerm = _input;
-        } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
-            require( _input <= 1000, "Payout cannot be above 1 percent" );
+        } else if (_parameter == PARAMETER.PAYOUT) {// 1
+            require(_input <= 1000, "Payout cannot be above 1 percent");
             terms.maxPayout = _input;
-        } else if ( _parameter == PARAMETER.FEE ) { // 2
-            require( _input <= 10000, "DAO fee cannot exceed payout" );
+        } else if (_parameter == PARAMETER.FEE) {// 2
+            require(_input <= 10000, "DAO fee cannot exceed payout");
             terms.fee = _input;
-        } else if ( _parameter == PARAMETER.DEBT ) { // 3
+        } else if (_parameter == PARAMETER.DEBT) {// 3
             terms.maxDebt = _input;
         }
     }
@@ -995,107 +1013,101 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         uint _amount,
         uint _maxPrice,
         address _depositor
-    ) external nonReentrant returns ( uint ) {
-        require( _depositor != address(0), "Invalid address" );
+    ) external nonReentrant returns (uint) {
+        require(_depositor != address(0), "Invalid address");
         // allow only whitelisted contracts
         if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
 
         decayDebt();
-        require( totalDebt <= terms.maxDebt, "Max capacity reached" );
+        require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
-        uint priceInUSD = bondPriceInUSD(); // Stored in bond info
+        uint priceInUSD = bondPriceInUSD();
+        // Stored in bond info
         uint nativePrice = bondPrice();
 
-        require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
+        require(_maxPrice >= nativePrice, "Slippage limit: more than max price");
+        // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
-        uint payout = payoutFor( value ); // payout to bonder is computed
+        uint value = ITreasury(treasury).valueOf(principle, _amount).mul(10 ** 9);
+        uint payout = payoutFor(value);
+        // payout to bonder is computed
 
-        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 DAI ( underflow protection )
-        require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
-        require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
+        require(payout >= 10_000_000_000_000_000, "Bond too small");
+        // must be > 0.01 DAI ( underflow protection )
+        require(payout <= maxPayout(), "Bond too large");
+        // size protection because there is no slippage
+        require(!circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE");
+        //
 
         uint payoutInFhm = payoutInFhmFor(payout);
 
         // profits are calculated
-        uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
+        uint fee = payoutInFhm.mul(terms.fee).div(10000);
 
-        IERC20( principle ).safeTransferFrom( msg.sender, address( this ), _amount );
+        IERC20(principle).safeTransferFrom(msg.sender, address(this), _amount);
 
-        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
+        ITreasury(treasury).mintRewards(address(this), payoutInFhm.add(fee));
 
         // mint USDB with guaranteed discount
-        IMintable(USDB).mint( address(this), _amount);
+        IMintable(USDB).mint(address(this), _amount);
 
         // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burn( payoutInFhm ) ;
+        IBurnable(FHM).burn(payoutInFhm);
 
         uint _lpTokenAmount = joinPool(_amount);
         uint poolId = IMasterChef(masterChef).getPoolIdForLpToken(IERC20(lpToken));
         IMasterChef(masterChef).deposit(poolId, _lpTokenAmount, msg.sender);
 
-        if ( fee != 0 ) { // fee is transferred to dao
-            IERC20( FHM ).safeTransfer( DAO, fee );
+        if (fee != 0) {// fee is transferred to dao
+            IERC20(FHM).safeTransfer(DAO, fee);
         }
 
         // total debt is increased
-        totalDebt = totalDebt.add( value );
+        totalDebt = totalDebt.add(value);
 
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(_amount);
 
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-        payout: bondInfo[_depositor].payout.add(_amount),
-        vesting: terms.vestingTerm,
-        lastBlock: block.number,
-        pricePaid: priceInUSD
+        payout : bondInfo[_depositor].payout.add(_amount),
+        vesting : terms.vestingTerm,
+        lastBlock : block.number,
+        pricePaid : priceInUSD
         });
 
         // indexed events are emitted
-        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondCreated(_amount, payout, block.number.add(terms.vestingTerm), priceInUSD);
 
         return payout;
     }
 
-    /// @notice https://medium.com/coinmonks/sorting-in-solidity-without-comparison-4eb47e04ff0d
-    function insertSort(address[] memory data) internal pure {
-        uint length = data.length;
-        for (uint i = 1; i < length; i++) {
-            address key = data[i];
-            uint j = i - 1;
-            while ((int(j) >= 0) && (data[j] > key)) {
-                data[j + 1] = data[j];
-                j--;
-            }
-            data[j + 1] = key;
+    /**
+     * @dev This helper function is a fast and cheap way to convert between IERC20[] and IAsset[] types
+     */
+    function _convertERC20sToAssets(IERC20[] memory tokens) internal pure returns (IAsset[] memory assets) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            assets := tokens
         }
     }
 
-    // FIXME change visibility to internal
-    function joinPool(uint _principleAmount) public returns (uint _lpTokenAmount) {
-        IERC20(USDB).safeApprove(balancerVault, 0);
-        IERC20(USDB).safeApprove(balancerVault, _principleAmount);
-        IERC20(principle).safeApprove(balancerVault, 0);
-        IERC20(principle).safeApprove(balancerVault, _principleAmount);
-
+    function joinPool(uint _principleAmount) private returns (uint _lpTokenAmount) {
         // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
-        address[] memory tokens = new address[](2);
-        tokens[0] = USDB;
-        tokens[1] = principle;
+        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/master/pkg/balancer-js/src/pool-stable/encoder.ts
+        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
 
-        insertSort(tokens);
         uint[] memory rawAmounts = new uint[](2);
         rawAmounts[0] = _principleAmount;
         rawAmounts[1] = _principleAmount;
 
         bytes memory userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
 
-        JoinPoolRequest memory request = JoinPoolRequest({
-            assets: tokens,
-            maxAmountsIn: rawAmounts,
-            userData: userDataEncoded,
-            fromInternalBalance: false
+        IVault.JoinPoolRequest memory request = IVault.JoinPoolRequest({
+        assets : _convertERC20sToAssets(tokens),
+        maxAmountsIn : rawAmounts,
+        userData : userDataEncoded,
+        fromInternalBalance : false
         });
 
         uint tokensBefore = IERC20(lpToken).balanceOf(address(this));
@@ -1105,26 +1117,19 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _lpTokenAmount = tokensAfter.sub(tokensBefore);
     }
 
-    // FIXME change visibility to internal
-    function exitPool(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
-        IERC20(lpToken).safeApprove(balancerVault, 0);
-        IERC20(lpToken).safeApprove(balancerVault, _lpTokensAmount);
+    function exitPool(uint _lpTokensAmount) private returns (uint _usdbAmount, uint _principleAmount) {
+        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
-        address[] memory tokens = new address[](2);
-        tokens[0] = USDB;
-        tokens[1] = principle;
-        insertSort(tokens);
-
         uint[] memory minAmountsOut = new uint[](2);
 
         bytes memory userDataEncoded = abi.encode(1 /* EXACT_BPT_IN_FOR_TOKENS_OUT */, _lpTokensAmount);
 
-        ExitPoolRequest memory request = ExitPoolRequest({
-            assets: tokens,
-            minAmountsOut: minAmountsOut,
-            userData: userDataEncoded,
-            toInternalBalance: false
+        IVault.ExitPoolRequest memory request = IVault.ExitPoolRequest({
+        assets : _convertERC20sToAssets(tokens),
+        minAmountsOut : minAmountsOut,
+        userData : userDataEncoded,
+        toInternalBalance : false
         });
 
         uint usdbBefore = IERC20(USDB).balanceOf(address(this));
@@ -1136,17 +1141,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _usdbAmount = usdbAfter.sub(usdbBefore);
         _principleAmount = principleAfter.sub(principleBefore);
     }
-     /**
-     *  @notice redeem bond for user
+    /**
+    *  @notice redeem bond for user
      *  @param _recipient address
      *  @param _stake bool
      *  @return uint
      */
-    function redeem(address _recipient, bool _stake) external nonReentrant returns ( uint ) {
-        Bond memory info = bondInfo[ _recipient];
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+    function redeem(address _recipient, bool _stake) external nonReentrant returns (uint) {
+        Bond memory info = bondInfo[_recipient];
+        uint percentVested = percentVestedFor(_recipient);
+        // (blocks since last interaction / vesting term remaining)
 
-        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require(percentVested >= 10000, "Wait for end of bond");
 
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
@@ -1163,11 +1169,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             ITreasury(treasury).mintRewards(_recipient, fhmAmount);
         }
 
-        delete bondInfo[ _recipient ]; // delete user info
-        emit BondRedeemed( _recipient, _principleAmount, 0 ); // emit bond data
+        delete bondInfo[_recipient];
+        // delete user info
+        emit BondRedeemed(_recipient, _principleAmount, 0);
+        // emit bond data
 
         IBurnable(USDB).burn(_usdbAmount);
-        IERC20( principle ).transfer( _recipient, _principleAmount);
+        IERC20(principle).transfer(_recipient, _principleAmount);
 
         return _principleAmount;
     }
@@ -1188,9 +1196,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         uint length = soldBondsInHour.length;
         if (length == 0) {
             soldBondsInHour.push(SoldBonds({
-            timestampFrom: block.timestamp,
-            timestampTo: block.timestamp + 1 hours,
-            payoutInUsd: _payout
+            timestampFrom : block.timestamp,
+            timestampTo : block.timestamp + 1 hours,
+            payoutInUsd : _payout
             }));
             return;
         }
@@ -1204,15 +1212,15 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             uint nextTo = soldBonds.timestampTo + 1 hours;
             if (block.timestamp <= nextTo) {
                 soldBondsInHour.push(SoldBonds({
-                timestampFrom: soldBonds.timestampTo,
-                timestampTo: nextTo,
-                payoutInUsd: _payout
+                timestampFrom : soldBonds.timestampTo,
+                timestampTo : nextTo,
+                payoutInUsd : _payout
                 }));
             } else {
                 soldBondsInHour.push(SoldBonds({
-                timestampFrom: block.timestamp,
-                timestampTo: block.timestamp + 1 hours,
-                payoutInUsd: _payout
+                timestampFrom : block.timestamp,
+                timestampTo : block.timestamp + 1 hours,
+                payoutInUsd : _payout
                 }));
             }
         }
@@ -1250,7 +1258,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice reduce total debt
      */
     function decayDebt() internal {
-        totalDebt = totalDebt.sub( debtDecay() );
+        totalDebt = totalDebt.sub(debtDecay());
         lastDecay = block.number;
     }
 
@@ -1263,8 +1271,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice determine maximum bond size
      *  @return uint
      */
-    function maxPayout() public view returns ( uint ) {
-        return IERC20(USDB).totalSupply().mul( terms.maxPayout ).div( 100000 );
+    function maxPayout() public view returns (uint) {
+        return IERC20(USDB).totalSupply().mul(terms.maxPayout).div(100000);
     }
 
     /**
@@ -1272,12 +1280,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @param _value uint
      *  @return uint
      */
-    function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+    function payoutFor(uint _value) public view returns (uint) {
+        return FixedPoint.fraction(_value, bondPrice()).decode112with18().div(1e16);
     }
 
-    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
-        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
+        return FixedPoint.fraction(_usdbValue, getMarketPrice()).decode112with18().div(1e16).div(1e9);
     }
 
 
@@ -1285,9 +1293,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
-    function bondPrice() public view returns ( uint price_ ) {
+    function bondPrice() public view returns (uint price_) {
         uint _originalPrice = 1;
-        _originalPrice = _originalPrice.mul( 10 ** 2 );
+        _originalPrice = _originalPrice.mul(10 ** 2);
 
         uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
         price_ = _originalPrice.sub(_discount);
@@ -1297,27 +1305,27 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice converts bond price to DAI value
      *  @return price_ uint
      */
-    function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
+    function bondPriceInUSD() public view returns (uint price_) {
+        price_ = bondPrice().mul(10 ** IERC20(principle).decimals()).div(10 ** 2);
     }
 
     /**
      *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
      */
-    function debtRatio() public view returns ( uint debtRatio_ ) {
+    function debtRatio() public view returns (uint debtRatio_) {
         uint supply = IERC20(USDB).totalSupply();
         debtRatio_ = FixedPoint.fraction(
-            currentDebt().mul( 1e9 ),
+            currentDebt().mul(1e9),
             supply
-        ).decode112with18().div( 1e18 );
+        ).decode112with18().div(1e18);
     }
 
     /**
      *  @notice debt ratio in same terms for reserve or liquidity bonds
      *  @return uint
      */
-    function standardizedDebtRatio() external view returns ( uint ) {
+    function standardizedDebtRatio() external view returns (uint) {
         return debtRatio();
     }
 
@@ -1325,18 +1333,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice calculate debt factoring in decay
      *  @return uint
      */
-    function currentDebt() public view returns ( uint ) {
-        return totalDebt.sub( debtDecay() );
+    function currentDebt() public view returns (uint) {
+        return totalDebt.sub(debtDecay());
     }
 
     /**
      *  @notice amount to decay total debt by
      *  @return decay_ uint
      */
-    function debtDecay() public view returns ( uint decay_ ) {
-        uint blocksSinceLast = block.number.sub( lastDecay );
-        decay_ = totalDebt.mul( blocksSinceLast ).div( terms.vestingTerm );
-        if ( decay_ > totalDebt ) {
+    function debtDecay() public view returns (uint decay_) {
+        uint blocksSinceLast = block.number.sub(lastDecay);
+        decay_ = totalDebt.mul(blocksSinceLast).div(terms.vestingTerm);
+        if (decay_ > totalDebt) {
             decay_ = totalDebt;
         }
     }
@@ -1347,13 +1355,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @param _depositor address
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
+    function percentVestedFor(address _depositor) public view returns (uint percentVested_) {
         Bond memory bond = bondInfo[_depositor];
-        uint blocksSinceLast = block.number.sub( bond.lastBlock );
+        uint blocksSinceLast = block.number.sub(bond.lastBlock);
         uint vesting = bond.vesting;
 
-        if ( vesting > 0 ) {
-            percentVested_ = blocksSinceLast.mul( 10000 ).div( vesting );
+        if (vesting > 0) {
+            percentVested_ = blocksSinceLast.mul(10000).div(vesting);
         } else {
             percentVested_ = 0;
         }
@@ -1364,22 +1372,47 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor );
-
-        IMasterChef _masterChef = IMasterChef(masterChef);
-        uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
-        (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _depositor);
+    function pendingPayoutFor(address _depositor) external view returns (uint pendingPayout_) {
+        uint percentVested = percentVestedFor(_depositor);
+        uint actualPayout = balanceOfPooled(_depositor);
 
         // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
-        uint payout = Math.max(lpTokenAmount.div(2), bondInfo[_depositor].payout);
+        uint payout = Math.max(actualPayout, bondInfo[_depositor].payout);
 
-        if ( percentVested >= 10000) {
+        if (percentVested >= 10000) {
             pendingPayout_ = payout;
         } else {
             pendingPayout_ = 0;
         }
     }
+
+    function getStakedTokens(address _depositor) public view returns (uint lpTokenAmount) {
+        IMasterChef _masterChef = IMasterChef(masterChef);
+        uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
+        (lpTokenAmount,) = _masterChef.userInfo(poolId, _depositor);
+    }
+
+    function getPoolTokens() public view returns (IERC20[] memory tokens, uint[] memory totalBalances) {
+        (tokens, totalBalances,) = IVault(balancerVault).getPoolTokens(IStablePool(lpToken).getPoolId());
+    }
+
+    /// @notice computes actual allocation inside LP token from your position
+    /// @param _depositor user
+    /// @return payout_ in principle
+    function balanceOfPooled(address _depositor) public view returns (uint payout_) {
+        (uint lpTokenAmount) = getStakedTokens(_depositor);
+
+        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
+        for (uint i = 0; i < 2; i++) {
+            IERC20 token = tokens[i];
+            if (address(token) == principle) {
+                return totalBalances[i].mul(lpTokenAmount).div(IERC20(lpToken).totalSupply());
+            }
+        }
+
+        return 0;
+    }
+
 
     /* ======= AUXILLIARY ======= */
 
@@ -1387,11 +1420,11 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @notice allow anyone to send lost tokens (excluding principle or FHM) to the DAO
      *  @return bool
      */
-    function recoverLostToken( address _token ) external returns ( bool ) {
-        require( _token != FHM );
-        require( _token != USDB);
-        require( _token != principle );
-        IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
+    function recoverLostToken(address _token) external returns (bool) {
+        require(_token != FHM);
+        require(_token != USDB);
+        require(_token != principle);
+        IERC20(_token).safeTransfer(DAO, IERC20(_token).balanceOf(address(this)));
         return true;
     }
 }

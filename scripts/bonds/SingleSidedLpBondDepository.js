@@ -6,6 +6,7 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
         fhmAddress,
@@ -16,9 +17,6 @@ async function main() {
         usdbDaiLpAddress,
         masterChefAddress
     } = require('../networks-rinkeby.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
 
     // Reserve addresses
     const reserve =
@@ -62,9 +60,8 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-
+    // const bond = await Bond.attach( "0xaC1A9E0c70a7f187980ee5A8072ef6e0Aec9C472" );
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress, masterChefAddress);
-    // const bond = await Bond.attach( "0x88e242702430E47D82c3583f27ebbe551aBF44ca" );
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -91,7 +88,12 @@ async function main() {
     await usdbToken.grantRoleMinter(bond.address);
     console.log(`grant minter of USDB to ${bond.address}`);
 
-    await bond.deposit('1000000000000000000000', '100', deployer.address);
+    const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
+    const masterChefV2 = await MasterChefV2.attach(masterChefAddress);
+    await masterChefV2.grantRoleWhitelistWithdraw(bond.address);
+    console.log(`grant WhitelistWithdraw of MasterChefV2 to ${bond.address}`);
+
+    await bond.deposit('1000000000000000000', '100', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE
