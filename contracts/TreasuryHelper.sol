@@ -31,7 +31,7 @@ contract TreasuryHelper is Ownable, AccessControl {
      */
     function setTreasuryValue(uint _treasuryValue) external  {
         require(hasRole(ADMIN_ROLE, msg.sender), "Must have a admin role");
-        treasuryValue = _treasuryValue.mul(10 ** 18);
+        treasuryValue = _treasuryValue;
     }
     function bookValue() external view returns(uint){
         return treasuryValue.div(IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply());

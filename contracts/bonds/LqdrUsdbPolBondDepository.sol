@@ -1307,11 +1307,6 @@ interface ITreasury {
     function mintRewards( address _recipient, uint _amount ) external;
 }
 
-interface IBondCalculator {
-    function valuation( address _LP, uint _amount ) external view returns ( uint );
-    function markdown( address _LP ) external view returns ( uint );
-}
-
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
 }
@@ -1401,7 +1396,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public lpToken; // USDB/principle LP token
-    address public immutable bondCalculator; // calculates value of LP tokens
     uint256 private constant deadline =
     0xf000000000000000000000000000000000000000000000000000000000000000;
 
@@ -1458,7 +1452,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         address _principle,
         address _treasury,
         address _DAO,
-        address _bondCalculator,
         address _usdbMinter,
         address _poolRouter,
         address _lpToken,
@@ -1485,7 +1478,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         XFHM = _XFHM;
         require( _treasuryHelper != address(0) );
         treasuryHelper = _treasuryHelper;
-        bondCalculator = _bondCalculator;
         useWhitelist = true;
         boostFactor = 100;
         whitelist[msg.sender] = true;
@@ -1579,14 +1571,14 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
 
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
-        uint nativePrice = bondPrice();
+        uint nativePrice = getMarketPrice();
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount );
+        uint value = _amount.mul( 10 ** IERC20( FHM ).decimals() ).div( 10 ** IERC20( principle ).decimals() );
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        uint _xfhmAmount = value.mul(boostFactor).div(ITreasuryHelper(treasuryHelper).bookValue()).div(10 ** 1).div(33); // lqdur amount = 3.3 * balanceof (xfhm) * boostfactor * bookvalue(fhm)
+        uint _xfhmAmount = value.mul(10 ** 1).div(33).div(ITreasuryHelper(treasuryHelper).bookValue()).mul(10000).div(boostFactor); // lqdur amount = 3.3 * balanceof (xfhm) * boostfactor * bookvalue(fhm)
         require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 DAI ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
@@ -1815,7 +1807,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @return uint
      */
     function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+        return FixedPoint.fraction( _value, getMarketPrice() ).decode112with18().div( 1e16 );
     }
 
     function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
@@ -1824,20 +1816,11 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
 
     /**
-     *  @notice lqdr market price
-     *  @return price_ uint
-     */
-    function bondPrice() public view returns ( uint price_ ) {
-        uint _price = getMarketPrice(); //lqdr market price
-        
-    }
-
-    /**
      *  @notice converts bond price to DAI value
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().div( 100 );
+        price_ = getMarketPrice().div( 100 );
     }
 
     /**
