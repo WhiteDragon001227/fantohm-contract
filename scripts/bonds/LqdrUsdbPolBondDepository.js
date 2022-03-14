@@ -6,6 +6,7 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         lqdrAddress,
         fhmAddress,
@@ -18,8 +19,6 @@ async function main() {
         treasuryHelperAddress,
     } = require('../networks-rinkeby.json');
 
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
 
     // Reserve addresses
     const reserve =

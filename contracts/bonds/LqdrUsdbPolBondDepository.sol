@@ -8,7 +8,7 @@ interface IOwnable {
 
     function renounceManagement() external;
 
-    function pushManagement( address newOwner_ ) external;
+    function pushManagement(address newOwner_) external;
 
     function pullManagement() external;
 }
@@ -23,7 +23,7 @@ contract Ownable is IOwnable {
 
     constructor () {
         _owner = msg.sender;
-        emit OwnershipPushed( address(0), _owner );
+        emit OwnershipPushed(address(0), _owner);
     }
 
     function policy() public view override returns (address) {
@@ -31,24 +31,24 @@ contract Ownable is IOwnable {
     }
 
     modifier onlyPolicy() {
-        require( _owner == msg.sender, "Ownable: caller is not the owner" );
+        require(_owner == msg.sender, "Ownable: caller is not the owner");
         _;
     }
 
     function renounceManagement() public virtual override onlyPolicy() {
-        emit OwnershipPushed( _owner, address(0) );
+        emit OwnershipPushed(_owner, address(0));
         _owner = address(0);
     }
 
-    function pushManagement( address newOwner_ ) public virtual override onlyPolicy() {
-        require( newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed( _owner, newOwner_ );
+    function pushManagement(address newOwner_) public virtual override onlyPolicy() {
+        require(newOwner_ != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipPushed(_owner, newOwner_);
         _newOwner = newOwner_;
     }
 
     function pullManagement() public virtual override {
-        require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled( _owner, _newOwner );
+        require(msg.sender == _newOwner, "Ownable: must be new owner to pull");
+        emit OwnershipPulled(_owner, _newOwner);
         _owner = _newOwner;
     }
 }
@@ -135,10 +135,10 @@ library SafeMath {
     function sqrrt(uint256 a) internal pure returns (uint c) {
         if (a > 3) {
             c = a;
-            uint b = add( div( a, 2), 1 );
+            uint b = add(div(a, 2), 1);
             while (b < c) {
                 c = b;
-                b = div( add( div( a, b ), b), 2 );
+                b = div(add(div(a, b), b), 2);
             }
         } else if (a != 0) {
             c = 1;
@@ -152,7 +152,7 @@ library Address {
 
         uint256 size;
         // solhint-disable-next-line no-inline-assembly
-        assembly { size := extcodesize(account) }
+        assembly {size := extcodesize(account)}
         return size > 0;
     }
 
@@ -160,7 +160,7 @@ library Address {
         require(address(this).balance >= amount, "Address: insufficient balance");
 
         // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
-        (bool success, ) = recipient.call{ value: amount }("");
+        (bool success,) = recipient.call{value : amount}("");
         require(success, "Address: unable to send value, recipient may have reverted");
     }
 
@@ -181,7 +181,7 @@ library Address {
         require(isContract(target), "Address: call to non-contract");
 
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: value }(data);
+        (bool success, bytes memory returndata) = target.call{value : value}(data);
         return _verifyCallResult(success, returndata, errorMessage);
     }
 
@@ -189,7 +189,7 @@ library Address {
         require(isContract(target), "Address: call to non-contract");
 
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: weiValue }(data);
+        (bool success, bytes memory returndata) = target.call{value : weiValue}(data);
         if (success) {
             return returndata;
         } else {
@@ -232,7 +232,7 @@ library Address {
         return _verifyCallResult(success, returndata, errorMessage);
     }
 
-    function _verifyCallResult(bool success, bytes memory returndata, string memory errorMessage) private pure returns(bytes memory) {
+    function _verifyCallResult(bool success, bytes memory returndata, string memory errorMessage) private pure returns (bytes memory) {
         if (success) {
             return returndata;
         } else {
@@ -248,7 +248,7 @@ library Address {
         }
     }
 
-    function addressToString(address _address) internal pure returns(string memory) {
+    function addressToString(address _address) internal pure returns (string memory) {
         bytes32 _bytes = bytes32(uint256(_address));
         bytes memory HEX = "0123456789abcdef";
         bytes memory _addr = new bytes(42);
@@ -256,9 +256,9 @@ library Address {
         _addr[0] = '0';
         _addr[1] = 'x';
 
-        for(uint256 i = 0; i < 20; i++) {
-            _addr[2+i*2] = HEX[uint8(_bytes[i + 12] >> 4)];
-            _addr[3+i*2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
+        for (uint256 i = 0; i < 20; i++) {
+            _addr[2 + i * 2] = HEX[uint8(_bytes[i + 12] >> 4)];
+            _addr[3 + i * 2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
         }
 
         return string(_addr);
@@ -291,11 +291,11 @@ abstract contract ERC20 is IERC20 {
     using SafeMath for uint256;
 
     // TODO comment actual hash value.
-    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
+    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256("ERC20Token");
 
-    mapping (address => uint256) internal _balances;
+    mapping(address => uint256) internal _balances;
 
-    mapping (address => mapping (address => uint256)) internal _allowances;
+    mapping(address => mapping(address => uint256)) internal _allowances;
 
     uint256 internal _totalSupply;
 
@@ -374,10 +374,10 @@ abstract contract ERC20 is IERC20 {
 
     function _mint(address account_, uint256 ammount_) internal virtual {
         require(account_ != address(0), "ERC20: mint to the zero address");
-        _beforeTokenTransfer(address( this ), account_, ammount_);
+        _beforeTokenTransfer(address(this), account_, ammount_);
         _totalSupply = _totalSupply.add(ammount_);
         _balances[account_] = _balances[account_].add(ammount_);
-        emit Transfer(address( this ), account_, ammount_);
+        emit Transfer(address(this), account_, ammount_);
     }
 
     function _burn(address account, uint256 amount) internal virtual {
@@ -398,7 +398,7 @@ abstract contract ERC20 is IERC20 {
         emit Approval(owner, spender, amount);
     }
 
-    function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
+    function _beforeTokenTransfer(address from_, address to_, uint256 amount_) internal virtual {}
 }
 
 interface IERC2612Permit {
@@ -436,6 +436,7 @@ library Counters {
         counter._value = counter._value.sub(1);
     }
 }
+
 library EnumerableSet {
 
     // To implement this library for multiple types with as little code
@@ -452,7 +453,7 @@ library EnumerableSet {
 
         // Position of the value in the `values` array, plus 1 because index 0
         // means a value is not in the set.
-        mapping (bytes32 => uint256) _indexes;
+        mapping(bytes32 => uint256) _indexes;
     }
 
     /**
@@ -483,7 +484,7 @@ library EnumerableSet {
         // We read and store the value's index to prevent multiple reads from the same storage slot
         uint256 valueIndex = set._indexes[value];
 
-        if (valueIndex != 0) { // Equivalent to contains(set, value)
+        if (valueIndex != 0) {// Equivalent to contains(set, value)
             // To delete an element from the _values array in O(1), we swap the element to delete with the last one in
             // the array, and then remove the last element (sometimes called as 'swap and pop').
             // This modifies the order of the array, as noted in {at}.
@@ -499,7 +500,8 @@ library EnumerableSet {
             // Move the last value to the index where the value to delete is
             set._values[toDeleteIndex] = lastvalue;
             // Update the index for the moved value
-            set._indexes[lastvalue] = toDeleteIndex + 1; // All indexes are 1-based
+            set._indexes[lastvalue] = toDeleteIndex + 1;
+            // All indexes are 1-based
 
             // Delete the slot where the moved value was stored
             set._values.pop();
@@ -542,7 +544,7 @@ library EnumerableSet {
         return set._values[index];
     }
 
-    function _getValues( Set storage set_ ) private view returns ( bytes32[] storage ) {
+    function _getValues(Set storage set_) private view returns (bytes32[] storage) {
         return set_._values;
     }
 
@@ -551,12 +553,12 @@ library EnumerableSet {
     /**
      * Inserts new value by moving existing value at provided index to end of array and setting provided value at provided index
      */
-    function _insert(Set storage set_, uint256 index_, bytes32 valueToInsert_ ) private returns ( bool ) {
-        require(  set_._values.length > index_ );
-        require( !_contains( set_, valueToInsert_ ), "Remove value you wish to insert if you wish to reorder array." );
-        bytes32 existingValue_ = _at( set_, index_ );
+    function _insert(Set storage set_, uint256 index_, bytes32 valueToInsert_) private returns (bool) {
+        require(set_._values.length > index_);
+        require(!_contains(set_, valueToInsert_), "Remove value you wish to insert if you wish to reorder array.");
+        bytes32 existingValue_ = _at(set_, index_);
         set_._values[index_] = valueToInsert_;
-        return _add( set_, existingValue_);
+        return _add(set_, existingValue_);
     }
 
     struct Bytes4Set {
@@ -607,20 +609,20 @@ library EnumerableSet {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(Bytes4Set storage set, uint256 index) internal view returns ( bytes4 ) {
-        return bytes4( _at( set._inner, index ) );
+    function at(Bytes4Set storage set, uint256 index) internal view returns (bytes4) {
+        return bytes4(_at(set._inner, index));
     }
 
-    function getValues( Bytes4Set storage set_ ) internal view returns ( bytes4[] memory ) {
+    function getValues(Bytes4Set storage set_) internal view returns (bytes4[] memory) {
         bytes4[] memory bytes4Array_;
-        for( uint256 iteration_ = 0; _length( set_._inner ) > iteration_; iteration_++ ) {
-            bytes4Array_[iteration_] = bytes4( _at( set_._inner, iteration_ ) );
+        for (uint256 iteration_ = 0; _length(set_._inner) > iteration_; iteration_++) {
+            bytes4Array_[iteration_] = bytes4(_at(set_._inner, iteration_));
         }
         return bytes4Array_;
     }
 
-    function insert( Bytes4Set storage set_, uint256 index_, bytes4 valueToInsert_ ) internal returns ( bool ) {
-        return _insert( set_._inner, index_, valueToInsert_ );
+    function insert(Bytes4Set storage set_, uint256 index_, bytes4 valueToInsert_) internal returns (bool) {
+        return _insert(set_._inner, index_, valueToInsert_);
     }
 
     struct Bytes32Set {
@@ -671,22 +673,22 @@ library EnumerableSet {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(Bytes32Set storage set, uint256 index) internal view returns ( bytes32 ) {
+    function at(Bytes32Set storage set, uint256 index) internal view returns (bytes32) {
         return _at(set._inner, index);
     }
 
-    function getValues( Bytes32Set storage set_ ) internal view returns ( bytes4[] memory ) {
+    function getValues(Bytes32Set storage set_) internal view returns (bytes4[] memory) {
         bytes4[] memory bytes4Array_;
 
-        for( uint256 iteration_ = 0; _length( set_._inner ) >= iteration_; iteration_++ ){
-            bytes4Array_[iteration_] = bytes4( at( set_, iteration_ ) );
+        for (uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++) {
+            bytes4Array_[iteration_] = bytes4(at(set_, iteration_));
         }
 
         return bytes4Array_;
     }
 
-    function insert( Bytes32Set storage set_, uint256 index_, bytes32 valueToInsert_ ) internal returns ( bool ) {
-        return _insert( set_._inner, index_, valueToInsert_ );
+    function insert(Bytes32Set storage set_, uint256 index_, bytes32 valueToInsert_) internal returns (bool) {
+        return _insert(set_._inner, index_, valueToInsert_);
     }
 
     // AddressSet
@@ -746,19 +748,19 @@ library EnumerableSet {
      * TODO Might require explicit conversion of bytes32[] to address[].
      *  Might require iteration.
      */
-    function getValues( AddressSet storage set_ ) internal view returns ( address[] memory ) {
+    function getValues(AddressSet storage set_) internal view returns (address[] memory) {
 
         address[] memory addressArray;
 
-        for( uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++ ){
-            addressArray[iteration_] = at( set_, iteration_ );
+        for (uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++) {
+            addressArray[iteration_] = at(set_, iteration_);
         }
 
         return addressArray;
     }
 
-    function insert(AddressSet storage set_, uint256 index_, address valueToInsert_ ) internal returns ( bool ) {
-        return _insert( set_._inner, index_, bytes32(uint256(valueToInsert_)) );
+    function insert(AddressSet storage set_, uint256 index_, address valueToInsert_) internal returns (bool) {
+        return _insert(set_._inner, index_, bytes32(uint256(valueToInsert_)));
     }
 
 
@@ -933,188 +935,15 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
  *
  * This contract is only required for intermediate, library-like contracts.
  */
- abstract contract Context {
+abstract contract Context {
     function _msgSender() internal view virtual returns (address payable) {
         return msg.sender;
     }
 
     function _msgData() internal view virtual returns (bytes memory) {
-        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
+        this;
+        // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
         return msg.data;
-    }
-}
-abstract contract AccessControl is Context {
-    using EnumerableSet for EnumerableSet.AddressSet;
-    using Address for address;
-
-    struct RoleData {
-        EnumerableSet.AddressSet members;
-        bytes32 adminRole;
-    }
-
-    mapping (bytes32 => RoleData) private _roles;
-
-    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
-
-    /**
-     * @dev Emitted when `newAdminRole` is set as ``role``'s admin role, replacing `previousAdminRole`
-     *
-     * `DEFAULT_ADMIN_ROLE` is the starting admin for all roles, despite
-     * {RoleAdminChanged} not being emitted signaling this.
-     *
-     * _Available since v3.1._
-     */
-    event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
-
-    /**
-     * @dev Emitted when `account` is granted `role`.
-     *
-     * `sender` is the account that originated the contract call, an admin role
-     * bearer except when using {_setupRole}.
-     */
-    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
-
-    /**
-     * @dev Emitted when `account` is revoked `role`.
-     *
-     * `sender` is the account that originated the contract call:
-     *   - if using `revokeRole`, it is the admin role bearer
-     *   - if using `renounceRole`, it is the role bearer (i.e. `account`)
-     */
-    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
-
-    /**
-     * @dev Returns `true` if `account` has been granted `role`.
-     */
-    function hasRole(bytes32 role, address account) public view returns (bool) {
-        return _roles[role].members.contains(account);
-    }
-
-    /**
-     * @dev Returns the number of accounts that have `role`. Can be used
-     * together with {getRoleMember} to enumerate all bearers of a role.
-     */
-    function getRoleMemberCount(bytes32 role) public view returns (uint256) {
-        return _roles[role].members.length();
-    }
-
-    /**
-     * @dev Returns one of the accounts that have `role`. `index` must be a
-     * value between 0 and {getRoleMemberCount}, non-inclusive.
-     *
-     * Role bearers are not sorted in any particular way, and their ordering may
-     * change at any point.
-     *
-     * WARNING: When using {getRoleMember} and {getRoleMemberCount}, make sure
-     * you perform all queries on the same block. See the following
-     * https://forum.openzeppelin.com/t/iterating-over-elements-on-enumerableset-in-openzeppelin-contracts/2296[forum post]
-     * for more information.
-     */
-    function getRoleMember(bytes32 role, uint256 index) public view returns (address) {
-        return _roles[role].members.at(index);
-    }
-
-    /**
-     * @dev Returns the admin role that controls `role`. See {grantRole} and
-     * {revokeRole}.
-     *
-     * To change a role's admin, use {_setRoleAdmin}.
-     */
-    function getRoleAdmin(bytes32 role) public view returns (bytes32) {
-        return _roles[role].adminRole;
-    }
-
-    /**
-     * @dev Grants `role` to `account`.
-     *
-     * If `account` had not been already granted `role`, emits a {RoleGranted}
-     * event.
-     *
-     * Requirements:
-     *
-     * - the caller must have ``role``'s admin role.
-     */
-    function grantRole(bytes32 role, address account) public virtual {
-        require(hasRole(_roles[role].adminRole, _msgSender()), "AccessControl: sender must be an admin to grant");
-
-        _grantRole(role, account);
-    }
-
-    /**
-     * @dev Revokes `role` from `account`.
-     *
-     * If `account` had been granted `role`, emits a {RoleRevoked} event.
-     *
-     * Requirements:
-     *
-     * - the caller must have ``role``'s admin role.
-     */
-    function revokeRole(bytes32 role, address account) public virtual {
-        require(hasRole(_roles[role].adminRole, _msgSender()), "AccessControl: sender must be an admin to revoke");
-
-        _revokeRole(role, account);
-    }
-
-    /**
-     * @dev Revokes `role` from the calling account.
-     *
-     * Roles are often managed via {grantRole} and {revokeRole}: this function's
-     * purpose is to provide a mechanism for accounts to lose their privileges
-     * if they are compromised (such as when a trusted device is misplaced).
-     *
-     * If the calling account had been granted `role`, emits a {RoleRevoked}
-     * event.
-     *
-     * Requirements:
-     *
-     * - the caller must be `account`.
-     */
-    function renounceRole(bytes32 role, address account) public virtual {
-        require(account == _msgSender(), "AccessControl: can only renounce roles for self");
-
-        _revokeRole(role, account);
-    }
-
-    /**
-     * @dev Grants `role` to `account`.
-     *
-     * If `account` had not been already granted `role`, emits a {RoleGranted}
-     * event. Note that unlike {grantRole}, this function doesn't perform any
-     * checks on the calling account.
-     *
-     * [WARNING]
-     * ====
-     * This function should only be called from the constructor when setting
-     * up the initial roles for the system.
-     *
-     * Using this function in any other way is effectively circumventing the admin
-     * system imposed by {AccessControl}.
-     * ====
-     */
-    function _setupRole(bytes32 role, address account) internal virtual {
-        _grantRole(role, account);
-    }
-
-    /**
-     * @dev Sets `adminRole` as ``role``'s admin role.
-     *
-     * Emits a {RoleAdminChanged} event.
-     */
-    function _setRoleAdmin(bytes32 role, bytes32 adminRole) internal virtual {
-        emit RoleAdminChanged(role, _roles[role].adminRole, adminRole);
-        _roles[role].adminRole = adminRole;
-    }
-
-    function _grantRole(bytes32 role, address account) private {
-        if (_roles[role].members.add(account)) {
-            emit RoleGranted(role, account, _msgSender());
-        }
-    }
-
-    function _revokeRole(bytes32 role, address account) private {
-        if (_roles[role].members.remove(account)) {
-            emit RoleRevoked(role, account, _msgSender());
-        }
     }
 }
 
@@ -1151,7 +980,7 @@ library SafeERC20 {
     function _callOptionalReturn(IERC20 token, bytes memory data) private {
 
         bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
-        if (returndata.length > 0) { // Return data is optional
+        if (returndata.length > 0) {// Return data is optional
             // solhint-disable-next-line max-line-length
             require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
         }
@@ -1160,7 +989,7 @@ library SafeERC20 {
 
 library FullMath {
     function fullMul(uint256 x, uint256 y) private pure returns (uint256 l, uint256 h) {
-        uint256 mm = mulmod(x, y, uint256(-1));
+        uint256 mm = mulmod(x, y, uint256(- 1));
         l = x * y;
         h = mm - l;
         if (mm < l) h -= 1;
@@ -1171,10 +1000,10 @@ library FullMath {
         uint256 h,
         uint256 d
     ) private pure returns (uint256) {
-        uint256 pow2 = d & -d;
+        uint256 pow2 = d & - d;
         d /= pow2;
         l /= pow2;
-        l += h * ((-pow2) / pow2 + 1);
+        l += h * ((- pow2) / pow2 + 1);
         uint256 r = 1;
         r *= 2 - d * r;
         r *= 2 - d * r;
@@ -1229,13 +1058,13 @@ library FixedPoint {
         require(denominator > 0, 'FixedPoint::fraction: division by zero');
         if (numerator == 0) return FixedPoint.uq112x112(0);
 
-        if (numerator <= uint144(-1)) {
+        if (numerator <= uint144(- 1)) {
             uint256 result = (numerator << RESOLUTION) / denominator;
-            require(result <= uint224(-1), 'FixedPoint::fraction: overflow');
+            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
             return uq112x112(uint224(result));
         } else {
             uint256 result = FullMath.mulDiv(numerator, Q112, denominator);
-            require(result <= uint224(-1), 'FixedPoint::fraction: overflow');
+            require(result <= uint224(- 1), 'FixedPoint::fraction: overflow');
             return uq112x112(uint224(result));
         }
     }
@@ -1302,17 +1131,19 @@ abstract contract ReentrancyGuard {
 }
 
 interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
-    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
-    function mintRewards( address _recipient, uint _amount ) external;
+    function deposit(uint _amount, address _token, uint _profit) external returns (uint send_);
+
+    function valueOf(address _token, uint _amount) external view returns (uint value_);
+
+    function mintRewards(address _recipient, uint _amount) external;
 }
 
 interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
+    function stake(uint _amount, address _recipient) external returns (bool);
 }
 
 interface IStakingHelper {
-    function stake( uint _amount, address _recipient ) external;
+    function stake(uint _amount, address _recipient) external;
 }
 
 interface IMintable {
@@ -1339,12 +1170,13 @@ interface IUniswapV2Router02 {
         address to,
         uint256 deadline
     )
-        external
-        returns (
-            uint256 amountA,
-            uint256 amountB,
-            uint256 liquidity
-        );
+    external
+    returns (
+        uint256 amountA,
+        uint256 amountB,
+        uint256 liquidity
+    );
+
     function removeLiquidity(
         address tokenA,
         address tokenB,
@@ -1353,34 +1185,37 @@ interface IUniswapV2Router02 {
         uint amountBMin,
         address to,
         uint deadline
-        ) external returns (uint amountA, uint amountB);
+    ) external returns (uint amountA, uint amountB);
 }
+
 interface ITreasuryHelper {
-    function bookValue() external returns(uint);
+    function bookValue() external view returns (uint);
 }
+
 interface IUniswapV2ERC20 {
     function totalSupply() external view returns (uint);
 }
+
 interface IUniswapV2Pair is IUniswapV2ERC20 {
     function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function token0() external view returns ( address );
-    function token1() external view returns ( address );
+
+    function token0() external view returns (address);
+
+    function token1() external view returns (address);
 }
 
 /// @notice FantOHM PRO 
 /// @dev based on xfhm
-contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
+contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
 
-    bytes32 public constant WHITELIST_CALL_ROLE = keccak256("WHITELIST_CALL_ROLE");
-
     /* ======== EVENTS ======== */
 
-    event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payout, uint remaining );
+    event BondCreated(uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payout, uint remaining);
 
 
 
@@ -1396,8 +1231,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public lpToken; // USDB/principle LP token
-    uint256 private constant deadline =
-    0xf000000000000000000000000000000000000000000000000000000000000000;
+    uint256 private constant deadline = 0xf000000000000000000000000000000000000000000000000000000000000000;
 
     bool public doDiv;
     uint256 public decimals;
@@ -1405,14 +1239,12 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
     address public immutable treasuryHelper; //treasury Helper address
     Terms public terms; // stores terms for new bonds
 
-    mapping( address => Bond ) public bondInfo; // stores bond information for depositors
-    mapping( address => uint) public principlelpAmount; //principle amount regarding lp amount;
+    mapping(address => Bond) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
-    uint public boostFactor;
+    uint public boostFactor; // in %, 100 is 100%
 
-    bool public useWhitelist;
     bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
@@ -1432,7 +1264,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
     /// @notice Info for bond holder
     struct Bond {
         uint payout; // minimal principle to be paid
-        uint lpTokenAmount; //amount of lp token
+        uint lpTokenAmount; // amount of lp token
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
@@ -1458,31 +1290,28 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         address _XFHM,
         address _treasuryHelper
     ) {
-        require( _FHM != address(0) );
+        require(_FHM != address(0));
         FHM = _FHM;
-        require( _USDB != address(0) );
+        require(_USDB != address(0));
         USDB = _USDB;
-        require( _principle != address(0) );
+        require(_principle != address(0));
         principle = _principle;
-        require( _DAO != address(0) );
+        require(_DAO != address(0));
         DAO = _DAO;
-        require( _treasury != address(0) );
+        require(_treasury != address(0));
         treasury = _treasury;
-        require( _usdbMinter != address(0) );
+        require(_usdbMinter != address(0));
         usdbMinter = _usdbMinter;
-        require( _poolRouter != address(0) );
+        require(_poolRouter != address(0));
         poolRouter = _poolRouter;
-        require( _lpToken != address(0) );
+        require(_lpToken != address(0));
         lpToken = _lpToken;
-        require( _XFHM != address(0) );
+        require(_XFHM != address(0));
         XFHM = _XFHM;
-        require( _treasuryHelper != address(0) );
+        require(_treasuryHelper != address(0));
         treasuryHelper = _treasuryHelper;
-        useWhitelist = true;
         boostFactor = 100;
         whitelist[msg.sender] = true;
-        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
-        _setupRole(WHITELIST_CALL_ROLE, _msgSender());
     }
 
     /**
@@ -1494,7 +1323,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @param _maxDebt uint
      *  @param _initialDebt uint
      *  @param _soldBondsLimitUsd uint
-     *  @param _useWhitelist bool
      *  @param _useCircuitBreaker bool
      */
     function initializeBondTerms(
@@ -1505,20 +1333,18 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         uint _maxDebt,
         uint _initialDebt,
         uint _soldBondsLimitUsd,
-        bool _useWhitelist,
         bool _useCircuitBreaker
     ) external onlyPolicy() {
-        terms = Terms ({
-        vestingTerm: _vestingTerm,
-        discount: _discount,
-        maxPayout: _maxPayout,
-        fee: _fee,
-        maxDebt: _maxDebt,
-        soldBondsLimitUsd: _soldBondsLimitUsd
+        terms = Terms({
+        vestingTerm : _vestingTerm,
+        discount : _discount,
+        maxPayout : _maxPayout,
+        fee : _fee,
+        maxDebt : _maxDebt,
+        soldBondsLimitUsd : _soldBondsLimitUsd
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
-        useWhitelist = _useWhitelist;
         useCircuitBreaker = _useCircuitBreaker;
     }
 
@@ -1527,23 +1353,23 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT }
+    enum PARAMETER {VESTING, PAYOUT, FEE, DEBT}
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
      *  @param _input uint
      */
-    function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
-        if ( _parameter == PARAMETER.VESTING ) { // 0
-            require( _input >= 10000, "Vesting must be longer than 10000 blocks" );
+    function setBondTerms(PARAMETER _parameter, uint _input) external onlyPolicy() {
+        if (_parameter == PARAMETER.VESTING) {// 0
+            require(_input >= 10000, "Vesting must be longer than 10000 blocks");
             terms.vestingTerm = _input;
-        } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
-            require( _input <= 1000, "Payout cannot be above 1 percent" );
+        } else if (_parameter == PARAMETER.PAYOUT) {// 1
+            require(_input <= 1000, "Payout cannot be above 1 percent");
             terms.maxPayout = _input;
-        } else if ( _parameter == PARAMETER.FEE ) { // 2
-            require( _input <= 10000, "DAO fee cannot exceed payout" );
+        } else if (_parameter == PARAMETER.FEE) {// 2
+            require(_input <= 10000, "DAO fee cannot exceed payout");
             terms.fee = _input;
-        } else if ( _parameter == PARAMETER.DEBT ) { // 3
+        } else if (_parameter == PARAMETER.DEBT) {// 3
             terms.maxDebt = _input;
         }
     }
@@ -1552,8 +1378,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     /**
      *  @notice deposit bond
-     *  @param _amount uint
-     *  @param _maxPrice uint
+     *  @param _amount uint amount in LQDR
+     *  @param _maxPrice uint should have 18 decimals
      *  @param _depositor address
      *  @return uint
      */
@@ -1561,97 +1387,90 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         uint _amount,
         uint _maxPrice,
         address _depositor
-    ) external nonReentrant returns ( uint ) {
-        
-        require( _depositor != address(0), "Invalid address" );
+    ) external nonReentrant returns (uint) {
+
+        require(_depositor != address(0), "Invalid address");
         // allow only whitelisted contracts
-        if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
-        require(hasRole(WHITELIST_CALL_ROLE, msg.sender), "Must have role to call function" );
+        require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
         decayDebt();
-        require( totalDebt <= terms.maxDebt, "Max capacity reached" );
+        require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
-        uint priceInUSD = bondPriceInUSD(); // Stored in bond info
-        uint nativePrice = getMarketPrice();
+        uint lqdrPriceInUSD = bondPriceInUSD();
+        require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
+        // slippage protection
 
-        require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
+        uint payoutInUsdb = payoutFor(_amount);
+        // payout to bonder is computed
 
-        uint value = _amount.mul( 10 ** IERC20( FHM ).decimals() ).div( 10 ** IERC20( principle ).decimals() );
-        uint payout = payoutFor( value ); // payout to bonder is computed
-
-        uint _xfhmAmount = value.mul(10 ** 1).div(33).div(ITreasuryHelper(treasuryHelper).bookValue()).mul(10000).div(boostFactor); // lqdur amount = 3.3 * balanceof (xfhm) * boostfactor * bookvalue(fhm)
-        require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 DAI ( underflow protection )
-        require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
-        require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
-        uint _depoistorXFhmAmount = IERC20(XFHM).balanceOf(_depositor); 
-        require(_xfhmAmount >= _depoistorXFhmAmount, "Exceed the max deposit amount");
-        uint payoutInFhm = payoutInFhmFor(payout);
+        require(payoutInUsdb >= 10_000_000_000_000_000, "Bond too small");
+        // must be > 0.01 DAI ( underflow protection )
+        require(payoutInUsdb <= maxPayout(), "Bond too large");
+        // size protection because there is no slippage
+        require(!circuitBreakerActivated(payoutInUsdb), "CIRCUIT_BREAKER_ACTIVE");
+        uint payoutInFhm = payoutInFhmFor(payoutInUsdb);
 
         // profits are calculated
-        uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
+        uint fee = payoutInFhm.mul(terms.fee).div(10000);
 
-        IERC20( principle ).safeTransferFrom( msg.sender, address( this ), _amount );
+        IERC20(principle).safeTransferFrom(msg.sender, address(this), _amount);
 
-        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
+        ITreasury(treasury).mintRewards(address(this), payoutInFhm.add(fee));
 
         // mint USDB with guaranteed discount
-        IMintable(USDB).mint( address(this), payout);
+        IMintable(USDB).mint(address(this), payoutInUsdb);
 
         // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burn( payoutInFhm ) ;
+        IBurnable(FHM).burn(payoutInFhm);
 
-        //burn xfhm deposits
-        IBurnable( XFHM ).burn(_xfhmAmount);
-        (uint _lpTokenAmount, uint _principlelpAmount) = createLP(_amount, payout);
-        //principleAmount after creating LP TOKEN;
-        principlelpAmount[_depositor] = _principlelpAmount;
-        if ( fee != 0 ) { // fee is transferred to dao
-            IERC20( FHM ).safeTransfer( DAO, fee );
+        // burn xFHM deposits
+        IBurnable(XFHM).burn(feeInXfhm(_amount));
+
+        uint _lpTokenAmount = createLP(_amount, payoutInUsdb);
+
+        if (fee != 0) {// fee is transferred to dao
+            IERC20(FHM).safeTransfer(DAO, fee);
         }
 
         // total debt is increased
-        totalDebt = totalDebt.add( value );
+        totalDebt = totalDebt.add(_amount);
 
         // update sold bonds
-        if (useCircuitBreaker) updateSoldBonds(_amount);
+        if (useCircuitBreaker) updateSoldBonds(payoutInUsdb);
 
         uint bondPayout = bondInfo[_depositor].payout;
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-        payout: bondPayout.add(payout),
-        lpTokenAmount: _lpTokenAmount,
-        vesting: terms.vestingTerm,
-        lastBlock: block.number,
-        pricePaid: priceInUSD
+        payout : bondPayout.add(payoutInUsdb), // FIXME here we need to count payout in LQDR not USDB!!!
+        lpTokenAmount : _lpTokenAmount,
+        vesting : terms.vestingTerm,
+        lastBlock : block.number,
+        pricePaid : lqdrPriceInUSD
         });
-        uint depositamount = _amount;
         // indexed events are emitted
-       emit BondCreated( depositamount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondCreated(_amount, payoutInUsdb, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
 
-        return payout;
+        return payoutInUsdb;
     }
 
-
-    // FIXME change visibility to internal
-    function createLP(uint _principleAmount, uint _usdbAmount) public returns (uint _lpTokenAmount, uint _principlelpAmount) {
+    function createLP(uint _principleAmount, uint _usdbAmount) private returns (uint _lpTokenAmount) {
         IERC20(USDB).approve(poolRouter, _usdbAmount);
         IERC20(principle).approve(poolRouter, _principleAmount);
-        
-    
-        (, _principlelpAmount, _lpTokenAmount) =
-            IUniswapV2Router02(poolRouter).addLiquidity(
-                USDB,
-                principle,
-                _usdbAmount,
-                _principleAmount,
-                1,
-                1,
-                address(this),
-                deadline
-            );
+
+
+        (,, _lpTokenAmount) =
+        IUniswapV2Router02(poolRouter).addLiquidity(
+            USDB,
+            principle,
+            _usdbAmount,
+            _principleAmount,
+            1,
+            1,
+            address(this),
+            deadline
+        );
     }
 
-    // FIXME change visibility to internal
-    function removeLP(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
+    function removeLP(uint _lpTokensAmount) private returns (uint _usdbAmount, uint _principleAmount) {
         IERC20(lpToken).approve(poolRouter, _lpTokensAmount);
 
         (_usdbAmount, _principleAmount) = IUniswapV2Router02(poolRouter).removeLiquidity(
@@ -1665,36 +1484,35 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         );
 
     }
-     /**
-     *  @notice redeem bond for user
+    /**
+    *  @notice redeem bond for user
      *  @param _recipient address
      *  @param _stake bool
      *  @return uint
      */
-    function redeem(address _recipient, bool _stake) external nonReentrant returns ( uint ) {
-        Bond memory info = bondInfo[ _recipient];
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+    // FIXME we need to add _amount how many they want to withdraw, tbh...
+    function redeem(address _recipient, bool _stake) external nonReentrant returns (uint) {
+        Bond memory info = bondInfo[_recipient];
+        uint percentVested = percentVestedFor(_recipient);
+        // (blocks since last interaction / vesting term remaining)
 
-        require(hasRole(WHITELIST_CALL_ROLE, msg.sender), "Must have role to call function" );
-        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
+        require(percentVested >= 10000, "Wait for end of bond");
 
         uint _lpTokenAmount = info.lpTokenAmount;
 
         // disassemble LP into tokens
         (uint _usdbAmount, uint _principleAmount) = removeLP(_lpTokenAmount);
 
-        // in case of IL we are paying the rest up to deposit amount
-        if (_principleAmount < info.payout) {
-            uint toMint = info.payout.sub(_principleAmount);
-            uint fhmAmount = payoutInFhmFor(toMint);
-            ITreasury(treasury).mintRewards(_recipient, fhmAmount);
-        }
+        // no IL protection here
 
-        delete bondInfo[ _recipient ]; // delete user info
-        emit BondRedeemed( _recipient, _principleAmount, 0 ); // emit bond data
+        delete bondInfo[_recipient];
+        // delete user info
+        emit BondRedeemed(_recipient, _principleAmount, 0);
+        // emit bond data
 
         IBurnable(USDB).burn(_usdbAmount);
-        IERC20( principle ).transfer( _recipient, _principleAmount);
+        IERC20(principle).transfer(_recipient, _principleAmount);
 
         return _principleAmount;
     }
@@ -1711,13 +1529,14 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         }
     }
 
+    // FIXME asking if we need this function in here, if not we will remove it
     function updateSoldBonds(uint _payout) internal {
         uint length = soldBondsInHour.length;
         if (length == 0) {
             soldBondsInHour.push(SoldBonds({
-            timestampFrom: block.timestamp,
-            timestampTo: block.timestamp + 1 hours,
-            payoutInUsd: _payout
+            timestampFrom : block.timestamp,
+            timestampTo : block.timestamp + 1 hours,
+            payoutInUsd : _payout
             }));
             return;
         }
@@ -1731,20 +1550,21 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
             uint nextTo = soldBonds.timestampTo + 1 hours;
             if (block.timestamp <= nextTo) {
                 soldBondsInHour.push(SoldBonds({
-                timestampFrom: soldBonds.timestampTo,
-                timestampTo: nextTo,
-                payoutInUsd: _payout
+                timestampFrom : soldBonds.timestampTo,
+                timestampTo : nextTo,
+                payoutInUsd : _payout
                 }));
             } else {
                 soldBondsInHour.push(SoldBonds({
-                timestampFrom: block.timestamp,
-                timestampTo: block.timestamp + 1 hours,
-                payoutInUsd: _payout
+                timestampFrom : block.timestamp,
+                timestampTo : block.timestamp + 1 hours,
+                payoutInUsd : _payout
                 }));
             }
         }
     }
 
+    // FIXME asking if we need this function in here, if not we will remove it
     function circuitBreakerCurrentPayout() public view returns (uint _amount) {
         if (soldBondsInHour.length == 0) return 0;
 
@@ -1769,14 +1589,17 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         return payout > terms.soldBondsLimitUsd;
     }
 
+    /// @notice LQDR market price
     function getMarketPrice() public view returns (uint256) {
-        ( uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair( lpToken ).getReserves();
-        if ( IUniswapV2Pair( lpToken ).token0() == principle ) {
-            if (doDiv) return reserve1.div(reserve0).div( 10**decimals );
-            else return reserve1.mul( 10**decimals ).div(reserve0);
+        // FIXME (optional) can we move it away, if we for example have price oracle from DAI?
+        // just to set different address, that's why there is usdb minter in here
+        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(lpToken).getReserves();
+        if (IUniswapV2Pair(lpToken).token0() == principle) {
+            if (doDiv) return reserve1.div(reserve0).div(10 ** decimals);
+            else return reserve1.mul(10 ** decimals).div(reserve0);
         } else {
-            if (doDiv) return reserve0.div(reserve1).div( 10**decimals );
-            else return reserve0.mul( 10**decimals ).div(reserve1);
+            if (doDiv) return reserve0.div(reserve1).div(10 ** decimals);
+            else return reserve0.mul(10 ** decimals).div(reserve1);
         }
     }
 
@@ -1784,7 +1607,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @notice reduce total debt
      */
     function decayDebt() internal {
-        totalDebt = totalDebt.sub( debtDecay() );
+        totalDebt = totalDebt.sub(debtDecay());
         lastDecay = block.number;
     }
 
@@ -1797,8 +1620,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @notice determine maximum bond size
      *  @return uint
      */
-    function maxPayout() public view returns ( uint ) {
-        return IERC20(USDB).totalSupply().mul( terms.maxPayout ).div( 100000 );
+    function maxPayout() public view returns (uint) {
+        return IERC20(USDB).totalSupply().mul(terms.maxPayout).div(100000);
     }
 
     /**
@@ -1806,12 +1629,28 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @param _value uint
      *  @return uint
      */
-    function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, getMarketPrice() ).decode112with18().div( 1e16 );
+    function payoutFor(uint _value) public view returns (uint) {
+        // FIXME this is payout in USDB for given _value in LQDR, because we are using it inside deposit function
+        // we need this to count how many USDB => FHM to mint
+        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18().div(1e16);
     }
 
-    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
-        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
+        // FIXME this is payout in FHM for given _usdbValue or stablecoin value, so here "market price" needs to be price of FHM
+        return FixedPoint.fraction(_usdbValue, getMarketPrice()).decode112with18().div(1e16).div(1e9);
+    }
+
+    /// @notice return book value per 1 FHM in 18 decimals
+    function bookValueInFhm() public view returns (uint) {
+        return ITreasuryHelper(treasuryHelper).bookValue();
+    }
+
+    /// @dev lqdr_amount = 3.3 * xfhm_amount * boostFactor * bookValue_fhm => amount_xfhm = lqdr_amount / 3.3 / boostFactor / bookValue_fhm
+    function feeInXfhm(uint _lqdrAmount) public view returns (uint) {
+        return _lqdrAmount
+        .mul(10).div(33)
+        .mul(boostFactor).div(100)
+        .div(bookValueInFhm());
     }
 
 
@@ -1819,27 +1658,28 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @notice converts bond price to DAI value
      *  @return price_ uint
      */
-    function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = getMarketPrice().div( 100 );
+    function bondPriceInUSD() public view returns (uint price_) {
+        // FIXME this should have 18 decimals, why you div(100) here?
+        price_ = getMarketPrice().div(100);
     }
 
     /**
      *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
      */
-    function debtRatio() public view returns ( uint debtRatio_ ) {
+    function debtRatio() public view returns (uint debtRatio_) {
         uint supply = IERC20(USDB).totalSupply();
         debtRatio_ = FixedPoint.fraction(
-            currentDebt().mul( 1e9 ),
+            currentDebt().mul(1e9),
             supply
-        ).decode112with18().div( 1e18 );
+        ).decode112with18().div(1e18);
     }
 
     /**
      *  @notice debt ratio in same terms for reserve or liquidity bonds
      *  @return uint
      */
-    function standardizedDebtRatio() external view returns ( uint ) {
+    function standardizedDebtRatio() external view returns (uint) {
         return debtRatio();
     }
 
@@ -1847,18 +1687,18 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @notice calculate debt factoring in decay
      *  @return uint
      */
-    function currentDebt() public view returns ( uint ) {
-        return totalDebt.sub( debtDecay() );
+    function currentDebt() public view returns (uint) {
+        return totalDebt.sub(debtDecay());
     }
 
     /**
      *  @notice amount to decay total debt by
      *  @return decay_ uint
      */
-    function debtDecay() public view returns ( uint decay_ ) {
-        uint blocksSinceLast = block.number.sub( lastDecay );
-        decay_ = totalDebt.mul( blocksSinceLast ).div( terms.vestingTerm );
-        if ( decay_ > totalDebt ) {
+    function debtDecay() public view returns (uint decay_) {
+        uint blocksSinceLast = block.number.sub(lastDecay);
+        decay_ = totalDebt.mul(blocksSinceLast).div(terms.vestingTerm);
+        if (decay_ > totalDebt) {
             decay_ = totalDebt;
         }
     }
@@ -1869,13 +1709,13 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @param _depositor address
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
+    function percentVestedFor(address _depositor) public view returns (uint percentVested_) {
         Bond memory bond = bondInfo[_depositor];
-        uint blocksSinceLast = block.number.sub( bond.lastBlock );
+        uint blocksSinceLast = block.number.sub(bond.lastBlock);
         uint vesting = bond.vesting;
 
-        if ( vesting > 0 ) {
-            percentVested_ = blocksSinceLast.mul( 10000 ).div( vesting );
+        if (vesting > 0) {
+            percentVested_ = blocksSinceLast.mul(10000).div(vesting);
         } else {
             percentVested_ = 0;
         }
@@ -1886,31 +1726,20 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor );
+    function pendingPayoutFor(address _depositor) external view returns (uint pendingPayout_) {
+        uint percentVested = percentVestedFor(_depositor);
 
-        // return original amount
-        uint payout = Math.max(principlelpAmount[_depositor], bondInfo[_depositor].payout);
+        // FIXME here you should look how many tokens exactly you would get from LP position
 
-        if ( percentVested >= 10000) {
-            pendingPayout_ = payout;
+        if (percentVested >= 10000) {
+            pendingPayout_ = bondInfo[_depositor].payout;
         } else {
             pendingPayout_ = 0;
         }
     }
-    /// @notice grants WhitelistCall role to given _account
-    /// @param _account WhitelistCall contract
-    function grantRoleWhitelistWithdraw(address _account) external {
-        grantRole(WHITELIST_CALL_ROLE, _account);
-    }
 
-    /// @notice revoke WhitelistCall role to given _account
-    /// @param _account WhitelistCall contract
-    function revokeRoleWhitelistWithdraw(address _account) external {
-        revokeRole(WHITELIST_CALL_ROLE, _account);
-    }
-    function setBoostFactor(uint _boostFactor) external onlyPolicy  {
-         boostFactor = _boostFactor;
+    function setBoostFactor(uint _boostFactor) external onlyPolicy {
+        boostFactor = _boostFactor;
     }
 
     function setLqdrLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) external virtual onlyPolicy {
@@ -1918,16 +1747,17 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
         decimals = _decimals;
         doDiv = _doDiv;
     }
-     /* ======= AUXILLIARY ======= */
+
+    /* ======= AUXILLIARY ======= */
     /**
      *  @notice allow anyone to send lost tokens (excluding principle or FHM) to the DAO
      *  @return bool
      */
-    function recoverLostToken( address _token ) external returns ( bool ) {
-        require( _token != FHM );
-        require( _token != USDB);
-        require( _token != principle );
-        IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
+    function recoverLostToken(address _token) external returns (bool) {
+        require(_token != FHM);
+        require(_token != USDB);
+        require(_token != principle);
+        IERC20(_token).safeTransfer(DAO, IERC20(_token).balanceOf(address(this)));
         return true;
     }
 }
