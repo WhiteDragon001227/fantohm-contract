@@ -34,6 +34,11 @@ contract Ownable is IOwnable {
         _;
     }
 
+    modifier onlyDepositor(address _depositor) {
+        require( _depositor == msg.sender, "caller is not the depositor" );
+        _;
+    }
+
     function renounceManagement() public virtual override onlyPolicy() {
         emit OwnershipPushed( _owner, address(0) );
         _owner = address(0);
@@ -616,6 +621,7 @@ library FixedPoint {
 
 // Info for bond holder
 struct Bond {
+    uint depositAmount; // deposit amount
     uint payout; // USDB to be paid
     uint vesting; // Blocks left to vest
     uint lastBlock; // Last interaction
@@ -625,7 +631,7 @@ struct Bond {
 }
 
 library IterableMapping {
-    
+
 
     // Iterable mapping from address to uint;
     struct Map {
@@ -651,7 +657,7 @@ library IterableMapping {
         Map storage map,
         address key,
         Bond storage val
-    ) public {    
+    ) public {
         if (map.inserted[key]) {
             map.values[key].push(val);
 
@@ -789,6 +795,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     event BondCreated( uint deposit, uint indexed payout, uint indexed expiresTimestamp, uint expiresBlock, uint indexed priceInUSD );
     event BondRedeemed( address indexed recipient, uint payout, uint remainingSeconds, uint remainingBlocks );
+    event BondCancelled( address indexed recipient, uint indexed index, uint indexed principlePayout );
 
 
 
@@ -824,9 +831,10 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         uint vestingTerm; // safeguard, use some vestingTermSeconds/2 in blocks
         uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
         uint soldBondsLimitUsd; //
+        uint prematureReturnRate; // as % of premature return rate, in hundreds. ( 9500 = 95% = 0.95)
     }
 
     struct SoldBonds {
@@ -874,6 +882,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @param _soldBondsLimitUsd uint
      *  @param _useWhitelist bool
      *  @param _useCircuitBreaker bool
+     *  @param _prematureReturnRate uint
      */
     function initializeBondTerms(
         uint _vestingTermSeconds,
@@ -885,7 +894,8 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         uint _initialDebt,
         uint _soldBondsLimitUsd,
         bool _useWhitelist,
-        bool _useCircuitBreaker
+        bool _useCircuitBreaker,
+        uint _prematureReturnRate
     ) external onlyPolicy() {
         terms = Terms ({
         vestingTermSeconds: _vestingTermSeconds,
@@ -894,7 +904,8 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         maxPayout: _maxPayout,
         fee: _fee,
         maxDebt: _maxDebt,
-        soldBondsLimitUsd: _soldBondsLimitUsd
+        soldBondsLimitUsd: _soldBondsLimitUsd,
+        prematureReturnRate: _prematureReturnRate
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
@@ -967,7 +978,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
         // profits are calculated
         uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
-        
+
         IERC20( principle ).safeTransferFrom( msg.sender, address( DAO ), _amount );
         ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
 
@@ -990,6 +1001,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
         // depositor info is stored
         _bondInfo = Bond({
+            depositAmount: _amount,
             payout: payout,
             vestingSeconds: terms.vestingTermSeconds,
             lastTimestamp: block.timestamp,
@@ -1000,16 +1012,16 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
         // new user bonding
         if(!depositors.inserted[_depositor]) {
-            usersCount ++; 
+            usersCount ++;
         }
         depositors.set(_depositor, _bondInfo );
-        
+
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
 
         return payout;
     }
-   
+
     function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
         require (_from >= 0 && _from < depositors.size(), "`from` is invalid");
         require (_to >= 0 && _to < depositors.size(), "`to` is invalid");
@@ -1048,9 +1060,9 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         Bond[] storage _userBondInfo = depositors.values[_depositor];
         require(_userBondInfo.length > 0, "There is no bonding" );
 
-        uint  _finalAmount = 0; 
+        uint  _finalAmount = 0;
         uint  _length = _userBondInfo.length;
-        
+
         for (uint index = 0; index < _length; index++) {
             uint percentVested = percentVestedFor( _depositor, index ); // (seconds since last interaction / vesting term remaining)
             uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index ); // (blocks since last interaction / vesting term remaining)
@@ -1321,6 +1333,29 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         } else {
             pendingPayout_ = 0;
         }
+    }
+
+    /**
+ *  @notice returns asset when depositor wants to cancel bond
+     *  @param _depositor address
+     *  @param index uint
+     *  @return assetPayout_ uint
+     */
+    function cancelBond( address _depositor, uint index ) public onlyDepositor(_depositor) returns ( uint assetPayout_ ) {
+        uint percentVested = percentVestedFor( _depositor, index );
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index );
+        uint depositAmount = depositors.get(_depositor, index).depositAmount;
+
+        require( depositAmount > 0, "depositor or index is not correct." );
+        require( percentVested >= 10000 && percentVestedBlocks >= 10000, "Current bond is already finished." );
+
+        assetPayout_ = depositAmount.mul(terms.prematureReturnRate).div(10000);
+
+        uint balance = IERC20( principle ).balanceOf( DAO );
+        require ( balance >= assetPayout_, "DAO has not enough balance to return." );
+
+        IERC20( principle ).transferFrom( DAO, _depositor, assetPayout_ );
+        emit BondCancelled( _depositor, index, assetPayout_ );
     }
 
 
