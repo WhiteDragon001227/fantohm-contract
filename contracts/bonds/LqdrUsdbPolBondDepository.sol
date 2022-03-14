@@ -1332,9 +1332,6 @@ interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-interface ITwapOracle {
-    function consult(address _pair, address _token, uint _amountIn) external view returns (uint _amountOut);
-}
 
 interface IUniswapV2Router02 {
     function addLiquidity(
@@ -1366,11 +1363,18 @@ interface IUniswapV2Router02 {
 interface ITreasuryHelper {
     function bookValue() external returns(uint);
 }
-
+interface IUniswapV2ERC20 {
+    function totalSupply() external view returns (uint);
+}
+interface IUniswapV2Pair is IUniswapV2ERC20 {
+    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+    function token0() external view returns ( address );
+    function token1() external view returns ( address );
+}
 
 /// @notice FantOHM PRO 
 /// @dev based on xfhm
-contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
+contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -1396,13 +1400,14 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
     address public immutable XFHM; // XFHM 
 
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
-    address public immutable lpToken; // USDB/principle LP token
+    address public lpToken; // USDB/principle LP token
     address public immutable bondCalculator; // calculates value of LP tokens
     uint256 private constant deadline =
     0xf000000000000000000000000000000000000000000000000000000000000000;
 
+    bool public doDiv;
+    uint256 public decimals;
 
-    address public immutable twapOracle; // lqdr TWAP price
     address public immutable treasuryHelper; //treasury Helper address
     Terms public terms; // stores terms for new bonds
 
@@ -1455,7 +1460,6 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
         address _DAO,
         address _bondCalculator,
         address _usdbMinter,
-        address _twapOracle,
         address _poolRouter,
         address _lpToken,
         address _XFHM,
@@ -1473,8 +1477,6 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
         treasury = _treasury;
         require( _usdbMinter != address(0) );
         usdbMinter = _usdbMinter;
-        require( _twapOracle != address(0) );
-        twapOracle = _twapOracle;
         require( _poolRouter != address(0) );
         poolRouter = _poolRouter;
         require( _lpToken != address(0) );
@@ -1485,7 +1487,7 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
         treasuryHelper = _treasuryHelper;
         bondCalculator = _bondCalculator;
         useWhitelist = true;
-        boostFactor = 1;
+        boostFactor = 100;
         whitelist[msg.sender] = true;
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(WHITELIST_CALL_ROLE, _msgSender());
@@ -1581,14 +1583,15 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
+        uint value = ITreasury( treasury ).valueOf( principle, _amount );
         uint payout = payoutFor( value ); // payout to bonder is computed
 
-        uint _xfhmAmount = value.div(ITreasuryHelper(treasuryHelper).bookValue()).div(boostFactor).div(33).mul(10 ** 1);
+        uint _xfhmAmount = value.mul(boostFactor).div(ITreasuryHelper(treasuryHelper).bookValue()).div(10 ** 1).div(33); // lqdur amount = 3.3 * balanceof (xfhm) * boostfactor * bookvalue(fhm)
         require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 DAI ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
-        require(_xfhmAmount >= IERC20(XFHM).balanceOf(_depositor), "Exceed the max deposit amount");
+        uint _depoistorXFhmAmount = IERC20(XFHM).balanceOf(_depositor); 
+        require(_xfhmAmount >= _depoistorXFhmAmount, "Exceed the max deposit amount");
         uint payoutInFhm = payoutInFhmFor(payout);
 
         // profits are calculated
@@ -1619,10 +1622,10 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(_amount);
 
-        uint bondPayout = bondInfo[_depositor].payout.add(_amount); 
+        uint bondPayout = bondInfo[_depositor].payout;
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-        payout: bondPayout,
+        payout: bondPayout.add(payout),
         lpTokenAmount: _lpTokenAmount,
         vesting: terms.vestingTerm,
         lastBlock: block.number,
@@ -1638,10 +1641,8 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     // FIXME change visibility to internal
     function createLP(uint _principleAmount, uint _usdbAmount) public returns (uint _lpTokenAmount, uint _principlelpAmount) {
-        IERC20(USDB).safeApprove(poolRouter, 0);
-        IERC20(USDB).safeApprove(poolRouter, _usdbAmount);
-        IERC20(principle).safeApprove(poolRouter, 0);
-        IERC20(principle).safeApprove(poolRouter, _principleAmount);
+        IERC20(USDB).approve(poolRouter, _usdbAmount);
+        IERC20(principle).approve(poolRouter, _principleAmount);
         
     
         (, _principlelpAmount, _lpTokenAmount) =
@@ -1659,8 +1660,7 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
 
     // FIXME change visibility to internal
     function removeLP(uint _lpTokensAmount) public returns (uint _usdbAmount, uint _principleAmount) {
-        IERC20(lpToken).safeApprove(poolRouter, 0);
-        IERC20(lpToken).safeApprove(poolRouter, _lpTokensAmount);
+        IERC20(lpToken).approve(poolRouter, _lpTokensAmount);
 
         (_usdbAmount, _principleAmount) = IUniswapV2Router02(poolRouter).removeLiquidity(
             USDB,
@@ -1777,11 +1777,15 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
         return payout > terms.soldBondsLimitUsd;
     }
 
-    function getMarketPrice() public view returns (uint _marketPrice) {
-        _marketPrice = IUsdbMinter(usdbMinter).getMarketPrice();
-    }
-    function getTwapPrice() public view returns (uint _twapPrice) {
-        _twapPrice = ITwapOracle(twapOracle).consult(lpToken, principle, 10 ** IERC20(principle).decimals()).div(10 ** 16);
+    function getMarketPrice() public view returns (uint256) {
+        ( uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair( lpToken ).getReserves();
+        if ( IUniswapV2Pair( lpToken ).token0() == principle ) {
+            if (doDiv) return reserve1.div(reserve0).div( 10**decimals );
+            else return reserve1.mul( 10**decimals ).div(reserve0);
+        } else {
+            if (doDiv) return reserve0.div(reserve1).div( 10**decimals );
+            else return reserve0.mul( 10**decimals ).div(reserve1);
+        }
     }
 
     /**
@@ -1824,7 +1828,7 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        uint _price = getTwapPrice(); //lqdr market price
+        uint _price = getMarketPrice(); //lqdr market price
         
     }
 
@@ -1924,6 +1928,12 @@ contract lqdrLPBondDepository is Ownable, ReentrancyGuard, AccessControl {
     }
     function setBoostFactor(uint _boostFactor) external onlyPolicy  {
          boostFactor = _boostFactor;
+    }
+
+    function setLqdrLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) external virtual onlyPolicy {
+        lpToken = _lpToken;
+        decimals = _decimals;
+        doDiv = _doDiv;
     }
      /* ======= AUXILLIARY ======= */
     /**

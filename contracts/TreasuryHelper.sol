@@ -18,7 +18,7 @@ contract TreasuryHelper is Ownable, AccessControl {
 
     address public immutable fhmCirculatingSupply; // FHM circulating supply
     
-    uint treasuryValue;
+    uint public treasuryValue;
     constructor( address _fhmCirculatingSupply) {
         require( _fhmCirculatingSupply != address(0) );
         fhmCirculatingSupply = _fhmCirculatingSupply;
@@ -31,10 +31,10 @@ contract TreasuryHelper is Ownable, AccessControl {
      */
     function setTreasuryValue(uint _treasuryValue) external  {
         require(hasRole(ADMIN_ROLE, msg.sender), "Must have a admin role");
-        treasuryValue = _treasuryValue;
+        treasuryValue = _treasuryValue.mul(10 ** 18);
     }
     function bookValue() external view returns(uint){
-        return treasuryValue.mul(10 ** 18).div(IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply());
+        return treasuryValue.div(IFHMCirculatingSupply(fhmCirculatingSupply).OHMCirculatingSupply());
     }
       /// @notice grants WhitelistCall role to given _account
     /// @param _account WhitelistCall contract
