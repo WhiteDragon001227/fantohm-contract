@@ -621,7 +621,6 @@ library FixedPoint {
 
 // Info for bond holder
 struct Bond {
-    uint depositAmount; // deposit amount
     uint payout; // USDB to be paid
     uint vesting; // Blocks left to vest
     uint lastBlock; // Last interaction
@@ -1001,7 +1000,6 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
         // depositor info is stored
         _bondInfo = Bond({
-            depositAmount: _amount,
             payout: payout,
             vestingSeconds: terms.vestingTermSeconds,
             lastTimestamp: block.timestamp,
@@ -1344,17 +1342,16 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     function cancelBond( address _depositor, uint index ) public onlyDepositor(_depositor) returns ( uint assetPayout_ ) {
         uint percentVested = percentVestedFor( _depositor, index );
         uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index );
-        uint depositAmount = depositors.get(_depositor, index).depositAmount;
+        uint payout = depositors.get(_depositor, index).payout;
 
-        require( depositAmount > 0, "depositor or index is not correct." );
+        require( payout > 0, "depositor or index is not correct." );
         require( percentVested >= 10000 && percentVestedBlocks >= 10000, "Current bond is already finished." );
 
-        assetPayout_ = depositAmount.mul(terms.prematureReturnRate).div(10000);
-
-        uint balance = IERC20( principle ).balanceOf( DAO );
-        require ( balance >= assetPayout_, "DAO has not enough balance to return." );
-
-        IERC20( principle ).transferFrom( DAO, _depositor, assetPayout_ );
+        assetPayout_ = payout.mul(terms.prematureReturnRate).div(10000);
+        require( payout >= assetPayout_, "prematureReturnRate is too big." );
+        uint remainingBalance = payout.sub(assetPayout_);
+        IERC20( USDB ).transfer(_depositor, assetPayout_ );
+        IBurnable( USDB ).burn( remainingBalance ) ;
         emit BondCancelled( _depositor, index, assetPayout_ );
     }
 
