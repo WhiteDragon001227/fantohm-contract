@@ -1485,7 +1485,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @param _stake bool
      *  @return uint
      */
-    // FIXME we need to add _amount how many they want to withdraw, tbh...
+    // FIXME we need to add slippage to remove and add liquidity, otherwise it will cause huge price impact
     function redeem(address _recipient, uint _amount, uint _amountMin, bool _stake) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
         require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
