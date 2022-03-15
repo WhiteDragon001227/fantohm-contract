@@ -1491,6 +1491,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     // FIXME we need to add _amount how many they want to withdraw, tbh...
+    // FIXME we need to add slippage to remove and add liquidity, otherwise it will cause huge price impact
     function redeem(address _recipient, bool _stake) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
         uint percentVested = percentVestedFor(_recipient);
