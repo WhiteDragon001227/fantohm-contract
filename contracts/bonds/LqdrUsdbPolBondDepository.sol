@@ -1157,13 +1157,17 @@ interface IBurnable {
 interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
+
 interface IUniswapV2ERC20 {
     function totalSupply() external view returns (uint);
 }
+
 interface IUniswapV2Pair is IUniswapV2ERC20 {
     function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function token0() external view returns ( address );
-    function token1() external view returns ( address );
+
+    function token0() external view returns (address);
+
+    function token1() external view returns (address);
 }
 
 interface IUniswapV2Router02 {
@@ -1209,8 +1213,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated(uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD);
-    event BondRedeemed(address indexed recipient, uint payout, uint remaining);
+    event BondCreated(address indexed depositor, uint depositInLqdr, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payoutInLqdr, uint amountInLP, uint remainingLqdr);
 
 
 
@@ -1395,6 +1399,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
         uint lqdrPriceInUSD = bondPriceInUSD();
+        // FIXME what about slip page here?
         require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
         // slippage protection
 
@@ -1436,17 +1441,16 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(payoutInUsdb);
 
-        uint bondPayout = bondInfo[_depositor].payout;
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-        payout : bondPayout.add(_amount), // FIXME here we need to count payout in LQDR not USDB!!!
+        payout : bondInfo[_depositor].payout.add(_amount),
         lpTokenAmount : bondInfo[_depositor].lpTokenAmount.add(_lpTokenAmount),
         vesting : terms.vestingTerm,
         lastBlock : block.number,
         pricePaid : lqdrPriceInUSD
         });
         // indexed events are emitted
-        emit BondCreated(_amount, payoutInUsdb, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
+        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
 
         return payoutInUsdb;
     }
@@ -1477,20 +1481,19 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         );
 
     }
+
     /**
-    *  @notice redeem bond for user
+     *  @notice redeem bond for user
      *  @param _recipient address
      *  @param _amount uint amount of lptoken
-     *  @param _amountMin uint
-     *  @param _stake bool
-     *  @return uint
+     *  @param _amountMin uint slippage minimal amount in lqdr
+     *  @return uint amount in lqdr really claimed
      */
-    // FIXME we need to add slippage to remove and add liquidity, otherwise it will cause huge price impact
-    function redeem(address _recipient, uint _amount, uint _amountMin, bool _stake) external nonReentrant returns (uint) {
+    function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
         require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
-        uint percentVested = percentVestedFor(_recipient);
         // (blocks since last interaction / vesting term remaining)
+        uint percentVested = percentVestedFor(_recipient);
 
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
         require(percentVested >= 10000, "Wait for end of bond");
@@ -1503,15 +1506,20 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         IBurnable(USDB).burn(_usdbAmount);
         IERC20(principle).transfer(_recipient, _principleAmount);
 
-        info.payout = info.payout.sub(_principleAmount);
+        if (_principleAmount < info.payout) {
+            info.payout = info.payout.sub(_principleAmount);
+        } else {
+            info.payout = 0;
+        }
+
         info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
-        
+
         // delete user info
-        if(info.lpTokenAmount == 0) {
+        if (info.lpTokenAmount == 0) {
             delete bondInfo[_recipient];
         }
 
-        emit BondRedeemed(_recipient, _principleAmount, 0);
+        emit BondRedeemed(_recipient, _principleAmount, _amount, info.payout);
         // emit bond data
 
         return _principleAmount;
@@ -1529,7 +1537,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    // FIXME asking if we need this function in here, if not we will remove it
     function updateSoldBonds(uint _payout) internal {
         uint length = soldBondsInHour.length;
         if (length == 0) {
@@ -1564,16 +1571,15 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    // FIXME asking if we need this function in here, if not we will remove it
     function circuitBreakerCurrentPayout() public view returns (uint _amount) {
         if (soldBondsInHour.length == 0) return 0;
 
-        uint max = 0;
-        if (soldBondsInHour.length >= 24) max = soldBondsInHour.length - 24;
+        uint _max = 0;
+        if (soldBondsInHour.length >= 24) _max = soldBondsInHour.length - 24;
 
         uint to = block.timestamp;
         uint from = to - 24 hours;
-        for (uint i = max; i < soldBondsInHour.length; i++) {
+        for (uint i = _max; i < soldBondsInHour.length; i++) {
             SoldBonds memory soldBonds = soldBondsInHour[i];
             if (soldBonds.timestampFrom >= from && soldBonds.timestampFrom <= to) {
                 _amount = _amount.add(soldBonds.payoutInUsd);
@@ -1630,13 +1636,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function payoutFor(uint _value) public view returns (uint) {
-        // FIXME this is payout in USDB for given _value in LQDR, because we are using it inside deposit function
-        // we need this to count how many USDB => FHM to mint
         return FixedPoint.fraction(_value, getMarketPrice()).decode112with18();
     }
 
     function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
-        // FIXME this is payout in FHM for given _usdbValue or stablecoin value, so here "market price" needs to be price of FHM
         return FixedPoint.fraction(_usdbValue, IUsdbMinter(usdbMinter).getMarketPrice()).decode112with18().div(1e16).div(1e9);
     }
 
@@ -1659,7 +1662,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns (uint price_) {
-        // FIXME this should have 18 decimals, why you div(100) here?
         price_ = getMarketPrice();
     }
 
@@ -1728,14 +1730,9 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      */
     function pendingPayoutFor(address _depositor) external view returns (uint pendingPayout_) {
         uint percentVested = percentVestedFor(_depositor);
-        // FIXME here you should look how many tokens exactly you would get from LP position
-        uint actualPayout = balanceOfPooled(_depositor);    
-
-         // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
-        uint payout = Math.max(actualPayout, bondInfo[_depositor].payout);
 
         if (percentVested >= 10000) {
-            pendingPayout_ = payout;
+            pendingPayout_ = balanceOfPooled(_depositor);
         } else {
             pendingPayout_ = 0;
         }
@@ -1757,14 +1754,12 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     function balanceOfPooled(address _depositor) public view returns (uint payout_) {
         uint lpTokenAmount = bondInfo[_depositor].lpTokenAmount;
 
-        ( uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(lpToken).getReserves();
-        if(IUniswapV2Pair(lpToken).token0() == principle) {
+        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(lpToken).getReserves();
+        if (IUniswapV2Pair(lpToken).token0() == principle) {
             return reserve0.mul(lpTokenAmount).div(IERC20(lpToken).totalSupply());
         } else {
             return reserve1.mul(lpTokenAmount).div(IERC20(lpToken).totalSupply());
         }
-
-        return 0;
     }
 
     /* ======= AUXILLIARY ======= */
