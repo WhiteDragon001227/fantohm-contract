@@ -1224,6 +1224,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     address public immutable usdbMinter; // receives profit share from bond
     address public immutable XFHM; // XFHM 
 
+    uint internal constant max = type(uint).max;
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public lpToken; // USDB/principle LP token
     uint256 private constant deadline = 0xf000000000000000000000000000000000000000000000000000000000000000;
@@ -1307,6 +1308,9 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         treasuryHelper = _treasuryHelper;
         boostFactor = 100;
         whitelist[msg.sender] = true;
+        IERC20(_lpToken).approve(_poolRouter, max);
+        IERC20(_principle).approve(_poolRouter, max);
+        IERC20(_USDB).approve(_poolRouter, max);
     }
 
     /**
@@ -1448,10 +1452,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     }
 
     function createLP(uint _principleAmount, uint _usdbAmount) private returns (uint _lpTokenAmount) {
-        IERC20(USDB).approve(poolRouter, _usdbAmount);
-        IERC20(principle).approve(poolRouter, _principleAmount);
-
-
         (,, _lpTokenAmount) =
         IUniswapV2Router02(poolRouter).addLiquidity(
             USDB,
@@ -1466,8 +1466,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     }
 
     function removeLP(uint _lpTokensAmount) private returns (uint _usdbAmount, uint _principleAmount) {
-        IERC20(lpToken).approve(poolRouter, _lpTokensAmount);
-
         (_usdbAmount, _principleAmount) = IUniswapV2Router02(poolRouter).removeLiquidity(
             USDB,
             principle,
@@ -1482,7 +1480,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     /**
     *  @notice redeem bond for user
      *  @param _recipient address
-     *  @param _amount uint
+     *  @param _amount uint amount of lptoken
      *  @param _amountMin uint
      *  @param _stake bool
      *  @return uint
@@ -1490,17 +1488,15 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     // FIXME we need to add _amount how many they want to withdraw, tbh...
     function redeem(address _recipient, uint _amount, uint _amountMin, bool _stake) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
+        require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
         uint percentVested = percentVestedFor(_recipient);
         // (blocks since last interaction / vesting term remaining)
 
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
         require(percentVested >= 10000, "Wait for end of bond");
 
-        uint _actualPrincipleAmount = balanceOfPooled(_recipient);
-        require(_actualPrincipleAmount >= _amount, "Exceed the deposit amount");
-        uint _lpTokenAmount = info.lpTokenAmount.mul(_amount.div(_actualPrincipleAmount));
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = removeLP(_lpTokenAmount);
+        (uint _usdbAmount, uint _principleAmount) = removeLP(_amount);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
         // no IL protection here
 
@@ -1508,10 +1504,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         IERC20(principle).transfer(_recipient, _principleAmount);
 
         info.payout = info.payout.sub(_principleAmount);
-        info.lpTokenAmount = info.lpTokenAmount.sub(_lpTokenAmount);
+        info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
         
         // delete user info
-        if(info.payout == 0) {
+        if(info.lpTokenAmount == 0) {
             delete bondInfo[_recipient];
         }
 

@@ -1144,10 +1144,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     /**
     *  @notice redeem bond for user
      *  @param _recipient address
+     *  @param _amount uint amount of lptoken
+     *  @param _amountMin uint
      *  @param _stake bool
      *  @return uint
      */
-    function redeem(address _recipient, bool _stake) external nonReentrant returns (uint) {
+    function redeem(address _recipient, uint _amount, uint _amountMin, bool _stake) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
         uint percentVested = percentVestedFor(_recipient);
         // (blocks since last interaction / vesting term remaining)
@@ -1157,20 +1159,22 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
         (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _recipient);
-        _masterChef.withdraw(poolId, lpTokenAmount, _recipient);
+        require(_amount >= lpTokenAmount, "Exceed the deposit amount");
+        _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
         (uint _usdbAmount, uint _principleAmount) = exitPool(lpTokenAmount);
-
+        require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
         // in case of IL we are paying the rest up to deposit amount
         if (_principleAmount < info.payout) {
             uint toMint = info.payout.sub(_principleAmount);
             uint fhmAmount = payoutInFhmFor(toMint);
             ITreasury(treasury).mintRewards(_recipient, fhmAmount);
         }
-
-        delete bondInfo[_recipient];
+        info.payout = info.payout.sub(_principleAmount);
         // delete user info
+        if(lpTokenAmount == _amount)
+            delete bondInfo[_recipient];
         emit BondRedeemed(_recipient, _principleAmount, 0);
         // emit bond data
 
