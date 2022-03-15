@@ -60,7 +60,7 @@ module.exports = {
       chainId: 43114
     },
     matic: {
-      url: `https://rpc-mumbai.maticvigil.com`,
+      url: `https://rpc-mainnet.maticvigil.com`,
       accounts: [`${privateKey}`]
     }
     // hardhat: {
