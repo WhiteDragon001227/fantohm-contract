@@ -1345,13 +1345,13 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         uint payout = depositors.get(_depositor, index).payout;
 
         require( payout > 0, "depositor or index is not correct." );
-        require( percentVested >= 10000 && percentVestedBlocks >= 10000, "Current bond is already finished." );
+        require( percentVested < 10000 && percentVestedBlocks < 10000, "Current bond is already finished." );
 
         assetPayout_ = payout.mul(terms.prematureReturnRate).div(10000);
         require( payout >= assetPayout_, "prematureReturnRate is too big." );
         uint remainingBalance = payout.sub(assetPayout_);
         IERC20( USDB ).transfer(_depositor, assetPayout_ );
-        IBurnable( USDB ).burn( remainingBalance ) ;
+        IERC20( USDB ).transfer(DAO, remainingBalance );
         emit BondCancelled( _depositor, index, assetPayout_ );
     }
 
