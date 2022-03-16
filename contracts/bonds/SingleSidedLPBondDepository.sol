@@ -1160,7 +1160,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = exitPool(lpTokenAmount);
+        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
         // FIXME rewrite IL protection
