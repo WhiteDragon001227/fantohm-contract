@@ -52,35 +52,6 @@ contract Ownable is IOwnable {
     }
 }
 
-/**
- * @dev Standard math utilities missing in the Solidity language.
- */
-library Math {
-    /**
-     * @dev Returns the largest of two numbers.
-     */
-    function max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a >= b ? a : b;
-    }
-
-    /**
-     * @dev Returns the smallest of two numbers.
-     */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    /**
-     * @dev Returns the average of two numbers. The result is rounded towards
-     * zero.
-     */
-    function average(uint256 a, uint256 b) internal pure returns (uint256) {
-        // (a + b) / 2 can overflow, so we distribute
-        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
-    }
-}
-
-
 library SafeMath {
 
     function add(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -673,124 +644,26 @@ abstract contract ReentrancyGuard {
     }
 }
 
-interface ITreasury {
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
-    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
-    function mintRewards( address _recipient, uint _amount ) external;
-}
-
-interface IBondCalculator {
-    function valuation( address _LP, uint _amount ) external view returns ( uint );
-    function markdown( address _LP ) external view returns ( uint );
-}
-
-interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
-}
-
-interface IStakingHelper {
-    function stake( uint _amount, address _recipient ) external;
-}
-
 interface IMintable {
     function mint(address to, uint256 amount) external;
 }
 
 interface IBurnable {
-    function burn(uint256 amount) external;
+    function burnFrom(address sender, uint256 amount) external;
 }
 
 interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
-// import "@uniswap/lib/contracts/libraries/Babylonian.sol";
-library Babylonian {
-    function sqrt(uint256 y) internal pure returns (uint256 z) {
-        if (y > 3) {
-            z = y;
-            uint256 x = y / 2 + 1;
-            while (x < z) {
-                z = x;
-                x = (y / x + x) / 2;
-            }
-        } else if (y != 0) {
-            z = 1;
-        }
-        // else z = 0
-    }
-}
 
-interface IWETH {
-    function deposit() external payable;
-}
-
-interface IUniswapV2Factory {
-    function getPair(address tokenA, address tokenB)
-        external
-        view
-        returns (address);
-}
-
-interface IUniswapV2Router02 {
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint256 amountADesired,
-        uint256 amountBDesired,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline
-    )
-        external
-        returns (
-            uint256 amountA,
-            uint256 amountB,
-            uint256 liquidity
-        );
-     function getAmountsOut(uint amountIn, address[] memory path)
-        external
-        view
-        returns (uint[] memory amounts);
-    function swapExactTokensForTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-}
-
-interface IUniswapV2Pair {
-    function token0() external pure returns (address);
-
-    function token1() external pure returns (address);
-
-    function getReserves()
-        external
-        view
-        returns (
-            uint112 _reserve0,
-            uint112 _reserve1,
-            uint32 _blockTimestampLast
-        );
-}
-
-
-/// @notice USDB>$1
-/// @dev this is ISO bond - x% discount with 30 day vesting and also USDB A, 0.25% discount, instant
-contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
+/// @notice FHM->USDB bond depository
+/// @dev redeem FHM for USDB
+contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
 
-    
-    IUniswapV2Factory private uniswapFactory;
-    IUniswapV2Router02 private uniswapRouter; 
-
-    uint256 private constant deadline =
-        0xf000000000000000000000000000000000000000000000000000000000000000;
 
 
 
@@ -798,7 +671,8 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
 
     event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
     event BondRedeemed( address indexed recipient, uint payout, uint remaining );
-
+    event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
+    event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
 
 
 
@@ -806,17 +680,17 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
 
     address public immutable FHM; // token given as payment for bond
     address public immutable USDB; // USDB
-    address public immutable principle; // token used to create bond
-    address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
 
     Terms public terms; // stores terms for new bonds
+    Adjust public adjustment; // stores adjustment to BCV data
 
     mapping( address => Bond ) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
+
 
     bool public useWhitelist;
     bool public useCircuitBreaker;
@@ -827,8 +701,9 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
 
     // Info for creating new bonds
     struct Terms {
+        uint controlVariable; // scaling variable for price
         uint vestingTerm; // in blocks
-        uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
+        uint minimumPrice; // vs principle value
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
@@ -843,6 +718,15 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
         uint pricePaid; // In DAI, for front end viewing
     }
 
+    // Info for incremental adjustments to control variable
+    struct Adjust {
+        bool add; // addition or subtraction
+        uint rate; // increment
+        uint target; // BCV when adjustment finished
+        uint buffer; // minimum length (in blocks) between adjustments
+        uint lastBlock; // block when last adjustment made
+    }
+
     struct SoldBonds {
         uint timestampFrom;
         uint timestampTo;
@@ -854,37 +738,26 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
     constructor (
         address _FHM,
         address _USDB,
-        address _principle,
-        address _treasury,
         address _DAO,
-        address _usdbMinter,
-        address _uniswapFactory,
-        address _uniswapRouter
+        address _usdbMinter
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
         require( _USDB != address(0) );
         USDB = _USDB;
-        require( _principle != address(0) );
-        principle = _principle;
-        require( _treasury != address(0) );
-        treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
         require( _usdbMinter != address(0) );
         usdbMinter = _usdbMinter;
-        require( _uniswapFactory != address(0) );
-        uniswapFactory = IUniswapV2Factory(_uniswapFactory);
-        require( _uniswapRouter != address(0) );
-        uniswapRouter = IUniswapV2Router02(_uniswapRouter);
         useWhitelist = true;
         whitelist[msg.sender] = true;
     }
 
     /**
      *  @notice initializes bond parameters
+     *  @param _controlVariable uint
      *  @param _vestingTerm uint
-     *  @param _discount uint
+     *  @param _minimumPrice uint
      *  @param _maxPayout uint
      *  @param _fee uint
      *  @param _maxDebt uint
@@ -894,8 +767,9 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
      *  @param _useCircuitBreaker bool
      */
     function initializeBondTerms(
+        uint _controlVariable,
         uint _vestingTerm,
-        uint _discount,
+        uint _minimumPrice,
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
@@ -905,8 +779,9 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
         bool _useCircuitBreaker
     ) external onlyPolicy() {
         terms = Terms ({
+        controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
-        discount: _discount,
+        minimumPrice: _minimumPrice,
         maxPayout: _maxPayout,
         fee: _fee,
         maxDebt: _maxDebt,
@@ -923,7 +798,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -941,7 +816,31 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
             terms.fee = _input;
         } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
+        }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
+            terms.minimumPrice = _input;
         }
+    }
+
+    /**
+     *  @notice set control variable adjustment
+     *  @param _addition bool
+     *  @param _increment uint
+     *  @param _target uint
+     *  @param _buffer uint
+     */
+    function setAdjustment (
+        bool _addition,
+        uint _increment,
+        uint _target,
+        uint _buffer
+    ) external onlyPolicy() {
+        adjustment = Adjust({
+        add: _addition,
+        rate: _increment,
+        target: _target,
+        buffer: _buffer,
+        lastBlock: block.number
+        });
     }
 
     /* ======== USER FUNCTIONS ======== */
@@ -966,42 +865,33 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
 
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
-        uint nativePrice = bondPrice();
+        uint nativePrice = _bondPrice();
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
-        uint payout = payoutFor( value ); // payout to bonder is computed
+        uint payout = payoutFor( _amount ); // payout to bonder is computed
 
         require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 USDB ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
 
-        uint payoutInFhm = payoutInFhmFor(payout);
+        uint payoutInFhm = _amount;
 
-        IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
-        // amounts of buy fhm
-        uint fhmbought = _token2Token(principle, FHM, _amount);
-        // rest fhm by price impact
-        require(payoutInFhm >= fhmbought, "Error buying fhm with market price");
-        uint restfhm = payoutInFhm.sub(fhmbought);
         // profits are calculated
         uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
-
-        ITreasury( treasury ).mintRewards( address(this), restfhm.add(fee));
 
         // mint USDB with guaranteed discount
         IMintable(USDB).mint( address(this), payout );
 
-        // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burn( payoutInFhm ) ;
+        // burn whatever FHM got from user in current market price
+        IBurnable(FHM).burnFrom(msg.sender, payoutInFhm);
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
         }
 
         // total debt is increased
-        totalDebt = totalDebt.add( value );
+        totalDebt = totalDebt.add( payout );
 
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(payout);
@@ -1016,7 +906,9 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
 
         // indexed events are emitted
         emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
+        adjust(); // control variable is adjusted
         return payout;
     }
 
@@ -1115,6 +1007,29 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
+     *  @notice makes incremental adjustment to control variable
+     */
+    function adjust() internal {
+        uint blockCanAdjust = adjustment.lastBlock.add( adjustment.buffer );
+        if( adjustment.rate != 0 && block.number >= blockCanAdjust ) {
+            uint initial = terms.controlVariable;
+            if ( adjustment.add ) {
+                terms.controlVariable = terms.controlVariable.add( adjustment.rate );
+                if ( terms.controlVariable >= adjustment.target ) {
+                    adjustment.rate = 0;
+                }
+            } else {
+                terms.controlVariable = terms.controlVariable.sub( adjustment.rate );
+                if ( terms.controlVariable <= adjustment.target ) {
+                    adjustment.rate = 0;
+                }
+            }
+            adjustment.lastBlock = block.number;
+            emit ControlVariableAdjustment( initial, terms.controlVariable, adjustment.rate, adjustment.add );
+        }
+    }
+
+    /**
      *  @notice reduce total debt
      */
     function decayDebt() internal {
@@ -1140,25 +1055,42 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
      *  @param _value uint
      *  @return uint
      */
-    function payoutFor( uint _value ) public view returns ( uint ) {
+    function payoutFor(uint _value) public view returns ( uint ) {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
     }
-
-    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
-        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
-    }
-
 
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        uint _originalPrice = 1;
-        _originalPrice = _originalPrice.mul( 10 ** 2 );
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        }
 
-        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
-        price_ = _originalPrice.sub(_discount);
+        uint maximumPrice = getMarketPrice();
+        if (price_ > maximumPrice) {
+            price_ = maximumPrice;
+        }
+    }
+
+    /**
+     *  @notice calculate current bond price and remove floor if above
+     *  @return price_ uint
+     */
+    function _bondPrice() internal returns ( uint price_ ) {
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        } else if ( terms.minimumPrice != 0 ) {
+            terms.minimumPrice = 0;
+        }
+
+        uint maximumPrice = getMarketPrice();
+        if (price_ > maximumPrice) {
+            price_ = maximumPrice;
+        }
     }
 
     /**
@@ -1166,7 +1098,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
+        price_ = bondPrice().mul( 10 ** IERC20(USDB).decimals() ).div( 100 );
     }
 
     /**
@@ -1242,54 +1174,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
             pendingPayout_ = 0;
         }
     }
-    function _approveToken(
-        address token,
-        address spender,
-        uint256 amount
-    ) internal {
-        IERC20(token).safeApprove(spender, 0);
-        IERC20(token).safeApprove(spender, amount);
-    }
-    function _token2Token(
-        address _fromTokenContractAddress,
-        address _toTokenContractAddress,
-        uint256 tokens2Trade
-    ) internal returns (uint256 tokenBought) {
-        if (_fromTokenContractAddress == _toTokenContractAddress) {
-            return tokens2Trade;
-        }
 
-        _approveToken(
-            _fromTokenContractAddress,
-            address(uniswapRouter),
-            tokens2Trade
-        );
-
-        address pair = uniswapFactory.getPair(
-                _fromTokenContractAddress,
-                _toTokenContractAddress
-            );
-        require(pair != address(0), "No Swap Available");
-        address[] memory path = new address[](2);
-        path[0] = _fromTokenContractAddress;
-        path[1] = _toTokenContractAddress;
-
-		// same length as path
-		uint[] memory amountOutMins = uniswapRouter.getAmountsOut(
-				tokens2Trade,
-				path
-		);
-
-        tokenBought = uniswapRouter.swapExactTokensForTokens(
-            tokens2Trade,
-            amountOutMins[1],
-            path,
-            address(this),
-            deadline
-        )[path.length - 1];
-
-        require(tokenBought > 0, "Error Swapping Tokens 2");
-    }
 
 
 
@@ -1301,8 +1186,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM );
-        require( _token != USDB);
-        require( _token != principle );
+        require( _token != USDB );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;
     }
