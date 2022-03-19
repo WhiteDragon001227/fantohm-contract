@@ -32,7 +32,9 @@ library Math {
         return ((x * y) + (WAD / 2)) / WAD;
     }
 }
-
+interface IXERC20Upgradeable is IXERC20 {
+    function approve(address spender, uint256 amount) external view returns(bool);
+}
 interface IXFhm is IXERC20 {
     function isUser(address _addr) external view returns (bool);
 
@@ -108,9 +110,9 @@ contract XFhm is
     event Unstaked(address indexed user, uint256 indexed amount);
     event Claimed(address indexed user, uint256 indexed amount);
 
-    function initialize(
-        IERC20 _fhm
-    ) public initializer {
+    constructor(
+        address _fhm
+    ) {
         require(address(_fhm) != address(0), 'zero address');
 
         // Initialize XFhm
@@ -130,7 +132,7 @@ contract XFhm is
         invVoteThreshold = 20;
 
         // set Fhm
-        fhm = _fhm;
+        fhm = IERC20(_fhm);
 
     }
 
@@ -320,6 +322,17 @@ contract XFhm is
         fhm.safeTransfer(msg.sender, _amount);
 
         emit Unstaked(msg.sender, _amount);
+    }
+    function burn(uint256 amount) public virtual {
+        uint256 userXFhmBalance = balanceOf(msg.sender);
+        require(userXFhmBalance >= amount, "Burn exceed the amount of user");
+        _burn(msg.sender, amount);
+    }
+    function burnFrom(address _user, uint256 amount) public virtual {
+        uint256 userXFhmBalance = balanceOf(_user);
+        require(userXFhmBalance >= amount, "Burn exceed the amount of user");
+        _approve(_user, msg.sender, amount);
+        _burn(_user, amount);
     }
 
     /// @notice get votes for xFhm

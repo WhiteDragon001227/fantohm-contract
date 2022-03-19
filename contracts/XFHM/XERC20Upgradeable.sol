@@ -28,7 +28,7 @@ contract XERC20Upgradeable is Initializable, ContextUpgradeable, IXERC20 {
      */
     event Burn(address indexed account, uint256 value);
     event Mint(address indexed beneficiary, uint256 value);
-
+    event Approval(address indexed owner,address indexed spender, uint256 amount);
     /**
      * @dev Sets the values for {name} and {symbol}.
      *
@@ -139,6 +139,26 @@ contract XERC20Upgradeable is Initializable, ContextUpgradeable, IXERC20 {
         emit Burn(account, amount);
 
         _afterTokenOperation(account, _balances[account]);
+    }
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the `owner` s tokens.
+     *
+     * This internal function is equivalent to `approve`, and can be used to
+     * e.g. set automatic allowances for certain subsystems, etc.
+     *
+     * Emits an {Approval} event.
+     *
+     * Requirements:
+     *
+     * - `owner` cannot be the zero address.
+     * - `spender` cannot be the zero address.
+     */
+    function _approve(address owner, address spender, uint256 amount) internal virtual {
+        require(owner != address(0), "ERC20: approve from the zero address");
+        require(spender != address(0), "ERC20: approve to the zero address");
+
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
     }
 
     /**

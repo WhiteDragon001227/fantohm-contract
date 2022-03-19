@@ -437,440 +437,6 @@ library Counters {
     }
 }
 
-library EnumerableSet {
-
-    // To implement this library for multiple types with as little code
-    // repetition as possible, we write it in terms of a generic Set type with
-    // bytes32 values.
-    // The Set implementation uses private functions, and user-facing
-    // implementations (such as AddressSet) are just wrappers around the
-    // underlying Set.
-    // This means that we can only create new EnumerableSets for types that fit
-    // in bytes32.
-    struct Set {
-        // Storage of set values
-        bytes32[] _values;
-
-        // Position of the value in the `values` array, plus 1 because index 0
-        // means a value is not in the set.
-        mapping(bytes32 => uint256) _indexes;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function _add(Set storage set, bytes32 value) private returns (bool) {
-        if (!_contains(set, value)) {
-            set._values.push(value);
-            // The value is stored at length-1, but we add 1 to all indexes
-            // and use 0 as a sentinel value
-            set._indexes[value] = set._values.length;
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function _remove(Set storage set, bytes32 value) private returns (bool) {
-        // We read and store the value's index to prevent multiple reads from the same storage slot
-        uint256 valueIndex = set._indexes[value];
-
-        if (valueIndex != 0) {// Equivalent to contains(set, value)
-            // To delete an element from the _values array in O(1), we swap the element to delete with the last one in
-            // the array, and then remove the last element (sometimes called as 'swap and pop').
-            // This modifies the order of the array, as noted in {at}.
-
-            uint256 toDeleteIndex = valueIndex - 1;
-            uint256 lastIndex = set._values.length - 1;
-
-            // When the value to delete is the last one, the swap operation is unnecessary. However, since this occurs
-            // so rarely, we still do the swap anyway to avoid the gas cost of adding an 'if' statement.
-
-            bytes32 lastvalue = set._values[lastIndex];
-
-            // Move the last value to the index where the value to delete is
-            set._values[toDeleteIndex] = lastvalue;
-            // Update the index for the moved value
-            set._indexes[lastvalue] = toDeleteIndex + 1;
-            // All indexes are 1-based
-
-            // Delete the slot where the moved value was stored
-            set._values.pop();
-
-            // Delete the index for the deleted slot
-            delete set._indexes[value];
-
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function _contains(Set storage set, bytes32 value) private view returns (bool) {
-        return set._indexes[value] != 0;
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function _length(Set storage set) private view returns (uint256) {
-        return set._values.length;
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function _at(Set storage set, uint256 index) private view returns (bytes32) {
-        require(set._values.length > index, "EnumerableSet: index out of bounds");
-        return set._values[index];
-    }
-
-    function _getValues(Set storage set_) private view returns (bytes32[] storage) {
-        return set_._values;
-    }
-
-    // TODO needs insert function that maintains order.
-    // TODO needs NatSpec documentation comment.
-    /**
-     * Inserts new value by moving existing value at provided index to end of array and setting provided value at provided index
-     */
-    function _insert(Set storage set_, uint256 index_, bytes32 valueToInsert_) private returns (bool) {
-        require(set_._values.length > index_);
-        require(!_contains(set_, valueToInsert_), "Remove value you wish to insert if you wish to reorder array.");
-        bytes32 existingValue_ = _at(set_, index_);
-        set_._values[index_] = valueToInsert_;
-        return _add(set_, existingValue_);
-    }
-
-    struct Bytes4Set {
-        Set _inner;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function add(Bytes4Set storage set, bytes4 value) internal returns (bool) {
-        return _add(set._inner, value);
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(Bytes4Set storage set, bytes4 value) internal returns (bool) {
-        return _remove(set._inner, value);
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(Bytes4Set storage set, bytes4 value) internal view returns (bool) {
-        return _contains(set._inner, value);
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function length(Bytes4Set storage set) internal view returns (uint256) {
-        return _length(set._inner);
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(Bytes4Set storage set, uint256 index) internal view returns (bytes4) {
-        return bytes4(_at(set._inner, index));
-    }
-
-    function getValues(Bytes4Set storage set_) internal view returns (bytes4[] memory) {
-        bytes4[] memory bytes4Array_;
-        for (uint256 iteration_ = 0; _length(set_._inner) > iteration_; iteration_++) {
-            bytes4Array_[iteration_] = bytes4(_at(set_._inner, iteration_));
-        }
-        return bytes4Array_;
-    }
-
-    function insert(Bytes4Set storage set_, uint256 index_, bytes4 valueToInsert_) internal returns (bool) {
-        return _insert(set_._inner, index_, valueToInsert_);
-    }
-
-    struct Bytes32Set {
-        Set _inner;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function add(Bytes32Set storage set, bytes32 value) internal returns (bool) {
-        return _add(set._inner, value);
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(Bytes32Set storage set, bytes32 value) internal returns (bool) {
-        return _remove(set._inner, value);
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(Bytes32Set storage set, bytes32 value) internal view returns (bool) {
-        return _contains(set._inner, value);
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function length(Bytes32Set storage set) internal view returns (uint256) {
-        return _length(set._inner);
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(Bytes32Set storage set, uint256 index) internal view returns (bytes32) {
-        return _at(set._inner, index);
-    }
-
-    function getValues(Bytes32Set storage set_) internal view returns (bytes4[] memory) {
-        bytes4[] memory bytes4Array_;
-
-        for (uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++) {
-            bytes4Array_[iteration_] = bytes4(at(set_, iteration_));
-        }
-
-        return bytes4Array_;
-    }
-
-    function insert(Bytes32Set storage set_, uint256 index_, bytes32 valueToInsert_) internal returns (bool) {
-        return _insert(set_._inner, index_, valueToInsert_);
-    }
-
-    // AddressSet
-    struct AddressSet {
-        Set _inner;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function add(AddressSet storage set, address value) internal returns (bool) {
-        return _add(set._inner, bytes32(uint256(value)));
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(AddressSet storage set, address value) internal returns (bool) {
-        return _remove(set._inner, bytes32(uint256(value)));
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(AddressSet storage set, address value) internal view returns (bool) {
-        return _contains(set._inner, bytes32(uint256(value)));
-    }
-
-    /**
-     * @dev Returns the number of values in the set. O(1).
-     */
-    function length(AddressSet storage set) internal view returns (uint256) {
-        return _length(set._inner);
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(AddressSet storage set, uint256 index) internal view returns (address) {
-        return address(uint256(_at(set._inner, index)));
-    }
-
-    /**
-     * TODO Might require explicit conversion of bytes32[] to address[].
-     *  Might require iteration.
-     */
-    function getValues(AddressSet storage set_) internal view returns (address[] memory) {
-
-        address[] memory addressArray;
-
-        for (uint256 iteration_ = 0; _length(set_._inner) >= iteration_; iteration_++) {
-            addressArray[iteration_] = at(set_, iteration_);
-        }
-
-        return addressArray;
-    }
-
-    function insert(AddressSet storage set_, uint256 index_, address valueToInsert_) internal returns (bool) {
-        return _insert(set_._inner, index_, bytes32(uint256(valueToInsert_)));
-    }
-
-
-    // UintSet
-
-    struct UintSet {
-        Set _inner;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function add(UintSet storage set, uint256 value) internal returns (bool) {
-        return _add(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(UintSet storage set, uint256 value) internal returns (bool) {
-        return _remove(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(UintSet storage set, uint256 value) internal view returns (bool) {
-        return _contains(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function length(UintSet storage set) internal view returns (uint256) {
-        return _length(set._inner);
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(UintSet storage set, uint256 index) internal view returns (uint256) {
-        return uint256(_at(set._inner, index));
-    }
-
-    struct UInt256Set {
-        Set _inner;
-    }
-
-    /**
-     * @dev Add a value to a set. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function add(UInt256Set storage set, uint256 value) internal returns (bool) {
-        return _add(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(UInt256Set storage set, uint256 value) internal returns (bool) {
-        return _remove(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(UInt256Set storage set, uint256 value) internal view returns (bool) {
-        return _contains(set._inner, bytes32(value));
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function length(UInt256Set storage set) internal view returns (uint256) {
-        return _length(set._inner);
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(UInt256Set storage set, uint256 index) internal view returns (uint256) {
-        return uint256(_at(set._inner, index));
-    }
-}
-
 abstract contract ERC20Permit is ERC20, IERC2612Permit {
     using Counters for Counters.Counter;
 
@@ -923,27 +489,6 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
 
     function nonces(address owner) public view override returns (uint256) {
         return _nonces[owner].current();
-    }
-}
-/*
- * @dev Provides information about the current execution context, including the
- * sender of the transaction and its data. While these are generally available
- * via msg.sender and msg.data, they should not be accessed in such a direct
- * manner, since when dealing with GSN meta-transactions the account sending and
- * paying for execution may not be the actual sender (as far as an application
- * is concerned).
- *
- * This contract is only required for intermediate, library-like contracts.
- */
-abstract contract Context {
-    function _msgSender() internal view virtual returns (address payable) {
-        return msg.sender;
-    }
-
-    function _msgData() internal view virtual returns (bytes memory) {
-        this;
-        // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
-        return msg.data;
     }
 }
 
@@ -1152,18 +697,23 @@ interface IMintable {
 
 interface IBurnable {
     function burn(uint256 amount) external;
+    function burnFrom(address user, uint256 amount) external;
 }
 
 interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
+
 interface IUniswapV2ERC20 {
     function totalSupply() external view returns (uint);
 }
+
 interface IUniswapV2Pair is IUniswapV2ERC20 {
     function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function token0() external view returns ( address );
-    function token1() external view returns ( address );
+
+    function token0() external view returns (address);
+
+    function token1() external view returns (address);
 }
 
 interface IUniswapV2Router02 {
@@ -1209,38 +759,38 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated(uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD);
-    event BondRedeemed(address indexed recipient, uint payout, uint remaining);
+    event BondCreated(address indexed depositor, uint depositInLqdr, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payoutInLqdr, uint amountInLP, uint remainingLqdr);
 
-
+    uint internal constant max = type(uint).max;
 
 
     /* ======== STATE VARIABLES ======== */
     address public immutable FHM; // token given as payment for bond
-    address public immutable USDB; // USD
+    address public immutable USDB; // USDB
     address public immutable principle; // token used to create bond
-    address public immutable DAO; // receives profit share from bond
     address public immutable treasury; // mints FHM when receives principle
+    address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
     address public immutable XFHM; // XFHM 
 
-    uint internal constant max = type(uint).max;
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public lpToken; // USDB/principle LP token
+    address public immutable treasuryHelper; // treasury Helper address
+
     uint256 private constant deadline = 0xf000000000000000000000000000000000000000000000000000000000000000;
 
     bool public doDiv;
     uint256 public decimals;
 
-    address public immutable treasuryHelper; //treasury Helper address
     Terms public terms; // stores terms for new bonds
 
     mapping(address => Bond) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
-    uint public boostFactor; // in %, 100 is 100%
 
+    uint public boostFactor; // in %, 100 is 100%
     bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
@@ -1292,10 +842,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         USDB = _USDB;
         require(_principle != address(0));
         principle = _principle;
-        require(_DAO != address(0));
-        DAO = _DAO;
         require(_treasury != address(0));
         treasury = _treasury;
+        require(_DAO != address(0));
+        DAO = _DAO;
         require(_usdbMinter != address(0));
         usdbMinter = _usdbMinter;
         require(_poolRouter != address(0));
@@ -1308,6 +858,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         treasuryHelper = _treasuryHelper;
         boostFactor = 100;
         whitelist[msg.sender] = true;
+
         IERC20(_lpToken).approve(_poolRouter, max);
         IERC20(_principle).approve(_poolRouter, max);
         IERC20(_USDB).approve(_poolRouter, max);
@@ -1387,7 +938,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         uint _maxPrice,
         address _depositor
     ) external nonReentrant returns (uint) {
-
         require(_depositor != address(0), "Invalid address");
         // allow only whitelisted contracts
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
@@ -1395,10 +945,12 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
         uint lqdrPriceInUSD = bondPriceInUSD();
+        // FIXME what about slip page here?
         require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
         // slippage protection
 
-        uint payoutInUsdb = payoutFor(_amount);
+        uint value = _amount.mul( 10 ** IERC20( FHM ).decimals() ).div( 10 ** IERC20( principle ).decimals() ).mul(10 ** 9);
+        uint payoutInUsdb = payoutFor(value);
         // payout to bonder is computed
 
         require(payoutInUsdb >= 10_000_000_000_000_000, "Bond too small");
@@ -1422,7 +974,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         IBurnable(FHM).burn(payoutInFhm);
 
         // burn xFHM deposits
-        IBurnable(XFHM).burn(feeInXfhm(_amount));
+        IBurnable(XFHM).burnFrom(_depositor, feeInXfhm(_amount));
 
         uint _lpTokenAmount = createLP(_amount, payoutInUsdb);
 
@@ -1436,17 +988,16 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(payoutInUsdb);
 
-        uint bondPayout = bondInfo[_depositor].payout;
         // depositor info is stored
         bondInfo[_depositor] = Bond({
-        payout : bondPayout.add(_amount), // FIXME here we need to count payout in LQDR not USDB!!!
+        payout : bondInfo[_depositor].payout.add(_amount),
         lpTokenAmount : bondInfo[_depositor].lpTokenAmount.add(_lpTokenAmount),
         vesting : terms.vestingTerm,
         lastBlock : block.number,
         pricePaid : lqdrPriceInUSD
         });
         // indexed events are emitted
-        emit BondCreated(_amount, payoutInUsdb, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
+        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
 
         return payoutInUsdb;
     }
@@ -1477,20 +1028,19 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         );
 
     }
+
     /**
-    *  @notice redeem bond for user
+     *  @notice redeem bond for user
      *  @param _recipient address
-     *  @param _amount uint amount of lptoken
-     *  @param _amountMin uint
-     *  @param _stake bool
-     *  @return uint
+     *  @param _amount uint amount of lpToken
+     *  @param _amountMin uint slippage minimal amount in lqdr
+     *  @return uint amount in lqdr really claimed
      */
-    // FIXME we need to add _amount how many they want to withdraw, tbh...
-    function redeem(address _recipient, uint _amount, uint _amountMin, bool _stake) external nonReentrant returns (uint) {
+    function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
         require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
-        uint percentVested = percentVestedFor(_recipient);
         // (blocks since last interaction / vesting term remaining)
+        uint percentVested = percentVestedFor(_recipient);
 
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
         require(percentVested >= 10000, "Wait for end of bond");
@@ -1503,15 +1053,20 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         IBurnable(USDB).burn(_usdbAmount);
         IERC20(principle).transfer(_recipient, _principleAmount);
 
-        info.payout = info.payout.sub(_principleAmount);
+        if (_principleAmount < info.payout) {
+            info.payout = info.payout.sub(_principleAmount);
+        } else {
+            info.payout = 0;
+        }
+
         info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
-        
+
         // delete user info
-        if(info.lpTokenAmount == 0) {
+        if (info.lpTokenAmount == 0) {
             delete bondInfo[_recipient];
         }
 
-        emit BondRedeemed(_recipient, _principleAmount, 0);
+        emit BondRedeemed(_recipient, _principleAmount, _amount, info.payout);
         // emit bond data
 
         return _principleAmount;
@@ -1529,7 +1084,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    // FIXME asking if we need this function in here, if not we will remove it
     function updateSoldBonds(uint _payout) internal {
         uint length = soldBondsInHour.length;
         if (length == 0) {
@@ -1564,16 +1118,15 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    // FIXME asking if we need this function in here, if not we will remove it
     function circuitBreakerCurrentPayout() public view returns (uint _amount) {
         if (soldBondsInHour.length == 0) return 0;
 
-        uint max = 0;
-        if (soldBondsInHour.length >= 24) max = soldBondsInHour.length - 24;
+        uint _max = 0;
+        if (soldBondsInHour.length >= 24) _max = soldBondsInHour.length - 24;
 
         uint to = block.timestamp;
         uint from = to - 24 hours;
-        for (uint i = max; i < soldBondsInHour.length; i++) {
+        for (uint i = _max; i < soldBondsInHour.length; i++) {
             SoldBonds memory soldBonds = soldBondsInHour[i];
             if (soldBonds.timestampFrom >= from && soldBonds.timestampFrom <= to) {
                 _amount = _amount.add(soldBonds.payoutInUsd);
@@ -1630,13 +1183,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function payoutFor(uint _value) public view returns (uint) {
-        // FIXME this is payout in USDB for given _value in LQDR, because we are using it inside deposit function
-        // we need this to count how many USDB => FHM to mint
-        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18();
+        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18().div(1e16);
     }
 
     function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
-        // FIXME this is payout in FHM for given _usdbValue or stablecoin value, so here "market price" needs to be price of FHM
         return FixedPoint.fraction(_usdbValue, IUsdbMinter(usdbMinter).getMarketPrice()).decode112with18().div(1e16).div(1e9);
     }
 
@@ -1659,7 +1209,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns (uint price_) {
-        // FIXME this should have 18 decimals, why you div(100) here?
         price_ = getMarketPrice();
     }
 
@@ -1728,14 +1277,9 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      */
     function pendingPayoutFor(address _depositor) external view returns (uint pendingPayout_) {
         uint percentVested = percentVestedFor(_depositor);
-        // FIXME here you should look how many tokens exactly you would get from LP position
-        uint actualPayout = balanceOfPooled(_depositor);    
-
-         // return original amount + trading fees (half of LP token amount) or deposited amount in case of IL (will pay difference in FHM)
-        uint payout = Math.max(actualPayout, bondInfo[_depositor].payout);
 
         if (percentVested >= 10000) {
-            pendingPayout_ = payout;
+            pendingPayout_ = balanceOfPooled(_depositor);
         } else {
             pendingPayout_ = 0;
         }
@@ -1757,14 +1301,12 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     function balanceOfPooled(address _depositor) public view returns (uint payout_) {
         uint lpTokenAmount = bondInfo[_depositor].lpTokenAmount;
 
-        ( uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(lpToken).getReserves();
-        if(IUniswapV2Pair(lpToken).token0() == principle) {
+        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(lpToken).getReserves();
+        if (IUniswapV2Pair(lpToken).token0() == principle) {
             return reserve0.mul(lpTokenAmount).div(IERC20(lpToken).totalSupply());
         } else {
             return reserve1.mul(lpTokenAmount).div(IERC20(lpToken).totalSupply());
         }
-
-        return 0;
     }
 
     /* ======= AUXILLIARY ======= */
