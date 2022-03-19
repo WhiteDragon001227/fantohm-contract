@@ -26,7 +26,7 @@ async function main() {
     await fhmToken.approve(xfhm.address, largeApproval);
     console.log(`Approved FHM to be spent by XFHM`);
 
-    await xfhm.deposit('1000000000000000000000');
+    await xfhm.deposit('1000000000');
     console.log(`Deposited from deployer to XFHM address: ${xfhm.address}`);
 
 }

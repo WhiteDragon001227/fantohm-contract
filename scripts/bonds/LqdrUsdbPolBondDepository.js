@@ -98,6 +98,11 @@ async function main() {
     await usdbToken.grantRoleMinter(bond.address);
     console.log(`grant minter of USDB to ${bond.address}`);
 
+    const XFHM = await ethers.getContractFactory('XFHM');
+    const xFHM = await XFHM.attach(xFhmAddress);
+    await xFHM.approve(bond.address, largeApproval);
+    console.log(`Approved bond to spend deployer XFHM`);
+
     await bond.deposit('1000000000000000000000', '100', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
