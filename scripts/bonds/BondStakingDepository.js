@@ -5,6 +5,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    // const network = "rinkeby";
+    const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -16,7 +18,7 @@ async function main() {
         stakingWarmupManagerAddress,
         usdbMinterAddress,
         fhmCirculatingSupply
-    } = require('../networks-fantom.json');
+    } = require(`../networks-${network}.json`);
 
     // Reserve addresses
     const reserves = [
@@ -40,9 +42,9 @@ async function main() {
     const largeApproval = '100000000000000000000000000000000';
 
     // Bond vesting length in blocks. 33110 ~ 5 days
-    // const bondVestingLength = '8640';
-    const bondVestingLength = '498300';
-    // const bondVestingLength = '29400';
+    const bondVestingLength = '8640'; // FTM testnet
+    // const bondVestingLength = '498300'; // FTM mainnet
+    // const bondVestingLength = '29400'; // MOVR?
 
     // Min bond price
     const minBondPrice = '2000';
@@ -75,6 +77,7 @@ async function main() {
 
         // Deploy Bond
         const Bond = await ethers.getContractFactory('FantohmBondStakingDepository');
+        // const bond = await Bond.attach("0xd96f833613b4a85c26D870f71F0450E07dc6Efc9");
         const bond = await Bond.deploy(fhmAddress, sfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply);
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -102,9 +105,12 @@ async function main() {
 
         await bond.deposit('1000000000000000000000', '60000', deployer.address);
         console.log(`Deposited from deployer to Bond address: ${bond.address}`);
-        //
+
         // DONE
         console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+        console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+                    `${bond.address} "${fhmAddress}" "${sfhmAddress}" "${reserve.address}" "${treasury.address}" "${daoAddress}" "${zeroAddress}" "${usdbMinterAddress}" "${fhmCirculatingSupply}"`);
     }
 }
 

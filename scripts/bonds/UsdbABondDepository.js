@@ -5,6 +5,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -13,7 +15,7 @@ async function main() {
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-    } = require('../networks-fantom.json');
+    } = require(`../networks-${network}.json`);
 
     // Reserve addresses
     const reserve =
@@ -47,8 +49,8 @@ async function main() {
 
     const soldBondsLimit = '10000000000000000000000';
 
-    const useWhitelist = true;
-    const useCircuitBreaker = false;
+    const useWhitelist = false;
+    const useCircuitBreaker = true;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -59,6 +61,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('UsdbABondDepository');
+    // const bond = await Bond.attach("0x3C37c5195839cEf16262f2Ed57d4c1F54c630d16");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -75,7 +78,7 @@ async function main() {
     // Approve the treasury to spend deployer's reserve tokens
     await reserveToken.approve(treasury.address, largeApproval);
     console.log(`Approved treasury to spend deployer ${reserve.name}`);
-    //
+
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
@@ -90,6 +93,9 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasury.address}" "${daoAddress}" "${usdbMinterAddress}"`);
 }
 
 main()
