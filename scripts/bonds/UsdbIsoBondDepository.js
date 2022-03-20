@@ -51,7 +51,7 @@ async function main() {
     const maxBondDebt = '50000000000000000000000';
 
     // Initial Bond debt
-    const intialBondDebt = '0';
+    const initialBondDebt = '0';
 
     const soldBondsLimit = '10000000000000000000000';
 
@@ -78,7 +78,7 @@ async function main() {
     console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
-    await bond.initializeBondTerms(bondVestingLengthSec, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
+    await bond.initializeBondTerms(bondVestingLengthSec, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Approve the treasury to spend deployer's reserve tokens
