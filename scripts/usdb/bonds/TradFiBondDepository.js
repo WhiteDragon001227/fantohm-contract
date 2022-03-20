@@ -4,6 +4,10 @@ const {ethers} = require("hardhat");
 // const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
 // const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
 
+// npx hardhat console --network fantom_testnet
+// const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0x1eFF5569aDBc45A7e15b3CC5701A93FF0ea8D761" }})
+// const projectX = await ProjectX.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc")
+
 
 async function main() {
 
@@ -17,7 +21,7 @@ async function main() {
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-    } = require('../networks-fantom_testnet.json');
+    } = require('../../networks-fantom_testnet.json');
 
     const daoAddress = deployer.address;
     // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
@@ -59,8 +63,9 @@ async function main() {
 
     const soldBondsLimit = '10000000000000000000000';
 
-    const useWhitelist = true;
-    const useCircuitBreaker = false;
+    const useWhitelist = false;
+    const useCircuitBreaker = true;
+    const prematureReturnRate = 500;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -70,6 +75,7 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     const Library = await ethers.getContractFactory("IterableMapping");
+    // const library = await Library.attach("0x1eFF5569aDBc45A7e15b3CC5701A93FF0ea8D761");
     const library = await Library.deploy();
     await library.deployed();
     // Deploy Bond
@@ -79,6 +85,7 @@ async function main() {
         },
     });
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
+    // const bond = await Bond.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc");
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -88,13 +95,13 @@ async function main() {
     console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
-    await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
+    await bond.initializeBondTerms(bondVestingSecondsLength, bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker, prematureReturnRate);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Approve the treasury to spend deployer's reserve tokens
     await reserveToken.approve(treasury.address, largeApproval);
     console.log(`Approved treasury to spend deployer ${reserve.name}`);
-    //
+
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
