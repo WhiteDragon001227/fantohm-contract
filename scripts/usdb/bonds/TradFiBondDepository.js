@@ -1,13 +1,12 @@
 const {ethers} = require("hardhat");
 
 // npx hardhat console --network rinkeby
-// const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0xbc2447965a97caa40c5c6d7971c680cf4b03d40c" }})
-// const projectX = await ProjectX.attach("0x312DBa92153E931D91c5e75870Dbc62E2DCD21AC")
+// const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0x8fae7a5f94960e0b64e346918160f6276f232445" }})
+// const projectX = await ProjectX.attach("0xC82C84Dde4F4d76719e9f0aaF0CAB5402A116F7E")
 
 // npx hardhat console --network fantom_testnet
 // const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0x1eFF5569aDBc45A7e15b3CC5701A93FF0ea8D761" }})
 // const projectX = await ProjectX.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc")
-
 
 async function main() {
 
@@ -15,16 +14,14 @@ async function main() {
     console.log('Deploying contracts with the account: ' + deployer.address);
 
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
         fhmAddress,
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-    } = require('../../networks-fantom_testnet.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
+    } = require('../../networks-rinkeby.json');
 
     // Reserve addresses
     const reserve =
@@ -75,17 +72,19 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     const Library = await ethers.getContractFactory("IterableMapping");
-    // const library = await Library.attach("0x1eFF5569aDBc45A7e15b3CC5701A93FF0ea8D761");
+    // const library = await Library.attach("0x8fae7a5f94960e0b64e346918160f6276f232445");
     const library = await Library.deploy();
     await library.deployed();
+    console.log(`Deployed library to: ${library.address}`);
+
     // Deploy Bond
     const Bond = await ethers.getContractFactory('TradFiBondDepository', {
         libraries: {
             IterableMapping: library.address,
         },
     });
+    // const bond = await Bond.attach("0x52b27846dd773C8E16Fc8e75E2d1D6abd4e8C48A");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
-    // const bond = await Bond.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc");
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -117,17 +116,19 @@ async function main() {
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
 
-    // redeemall
+    // redeemAll
     const pageSize = 1000;
-    var count = await bond.bondCount(deployer.address);
+    var count = await bond.usersCount();
+    console.log("count: " + count);
     const min = (a, b) => (a < b ? a : b);
     for (var i = 0; i <= count / pageSize; i++) {
         const start = i * pageSize;
         const end = min(start + pageSize, count);
-        var result = await bond.redeemAll(start, end, deployer.address);
+        console.log("start:" + start + ", end:" + end);
+        var result = await bond.redeemAll(start, end);
         var num = result[0], indices = result[1];
         while (num > 0) {
-            result = await bond.redeem(indices, deployer.address);
+            result = await bond.redeem(indices);
             num = result[0];
             indices = result[1];
         }

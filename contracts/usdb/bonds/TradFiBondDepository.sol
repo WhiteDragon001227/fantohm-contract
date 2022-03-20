@@ -1020,50 +1020,51 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         return payout;
     }
 
-    function redeemAll(uint _from, uint _to) public returns(uint[] memory) {
-        require (_from >= 0 && _from < depositors.size(), "`from` is invalid");
-        require (_to >= 0 && _to < depositors.size(), "`to` is invalid");
-        require (_from < _to, "`to` should be equal and greater than `from`");
+    function redeemAll(uint _from, uint _to) public returns (uint[] memory) {
+        require(_from >= 0 && _from < depositors.size(), "`from` is invalid");
+        require(_to >= 0 && _to <= depositors.size(), "`to` is invalid");
+        require(_from < _to, "`to` should be equal and greater than `from`");
 
         uint[] memory _removedIndices;
         uint _counter = 0;
-        for (uint i = _from; i < _to; i ++) {
+        for (uint i = _from; i < _to; i++) {
             address _recipient = depositors.getKeyAtIndex(i);
-            if(i > depositors.size()) {
+            if (i > depositors.size()) {
                 break;
             }
-            if(redeemOne(_recipient)) {
-               _removedIndices[_counter++] = i;
-               depositors.remove(_recipient);
+            if (redeemOne(_recipient)) {
+                _removedIndices[_counter++] = i;
+                depositors.remove(_recipient);
             }
         }
         return _removedIndices;
     }
 
-    function redeem(uint[] memory _newIndices) public returns(uint[] memory) {
+    function redeem(uint[] memory _newIndices) public returns (uint[] memory) {
         require(_newIndices.length > 0, "Redeems unavailable");
 
         uint[] memory _removedIndices;
         uint _counter = 0;
         for (uint i = 0; i <= _newIndices.length; i ++) {
             address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            if(redeemOne(_recipient)) {
+            if (redeemOne(_recipient)) {
                 _removedIndices[_counter++] = i;
-                 depositors.remove(_recipient);
+                depositors.remove(_recipient);
             }
         }
-        return  _removedIndices;
+        return _removedIndices;
     }
-    function redeemOne(address _depositor) public returns(bool _toDelete) {
-        Bond[] storage _userBondInfo = depositors.values[_depositor];
-        require(_userBondInfo.length > 0, "There is no bonding" );
 
-        uint  _finalAmount = 0;
-        uint  _length = _userBondInfo.length;
+    function redeemOne(address _depositor) public returns (bool _toDelete) {
+        Bond[] storage _userBondInfo = depositors.values[_depositor];
+        require(_userBondInfo.length > 0, "There is no bonding");
+
+        uint _finalAmount = 0;
+        uint _length = _userBondInfo.length;
 
         for (uint index = 0; index < _length; index++) {
-            uint percentVested = percentVestedFor( _depositor, index ); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index ); // (blocks since last interaction / vesting term remaining)
+            uint percentVested = percentVestedFor(_depositor, index); // (seconds since last interaction / vesting term remaining)
+            uint percentVestedBlocks = percentVestedBlocksFor(_depositor, index); // (blocks since last interaction / vesting term remaining)
 
             if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
                 Bond memory removeMe;
@@ -1071,21 +1072,22 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
                 _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
                 _userBondInfo[_userBondInfo.length - 1] = removeMe;
                 _userBondInfo.pop();
-               _finalAmount = _finalAmount.add(removeMe.payout);
+                _finalAmount = _finalAmount.add(removeMe.payout);
                 _length --;
             }
         }
-        if(_length == 0) {
+        if (_length == 0) {
             _toDelete = true;
         }
 
         if (_finalAmount > 0) {
-            IERC20(USDB).transfer( _depositor, _finalAmount);
-            emit BondRedeemed( _depositor, _finalAmount, 0, 0 );
+            IERC20(USDB).transfer(_depositor, _finalAmount);
+            emit BondRedeemed(_depositor, _finalAmount, 0, 0);
         }
 
         return _toDelete;
     }
+
     /**
      *  @notice return bond info
      *  @param _depositor address
