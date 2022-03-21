@@ -34,11 +34,6 @@ contract Ownable is IOwnable {
         _;
     }
 
-    modifier onlyDepositor(address _depositor) {
-        require( _depositor == msg.sender, "caller is not the depositor" );
-        _;
-    }
-
     function renounceManagement() public virtual override onlyPolicy() {
         emit OwnershipPushed( _owner, address(0) );
         _owner = address(0);
@@ -56,35 +51,6 @@ contract Ownable is IOwnable {
         _owner = _newOwner;
     }
 }
-
-/**
- * @dev Standard math utilities missing in the Solidity language.
- */
-library Math {
-    /**
-     * @dev Returns the largest of two numbers.
-     */
-    function max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a >= b ? a : b;
-    }
-
-    /**
-     * @dev Returns the smallest of two numbers.
-     */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    /**
-     * @dev Returns the average of two numbers. The result is rounded towards
-     * zero.
-     */
-    function average(uint256 a, uint256 b) internal pure returns (uint256) {
-        // (a + b) / 2 can overflow, so we distribute
-        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
-    }
-}
-
 
 library SafeMath {
 
@@ -619,76 +585,6 @@ library FixedPoint {
     }
 }
 
-// Info for bond holder
-struct Bond {
-    uint payout; // USDB to be paid
-    uint vesting; // Blocks left to vest
-    uint lastBlock; // Last interaction
-    uint pricePaid; // In DAI, for front end viewing
-    uint vestingSeconds; // Blocks left to vest
-    uint lastTimestamp; // Last interaction
-}
-
-library IterableMapping {
-
-
-    // Iterable mapping from address to uint;
-    struct Map {
-        address[] keys;
-        mapping(address => Bond[]) values;
-        mapping(address => uint) indexOf;
-        mapping(address => bool) inserted;
-    }
-
-    function get(Map storage map, address key, uint index) public view returns (Bond storage) {
-        return map.values[key][index];
-    }
-
-    function getKeyAtIndex(Map storage map, uint index) public view returns (address) {
-        return map.keys[index];
-    }
-
-    function size(Map storage map) public view returns (uint) {
-        return map.keys.length;
-    }
-
-    function set(
-        Map storage map,
-        address key,
-        Bond storage val
-    ) public {
-        if (map.inserted[key]) {
-            map.values[key].push(val);
-
-        } else {
-            map.inserted[key] = true;
-
-            map.values[key].push(val);
-            map.indexOf[key] = map.keys.length;
-            map.keys.push(key);
-        }
-    }
-
-    function remove(Map storage map, address key) public {
-        if (!map.inserted[key]) {
-            return;
-        }
-
-        delete map.inserted[key];
-        delete map.values[key];
-
-        uint index = map.indexOf[key];
-        uint lastIndex = map.keys.length - 1;
-        address lastKey = map.keys[lastIndex];
-
-        map.indexOf[lastKey] = index;
-        delete map.indexOf[key];
-
-        map.keys[index] = lastKey;
-        map.keys.pop();
-    }
-}
-
 /**
  * @dev Contract module that helps prevent reentrant calls to a function.
  *
@@ -754,48 +650,35 @@ interface ITreasury {
     function mintRewards( address _recipient, uint _amount ) external;
 }
 
-interface IBondCalculator {
-    function valuation( address _LP, uint _amount ) external view returns ( uint );
-    function markdown( address _LP ) external view returns ( uint );
-}
-
-interface IStaking {
-    function stake( uint _amount, address _recipient ) external returns ( bool );
-}
-
-interface IStakingHelper {
-    function stake( uint _amount, address _recipient ) external;
-}
-
 interface IMintable {
     function mint(address to, uint256 amount) external;
 }
 
 interface IBurnable {
-    function burn(uint256 amount) external;
+    function burnFrom(address sender, uint256 amount) external;
 }
 
 interface IUsdbMinter {
     function getMarketPrice() external view returns (uint);
 }
 
-/// @notice Traditional Finance bond
-/// @dev this is ISO bond - x% discount with 6 weeks vesting
-contract TradFiBondDepository is Ownable, ReentrancyGuard {
+/// @notice FHM->USDB bond depository
+/// @dev redeem FHM for USDB
+contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
     using SafeMath for uint;
-    using IterableMapping for IterableMapping.Map;
+
 
 
 
     /* ======== EVENTS ======== */
 
-    event BondCreated( uint deposit, uint indexed payout, uint indexed expiresTimestamp, uint expiresBlock, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payout, uint remainingSeconds, uint remainingBlocks );
-    event BondCancelled( address indexed recipient, uint indexed index, uint indexed principlePayout );
-
+    event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
+    event BondRedeemed( address indexed recipient, uint payout, uint remaining );
+    event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
+    event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
 
 
 
@@ -803,37 +686,52 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     address public immutable FHM; // token given as payment for bond
     address public immutable USDB; // USDB
-    address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
 
     Terms public terms; // stores terms for new bonds
+    Adjust public adjustment; // stores adjustment to BCV data
 
-    IterableMapping.Map private depositors; // stores depositors bond information
+    mapping( address => Bond ) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
+
 
     bool public useWhitelist;
     bool public useCircuitBreaker;
     mapping(address => bool) public whitelist;
     SoldBonds[] public soldBondsInHour;
-    Bond public _bondInfo;
-    uint public usersCount;
 
     /* ======== STRUCTS ======== */
 
     // Info for creating new bonds
     struct Terms {
-        uint vestingTermSeconds; // in seconds
-        uint vestingTerm; // safeguard, use some vestingTermSeconds/2 in blocks
-        uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
+        uint controlVariable; // scaling variable for price
+        uint vestingTerm; // in blocks
+        uint minimumPrice; // vs principle value
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
         uint soldBondsLimitUsd; //
-        uint prematureReturnRate; // as % of premature return rate, in hundreds. ( 9500 = 95% = 0.95)
+    }
+
+    // Info for bond holder
+    struct Bond {
+        uint payout; // USDB to be paid
+        uint vesting; // Blocks left to vest
+        uint lastBlock; // Last interaction
+        uint pricePaid; // In DAI, for front end viewing
+    }
+
+    // Info for incremental adjustments to control variable
+    struct Adjust {
+        bool add; // addition or subtraction
+        uint rate; // increment
+        uint target; // BCV when adjustment finished
+        uint buffer; // minimum length (in blocks) between adjustments
+        uint lastBlock; // block when last adjustment made
     }
 
     struct SoldBonds {
@@ -847,7 +745,6 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     constructor (
         address _FHM,
         address _USDB,
-        address _principle,
         address _treasury,
         address _DAO,
         address _usdbMinter
@@ -856,8 +753,6 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         FHM = _FHM;
         require( _USDB != address(0) );
         USDB = _USDB;
-        require( _principle != address(0) );
-        principle = _principle;
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _DAO != address(0) );
@@ -866,14 +761,13 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         usdbMinter = _usdbMinter;
         useWhitelist = true;
         whitelist[msg.sender] = true;
-        usersCount = 0;
     }
 
     /**
      *  @notice initializes bond parameters
-     *  @param _vestingTermSeconds uint
+     *  @param _controlVariable uint
      *  @param _vestingTerm uint
-     *  @param _discount uint
+     *  @param _minimumPrice uint
      *  @param _maxPayout uint
      *  @param _fee uint
      *  @param _maxDebt uint
@@ -881,30 +775,27 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @param _soldBondsLimitUsd uint
      *  @param _useWhitelist bool
      *  @param _useCircuitBreaker bool
-     *  @param _prematureReturnRate uint
      */
     function initializeBondTerms(
-        uint _vestingTermSeconds,
+        uint _controlVariable,
         uint _vestingTerm,
-        uint _discount,
+        uint _minimumPrice,
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
         uint _initialDebt,
         uint _soldBondsLimitUsd,
         bool _useWhitelist,
-        bool _useCircuitBreaker,
-        uint _prematureReturnRate
+        bool _useCircuitBreaker
     ) external onlyPolicy() {
         terms = Terms ({
-        vestingTermSeconds: _vestingTermSeconds,
+        controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
-        discount: _discount,
+        minimumPrice: _minimumPrice,
         maxPayout: _maxPayout,
         fee: _fee,
         maxDebt: _maxDebt,
-        soldBondsLimitUsd: _soldBondsLimitUsd,
-        prematureReturnRate: _prematureReturnRate
+        soldBondsLimitUsd: _soldBondsLimitUsd
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
@@ -917,7 +808,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, VESTING_SECONDS }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -935,9 +826,31 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
             terms.fee = _input;
         } else if ( _parameter == PARAMETER.DEBT ) { // 3
             terms.maxDebt = _input;
-        } else if ( _parameter == PARAMETER.VESTING_SECONDS ) { // 4
-            terms.vestingTermSeconds = _input;
+        }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
+            terms.minimumPrice = _input;
         }
+    }
+
+    /**
+     *  @notice set control variable adjustment
+     *  @param _addition bool
+     *  @param _increment uint
+     *  @param _target uint
+     *  @param _buffer uint
+     */
+    function setAdjustment (
+        bool _addition,
+        uint _increment,
+        uint _target,
+        uint _buffer
+    ) external onlyPolicy() {
+        adjustment = Adjust({
+        add: _addition,
+        rate: _increment,
+        target: _target,
+        buffer: _buffer,
+        lastBlock: block.number
+        });
     }
 
     /* ======== USER FUNCTIONS ======== */
@@ -962,151 +875,73 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         require( totalDebt <= terms.maxDebt, "Max capacity reached" );
 
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
-        uint nativePrice = bondPrice();
+        uint nativePrice = _bondPrice();
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount ).mul(10 ** 9);
-        uint payout = payoutFor( value ); // payout to bonder is computed
+        uint payout = payoutFor( _amount ); // payout to bonder is computed
 
         require( payout >= 10_000_000_000_000_000, "Bond too small" ); // must be > 0.01 USDB ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
         require( !circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE"); //
 
-        uint payoutInFhm = payoutInFhmFor(payout);
+        uint payoutInFhm = _amount;
 
         // profits are calculated
         uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
 
-        IERC20( principle ).safeTransferFrom( msg.sender, address( DAO ), _amount );
-        ITreasury( treasury ).mintRewards( address(this), payoutInFhm.add(fee));
-
+        ITreasury( treasury ).mintRewards( address(this), fee);
 
         // mint USDB with guaranteed discount
-        IMintable(USDB).mint( address(this), payout);
+        IMintable(USDB).mint( address(this), payout );
 
-        // burn whatever FHM got from treasury in current market price
-        IBurnable( FHM ).burn( payoutInFhm ) ;
+        // burn whatever FHM got from user in current market price
+        IBurnable(FHM).burnFrom(msg.sender, payoutInFhm);
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
         }
 
         // total debt is increased
-        totalDebt = totalDebt.add( value );
+        totalDebt = totalDebt.add( payout );
 
         // update sold bonds
         if (useCircuitBreaker) updateSoldBonds(payout);
 
         // depositor info is stored
-        _bondInfo = Bond({
-            payout: payout,
-            vestingSeconds: terms.vestingTermSeconds,
-            lastTimestamp: block.timestamp,
+        bondInfo[ _depositor ] = Bond({
+            payout: bondInfo[ _depositor ].payout.add( payout ),
             vesting: terms.vestingTerm,
             lastBlock: block.number,
             pricePaid: priceInUSD
         });
 
-        // new user bonding
-        if(!depositors.inserted[_depositor]) {
-            usersCount ++;
-        }
-        depositors.set(_depositor, _bondInfo );
-
         // indexed events are emitted
-        emit BondCreated( _amount, payout, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
+        adjust(); // control variable is adjusted
         return payout;
     }
 
-    function redeemAll(uint _from, uint _to) public returns (uint[] memory) {
-        require(_from >= 0 && _from < depositors.size(), "`from` is invalid");
-        require(_to >= 0 && _to <= depositors.size(), "`to` is invalid");
-        require(_from < _to, "`to` should be equal and greater than `from`");
-
-        uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = _from; i < _to; i++) {
-            address _recipient = depositors.getKeyAtIndex(i);
-            if (i > depositors.size()) {
-                break;
-            }
-            if (redeemOne(_recipient)) {
-                _removedIndices[_counter++] = i;
-                depositors.remove(_recipient);
-            }
-        }
-        return _removedIndices;
-    }
-
-    function redeem(uint[] memory _newIndices) public returns (uint[] memory) {
-        require(_newIndices.length > 0, "Redeems unavailable");
-
-        uint[] memory _removedIndices;
-        uint _counter = 0;
-        for (uint i = 0; i <= _newIndices.length; i ++) {
-            address _recipient = depositors.getKeyAtIndex(_newIndices[i]);
-            if (redeemOne(_recipient)) {
-                _removedIndices[_counter++] = i;
-                depositors.remove(_recipient);
-            }
-        }
-        return _removedIndices;
-    }
-
-    function redeemOne(address _depositor) public returns (bool _toDelete) {
-        Bond[] storage _userBondInfo = depositors.values[_depositor];
-        require(_userBondInfo.length > 0, "There is no bonding");
-
-        uint _finalAmount = 0;
-        uint _length = _userBondInfo.length;
-
-        for (uint index = 0; index < _length; index++) {
-            uint percentVested = percentVestedFor(_depositor, index); // (seconds since last interaction / vesting term remaining)
-            uint percentVestedBlocks = percentVestedBlocksFor(_depositor, index); // (blocks since last interaction / vesting term remaining)
-
-            if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
-                Bond memory removeMe;
-                removeMe = _userBondInfo[index];
-                _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
-                _userBondInfo[_userBondInfo.length - 1] = removeMe;
-                _userBondInfo.pop();
-                _finalAmount = _finalAmount.add(removeMe.payout);
-                _length --;
-            }
-        }
-        if (_length == 0) {
-            _toDelete = true;
-        }
-
-        if (_finalAmount > 0) {
-            IERC20(USDB).transfer(_depositor, _finalAmount);
-            emit BondRedeemed(_depositor, _finalAmount, 0, 0);
-        }
-
-        return _toDelete;
-    }
-
     /**
-     *  @notice return bond info
-     *  @param _depositor address
-     *  @param index uint
-     *  @return payout uint
-     *  @return vestingSeconds uint
-     *  @return lastTimestamp uint
-     *  @return vesting uint
-     *  @return lastBlock uint
-     *  @return pricePaid uint
+     *  @notice redeem bond for user
+     *  @param _recipient address
+     *  @param _stake bool
+     *  @return uint
      */
-    function bondInfo(address _depositor, uint index) public view returns ( uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid ) {
-        Bond memory info = depositors.get(_depositor, index);
-        payout = info.payout;
-        vestingSeconds = info.vestingSeconds;
-        lastTimestamp = info.lastTimestamp;
-        vesting = info.vesting;
-        lastBlock = info.lastBlock;
-        pricePaid = info.pricePaid;
+    function redeem( address _recipient, bool _stake ) external returns ( uint ) {
+        Bond memory info = bondInfo[ _recipient ];
+        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+
+        require ( percentVested >= 10000 , "Wait for end of bond") ;
+
+        delete bondInfo[ _recipient ]; // delete user info
+        emit BondRedeemed( _recipient, info.payout, 0 ); // emit bond data
+
+        IERC20(USDB).transfer( _recipient, info.payout); // pay user everything due
+
+        return info.payout;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
@@ -1184,6 +1019,29 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
+     *  @notice makes incremental adjustment to control variable
+     */
+    function adjust() internal {
+        uint blockCanAdjust = adjustment.lastBlock.add( adjustment.buffer );
+        if( adjustment.rate != 0 && block.number >= blockCanAdjust ) {
+            uint initial = terms.controlVariable;
+            if ( adjustment.add ) {
+                terms.controlVariable = terms.controlVariable.add( adjustment.rate );
+                if ( terms.controlVariable >= adjustment.target ) {
+                    adjustment.rate = 0;
+                }
+            } else {
+                terms.controlVariable = terms.controlVariable.sub( adjustment.rate );
+                if ( terms.controlVariable <= adjustment.target ) {
+                    adjustment.rate = 0;
+                }
+            }
+            adjustment.lastBlock = block.number;
+            emit ControlVariableAdjustment( initial, terms.controlVariable, adjustment.rate, adjustment.add );
+        }
+    }
+
+    /**
      *  @notice reduce total debt
      */
     function decayDebt() internal {
@@ -1206,28 +1064,45 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     /**
      *  @notice calculate interest due for new bond
-     *  @param _value uint
-     *  @return uint
+     *  @param _fhmValue uint fhm value
+     *  @return uint usdb value
      */
-    function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+    function payoutFor(uint _fhmValue) public view returns ( uint ) {
+        return _fhmValue.mul(bondPrice()).mul(1e7);
     }
-
-    function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
-        return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
-    }
-
 
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        uint _originalPrice = 1;
-        _originalPrice = _originalPrice.mul( 10 ** 2 );
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        }
 
-        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
-        price_ = _originalPrice.sub(_discount);
+        uint maximumPrice = getMarketPrice();
+        if (price_ > maximumPrice) {
+            price_ = maximumPrice;
+        }
+    }
+
+    /**
+     *  @notice calculate current bond price and remove floor if above
+     *  @return price_ uint
+     */
+    function _bondPrice() internal returns ( uint price_ ) {
+        price_ = terms.controlVariable.mul( debtRatio() ).add( 1000000000 ).div( 1e7 );
+        if ( price_ < terms.minimumPrice ) {
+            price_ = terms.minimumPrice;
+        } else if ( terms.minimumPrice != 0 ) {
+            terms.minimumPrice = 0;
+        }
+
+        uint maximumPrice = getMarketPrice();
+        if (price_ > maximumPrice) {
+            price_ = maximumPrice;
+        }
     }
 
     /**
@@ -1235,7 +1110,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
+        price_ = bondPrice().mul( 10 ** IERC20(USDB).decimals() ).div( 100 );
     }
 
     /**
@@ -1282,23 +1157,10 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
-     *  @param index uint
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor, index);
-        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
-        uint vestingSeconds = bond.vestingSeconds;
-
-        if ( vestingSeconds > 0 ) {
-            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
-        } else {
-            percentVested_ = 0;
-        }
-    }
-
-    function percentVestedBlocksFor( address _depositor, uint index ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = depositors.get(_depositor, index);
+    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1310,50 +1172,19 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice users' bond length
-     *  @param _depositor address
-     *  @return  uint
-     */
-     function bondlength( address _depositor) external view returns (uint) {
-        return depositors.values[_depositor].length;
-     }
-    /**
      *  @notice calculate amount of FHM available for claim by depositor
      *  @param _depositor address
-     *  @param index uint
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor, uint index ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor, index );
-        uint percentVestedBlocks = percentVestedBlocksFor( _depositor, index );
-        uint payout = depositors.get(_depositor, index).payout;
+    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
+        uint percentVested = percentVestedFor( _depositor );
+        uint payout = bondInfo[ _depositor ].payout;
 
-        if ( percentVested >= 10000 && percentVestedBlocks >= 10000) {
+        if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
         } else {
             pendingPayout_ = 0;
         }
-    }
-
-    /**
- *  @notice returns asset when depositor wants to cancel bond
-     *  @param _depositor address
-     *  @param index uint
-     *  @return assetPayout_ uint
-     */
-    function cancelBond( address _depositor, uint index ) public onlyDepositor(_depositor) returns ( uint assetPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor, index );
-        uint payout = depositors.get(_depositor, index).payout;
-
-        require( payout > 0, "depositor or index is not correct." );
-        require( percentVested < 10000, "Current bond is already finished." );
-
-        assetPayout_ = payout.mul(terms.prematureReturnRate).div(10000);
-        require( payout >= assetPayout_, "prematureReturnRate is too big." );
-        uint remainingBalance = payout.sub(assetPayout_);
-        IERC20( USDB ).transfer(_depositor, assetPayout_ );
-        IERC20( USDB ).transfer(DAO, remainingBalance );
-        emit BondCancelled( _depositor, index, assetPayout_ );
     }
 
 
@@ -1367,8 +1198,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      */
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM );
-        require( _token != USDB);
-        require( _token != principle );
+        require( _token != USDB );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;
     }

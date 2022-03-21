@@ -30,6 +30,10 @@ module.exports = {
       url: `https://eth-mainnet.alchemyapi.io/v2/${alchemyApiKeyProd}`,
       accounts: [`${privateKey}`]
     },
+    bsc: {
+      url: `https://bsc-dataseed.binance.org/`,
+      accounts: [`${privateKey}`]
+    },
     fantom_testnet: {
       url: `https://rpc.testnet.fantom.network/`,
       accounts: [`${privateKey}`]
@@ -41,15 +45,24 @@ module.exports = {
     moonriver: {
       url: `https://rpc.api.moonriver.moonbeam.network`,
       accounts: [`${privateKey}`],
-      chainId: 1285,
+      chainId: 1285
     },
     moonbase_testnet: {
       url: `https://rpc.testnet.moonbeam.network`,
       accounts: [`${privateKey}`],
-      chainId: 1287,
+      chainId: 1287
       // gas: 2100000,
       // gasPrice: 8000000000
     },
+    avalanche: {
+      url: `https://api.avax.network/ext/bc/C/rpc`,
+      accounts: [`${privateKey}`],
+      chainId: 43114
+    },
+    matic: {
+      url: `https://rpc-mainnet.maticvigil.com`,
+      accounts: [`${privateKey}`]
+    }
     // hardhat: {
     //   chainId: 1287
     // },

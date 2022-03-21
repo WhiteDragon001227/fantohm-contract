@@ -830,7 +830,7 @@ contract UsdbA2BondDepository is Ownable, ReentrancyGuard {
         uint vestingTerm; // in blocks
         uint discount; // discount in in thousandths of a % i.e. 5000 = 5%
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
-        uint fee; // as % of bond payout, in hundreths. ( 500 = 5% = 0.05 for every 1 paid)
+        uint fee; // as % of bond payout, in hundreds. ( 500 = 5% = 0.05 for every 1 paid)
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
         uint soldBondsLimitUsd; //
     }

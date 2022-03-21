@@ -5,7 +5,10 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
+        daoAddress,
         zeroAddress,
         daiAddress,
         fhmAddress,
@@ -14,10 +17,7 @@ async function main() {
         usdbMinterAddress,
         uniswapFactoryAddress,
         uniswapRouterAddress,
-    } = require('./networks-rinkeby.json');
-
-    const daoAddress = deployer.address;
-    // const daoAddress = "0x34F93b12cA2e13C6E64f45cFA36EABADD0bA30fC";
+    } = require(`../networks-${network}.json`);
 
     // Reserve addresses
     const reserve =
@@ -51,8 +51,8 @@ async function main() {
 
     const soldBondsLimit = '10000000000000000000000';
 
-    const useWhitelist = true;
-    const useCircuitBreaker = false;
+    const useWhitelist = false;
+    const useCircuitBreaker = true;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -63,6 +63,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('UsdbA2BondDepository');
+    // const bond = await Bond.attach("0x3a48a6ff9018944Eaf696B29359F329b0bbF78Bd");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapFactoryAddress, uniswapRouterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -79,6 +80,7 @@ async function main() {
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
+
     // Approve the uniswapRouter to spend deployer's reserve tokens
     await reserveToken.approve(uniswapRouterAddress, largeApproval);
     console.log(`Approved uniswapRouterAddress to spend deployer ${reserve.name}`);
@@ -93,6 +95,9 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasury.address}" "${daoAddress}" "${usdbMinterAddress}" "${uniswapFactoryAddress}" "${uniswapRouterAddress}"`);
 }
 
 main()

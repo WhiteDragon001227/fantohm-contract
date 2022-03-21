@@ -5,6 +5,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -16,7 +18,7 @@ async function main() {
         twapOracleAddress,
         fhmDaiLpAddress,
         fhmCirculatingSupply
-    } = require('../networks-fantom.json');
+    } = require(`../networks-${network}.json`);
 
     // Reserve addresses
     const reserve =
@@ -51,7 +53,7 @@ async function main() {
 
     const soldBondsLimit = '10000000000000000000000';
 
-    const useWhitelist = true;
+    const useWhitelist = false;
     const useCircuitBreaker = true;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
@@ -63,6 +65,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('UsdbBBondDepository');
+    // const bond = await Bond.attach("0x05fE6236F28dCC67C4d6eD8D49369B5519696bA2");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, treasury.address, daoAddress, usdbMinterAddress, fhmCirculatingSupply, twapOracleAddress, fhmDaiLpAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -89,6 +92,9 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${treasury.address}" "${daoAddress}" "${usdbMinterAddress}" "${fhmCirculatingSupply}" "${twapOracleAddress}" "${fhmDaiLpAddress}"`);
 }
 
 main()
