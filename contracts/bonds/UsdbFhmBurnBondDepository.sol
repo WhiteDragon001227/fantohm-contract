@@ -644,6 +644,12 @@ abstract contract ReentrancyGuard {
     }
 }
 
+interface ITreasury {
+    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
+    function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
+    function mintRewards( address _recipient, uint _amount ) external;
+}
+
 interface IMintable {
     function mint(address to, uint256 amount) external;
 }
@@ -680,6 +686,7 @@ contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
 
     address public immutable FHM; // token given as payment for bond
     address public immutable USDB; // USDB
+    address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
 
@@ -738,6 +745,7 @@ contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
     constructor (
         address _FHM,
         address _USDB,
+        address _treasury,
         address _DAO,
         address _usdbMinter
     ) {
@@ -745,6 +753,8 @@ contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
         FHM = _FHM;
         require( _USDB != address(0) );
         USDB = _USDB;
+        require( _treasury != address(0) );
+        treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
         require( _usdbMinter != address(0) );
@@ -879,6 +889,8 @@ contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
 
         // profits are calculated
         uint fee = payoutInFhm.mul( terms.fee ).div( 10000 );
+
+        ITreasury( treasury ).mintRewards( address(this), fee);
 
         // mint USDB with guaranteed discount
         IMintable(USDB).mint( address(this), payout );

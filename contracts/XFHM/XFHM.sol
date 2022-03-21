@@ -120,7 +120,7 @@ contract XFhm is
         __Pausable_init_unchained();
 
         // set generationRate (XFhm per sec per Fhm staked)
-        generationRate = 3888888888888;
+        generationRate = 100000;
 
         // set maxCap
         maxCap = 100;

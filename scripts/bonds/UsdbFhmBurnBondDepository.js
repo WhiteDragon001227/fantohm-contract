@@ -12,6 +12,7 @@ async function main() {
         zeroAddress,
         fhmAddress,
         usdbAddress,
+        treasuryAddress,
         usdbMinterAddress,
     } = require(`../networks-${network}.json`);
 
@@ -58,7 +59,7 @@ async function main() {
     // Deploy Bond
     const Bond = await ethers.getContractFactory('UsdbFhmBurnBondDepository');
     // const bond = await Bond.attach("0x612dbb6F62C85894066AbA987D7A4F5232F7E67E");
-    const bond = await Bond.deploy(fhmAddress, usdbAddress, daoAddress, usdbMinterAddress);
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, treasuryAddress, daoAddress, usdbMinterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // Set bond terms
@@ -81,7 +82,7 @@ async function main() {
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
 
     console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
-        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${daoAddress}" "${usdbMinterAddress}"`);
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${treasuryAddress}" ${daoAddress}" "${usdbMinterAddress}"`);
 }
 
 main()
