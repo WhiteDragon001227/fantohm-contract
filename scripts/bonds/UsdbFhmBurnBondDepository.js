@@ -5,8 +5,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
-    const network = "rinkeby";
-    // const network = "fantom_testnet";
+    // const network = "rinkeby";
+    const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -52,15 +52,24 @@ async function main() {
     const useWhitelist = false;
     const useCircuitBreaker = true;
 
+    const Treasury = await ethers.getContractFactory('FantohmTreasury');
+    const treasury = await Treasury.attach(treasuryAddress);
+
     // Get Reserve Token
     const ReserveToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('UsdbFhmBurnBondDepository');
-    // const bond = await Bond.attach("0x612dbb6F62C85894066AbA987D7A4F5232F7E67E");
+    // const bond = await Bond.attach("0xA1DFDc1d9dA00aaE194871C3fb2bF572EB1cC53e");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, treasuryAddress, daoAddress, usdbMinterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
+
+    // queue and toggle bond reserve depositor
+    await treasury.queue('8', bond.address);
+    console.log(`Queued ${reserve.name} Bond as reward manager`);
+    await treasury.toggle('8', bond.address, zeroAddress);
+    console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
     await bond.initializeBondTerms(reserve.bondBCV, bondVestingLength, minBondPrice, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker);
@@ -82,7 +91,7 @@ async function main() {
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
 
     console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
-        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${treasuryAddress}" ${daoAddress}" "${usdbMinterAddress}"`);
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${treasuryAddress}" "${daoAddress}" "${usdbMinterAddress}"`);
 }
 
 main()
