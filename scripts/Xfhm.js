@@ -14,6 +14,11 @@ async function main() {
     // Large number for approval for reserve tokens
     const largeApproval = '100000000000000000000000000000000';
 
+    const Whitelist = await ethers.getContractFactory('Whitelist');
+    const whitelist = await Whitelist.deploy();
+    await whitelist.deployed();
+    console.log(`Deployed Whitelist to: ${whitelist.address}`);
+
     // XFHM
     const XFhm = await ethers.getContractFactory('XFhm');
     // const xfhm = await XFhm.attach("0xcd9703c30454D9a9113cf0cC2e2762E237d8AaA9");
@@ -23,7 +28,11 @@ async function main() {
     console.log(`Deployed XFHM to: ${xfhm.address}`);
 
     await xfhm.initialize(fhmAddress);
+    // await xfhm.setGenerationRate(10000000000);
     console.log(`Initialized XFHM`);
+
+    await xfhm.setWhitelist(whitelist.address);
+    console.log(`Set whitelist XFHM`);
 
     const FhmToken = await ethers.getContractFactory('FantohmERC20Token');
     const fhmToken = await FhmToken.attach(fhmAddress);

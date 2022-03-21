@@ -71,7 +71,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('LqdrUsdbPolBondDepository');
-    // const bond = await Bond.attach("0xFb43EED3760A2430e2E818Cf72d1328dDa07d7c3");
+    // const bond = await Bond.attach("0xc5443a49cCe289A09B6D0D2d625e9f51a19547d6");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapRouterAddress, lqdrUsdbLPAddress, xfhmAddress, treasuryHelperAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
@@ -105,7 +105,7 @@ async function main() {
     await xFHM.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer XFHM`);
 
-    await bond.deposit('10000000000', '100', deployer.address);
+    await bond.deposit('1000000000000000000', '1000000000000000000', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE

@@ -852,6 +852,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         poolRouter = _poolRouter;
         require(_lpToken != address(0));
         lpToken = _lpToken;
+        // doDiv = false;
+        decimals = 18;
         require(_XFHM != address(0));
         XFHM = _XFHM;
         require(_treasuryHelper != address(0));
@@ -945,12 +947,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
         uint lqdrPriceInUSD = bondPriceInUSD();
-        // FIXME what about slip page here?
         require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
         // slippage protection
 
-        uint value = _amount.mul( 10 ** IERC20( FHM ).decimals() ).div( 10 ** IERC20( principle ).decimals() ).mul(10 ** 9);
-        uint payoutInUsdb = payoutFor(value);
+        uint payoutInUsdb = payoutFor(_amount);
         // payout to bonder is computed
 
         require(payoutInUsdb >= 10_000_000_000_000_000, "Bond too small");
@@ -1180,10 +1180,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice calculate interest due for new bond
      *  @param _value uint
-     *  @return uint
+     *  @return uint payout in usdb
      */
     function payoutFor(uint _value) public view returns (uint) {
-        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18().div(1e16);
+        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18();
     }
 
     function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
@@ -1199,7 +1199,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     function feeInXfhm(uint _lqdrAmount) public view returns (uint) {
         return _lqdrAmount
         .mul(10).div(33)
-        .mul(boostFactor).div(100)
+        .mul(100).div(boostFactor) // 1/boostfactor
         .div(bookValueInFhm());
     }
 
