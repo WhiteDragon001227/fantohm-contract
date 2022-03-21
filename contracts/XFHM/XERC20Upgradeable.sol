@@ -4,6 +4,7 @@ pragma solidity 0.7.5;
 
 import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/Initializable.sol';
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
 interface IXERC20 {
     function totalSupply() external view virtual returns (uint256);
@@ -15,6 +16,9 @@ interface IXERC20 {
 /// @notice Modified version of ERC20Upgradeable where transfers and allowances are disabled.
 /// @dev only minting and burning are allowed. The hook _afterTokenOperation is called after Minting and Burning.
 contract XERC20Upgradeable is Initializable, ContextUpgradeable, IXERC20 {
+
+    using SafeMath for uint256;
+
     mapping(address => uint256) private _balances;
 
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -28,7 +32,7 @@ contract XERC20Upgradeable is Initializable, ContextUpgradeable, IXERC20 {
      */
     event Burn(address indexed account, uint256 value);
     event Mint(address indexed beneficiary, uint256 value);
-
+    event Approval(address indexed owner,address indexed spender, uint256 amount);
     /**
      * @dev Sets the values for {name} and {symbol}.
      *
@@ -139,6 +143,73 @@ contract XERC20Upgradeable is Initializable, ContextUpgradeable, IXERC20 {
         emit Burn(account, amount);
 
         _afterTokenOperation(account, _balances[account]);
+    }
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the `owner` s tokens.
+     *
+     * This internal function is equivalent to `approve`, and can be used to
+     * e.g. set automatic allowances for certain subsystems, etc.
+     *
+     * Emits an {Approval} event.
+     *
+     * Requirements:
+     *
+     * - `owner` cannot be the zero address.
+     * - `spender` cannot be the zero address.
+     */
+    function _approve(address owner, address spender, uint256 amount) internal virtual {
+        require(owner != address(0), "ERC20: approve from the zero address");
+        require(spender != address(0), "ERC20: approve to the zero address");
+
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+
+    /**
+     * @dev See {IERC20-allowance}.
+     */
+    function allowance(address owner, address spender) public view virtual returns (uint256) {
+        return _allowances[owner][spender];
+    }
+
+    /**
+     * @dev See {IERC20-approve}.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     */
+    function approve(address spender, uint256 amount) public virtual returns (bool) {
+        _approve(_msgSender(), spender, amount);
+        return true;
+    }
+
+    /**
+      * @dev Destroys `amount` tokens from the caller.
+     *
+     * See {ERC20-_burn}.
+     */
+    function burn(uint256 amount) public virtual {
+        _burn(_msgSender(), amount);
+    }
+
+    /**
+     * @dev Destroys `amount` tokens from `account`, deducting from the caller's
+     * allowance.
+     *
+     * See {ERC20-_burn} and {ERC20-allowance}.
+     *
+     * Requirements:
+     *
+     * - the caller must have allowance for ``accounts``'s tokens of at least
+     * `amount`.
+     */
+    function burnFrom(address account, uint256 amount) public virtual {
+        uint256 decreasedAllowance = allowance(account, _msgSender()).sub(amount, "ERC20: burn amount exceeds allowance");
+
+        _approve(account, _msgSender(), decreasedAllowance);
+        _burn(account, amount);
     }
 
     /**

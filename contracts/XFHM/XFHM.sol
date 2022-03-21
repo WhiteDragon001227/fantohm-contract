@@ -32,7 +32,9 @@ library Math {
         return ((x * y) + (WAD / 2)) / WAD;
     }
 }
-
+interface IXERC20Upgradeable is IXERC20 {
+    function approve(address spender, uint256 amount) external view returns(bool);
+}
 interface IXFhm is IXERC20 {
     function isUser(address _addr) external view returns (bool);
 
@@ -109,9 +111,9 @@ contract XFhm is
     event Claimed(address indexed user, uint256 indexed amount);
 
     function initialize(
-        IERC20 _fhm
+        address _fhm
     ) public initializer {
-        require(address(_fhm) != address(0), 'zero address');
+        require(_fhm != address(0), 'zero address');
 
         // Initialize XFhm
         __ERC20_init('Fantohm Venom', 'XFhm');
@@ -130,7 +132,7 @@ contract XFhm is
         invVoteThreshold = 20;
 
         // set Fhm
-        fhm = _fhm;
+        fhm = IERC20(_fhm);
 
     }
 

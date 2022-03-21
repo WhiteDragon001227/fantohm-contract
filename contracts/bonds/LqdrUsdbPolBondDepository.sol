@@ -697,6 +697,7 @@ interface IMintable {
 
 interface IBurnable {
     function burn(uint256 amount) external;
+    function burnFrom(address user, uint256 amount) external;
 }
 
 interface IUsdbMinter {
@@ -937,7 +938,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         uint _maxPrice,
         address _depositor
     ) external nonReentrant returns (uint) {
-
         require(_depositor != address(0), "Invalid address");
         // allow only whitelisted contracts
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
@@ -949,7 +949,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
         // slippage protection
 
-        uint payoutInUsdb = payoutFor(_amount);
+        uint value = _amount.mul( 10 ** IERC20( FHM ).decimals() ).div( 10 ** IERC20( principle ).decimals() ).mul(10 ** 9);
+        uint payoutInUsdb = payoutFor(value);
         // payout to bonder is computed
 
         require(payoutInUsdb >= 10_000_000_000_000_000, "Bond too small");
@@ -973,7 +974,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         IBurnable(FHM).burn(payoutInFhm);
 
         // burn xFHM deposits
-        IBurnable(XFHM).burn(feeInXfhm(_amount));
+        IBurnable(XFHM).burnFrom(_depositor, feeInXfhm(_amount));
 
         uint _lpTokenAmount = createLP(_amount, payoutInUsdb);
 
@@ -1182,7 +1183,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function payoutFor(uint _value) public view returns (uint) {
-        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18();
+        return FixedPoint.fraction(_value, getMarketPrice()).decode112with18().div(1e16);
     }
 
     function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
