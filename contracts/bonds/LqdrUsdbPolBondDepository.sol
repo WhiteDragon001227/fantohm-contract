@@ -1196,6 +1196,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     }
 
     /// @dev lqdr_amount = 3.3 * xfhm_amount * boostFactor * bookValue_fhm => amount_xfhm = lqdr_amount / 3.3 / boostFactor / bookValue_fhm
+    /// @param _lqdrAmount amount in principle
+    /// @return uint amount in xfhm
     function feeInXfhm(uint _lqdrAmount) public view returns (uint) {
         return _lqdrAmount
         .mul(10).div(33)
@@ -1203,6 +1205,16 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         .div(bookValueInFhm());
     }
 
+    /// @dev opposite formula then feeInXfhm()
+    /// @param _xfhmAmount amount in xFHM
+    /// @return uint amount in principle
+    function maxPrincipleAmount(uint _xfhmAmount) public view returns (uint) {
+        uint _33 = 33;
+        return _33.div(10)
+                .mul(_xfhmAmount)
+                .mul(boostFactor).div(100)
+                .mul(bookValueInFhm());
+    }
 
     /**
      *  @notice converts bond price to DAI value
