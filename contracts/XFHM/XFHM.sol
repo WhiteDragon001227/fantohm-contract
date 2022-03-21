@@ -98,6 +98,8 @@ contract XFhm is
     /// Formula is invVoteThreshold = (1 / th) * 100
     uint256 public invVoteThreshold;
 
+    bool public onlyWhitelisted;
+
     /// @notice whitelist wallet checker
     /// @dev contract addresses are by default unable to stake fhm, they must be previously whitelisted to stake fhm
     Whitelist public whitelist;
@@ -234,7 +236,9 @@ contract XFhm is
     /// @notice if it is a smart contract, check that it is whitelisted
     /// @param _addr the address to check
     function _assertNotContract(address _addr) private view {
-        if (_addr != tx.origin) {
+        if (onlyWhitelisted) {
+            require(address(whitelist) != address(0) && whitelist.check(_addr), "NOT_WHITELISTED");
+        } else if (_addr != tx.origin) {
             require(
                 address(whitelist) != address(0) && whitelist.check(_addr),
                 'Smart contract depositors not allowed'
@@ -341,5 +345,21 @@ contract XFhm is
 
     function balanceOfVotingToken(address _account) external virtual override view returns (uint) {
         return getVotes(_account);
+    }
+
+    /// @notice Been able to recover any token which is sent to contract by mistake
+    /// @param token erc20 token
+    function emergencyRecoverToken(address token) external virtual onlyOwner {
+        require(token != address(fhm));
+
+        uint amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(msg.sender, amount);
+    }
+
+    /// @notice Been able to recover any ftm/movr token sent to contract by mistake
+    function emergencyRecoverEth() external virtual onlyOwner {
+        uint amount = address(this).balance;
+
+        payable(msg.sender).transfer(amount);
     }
 }
