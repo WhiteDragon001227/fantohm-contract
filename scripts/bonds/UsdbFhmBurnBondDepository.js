@@ -5,13 +5,15 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
         fhmAddress,
         usdbAddress,
         usdbMinterAddress,
-    } = require('../networks-fantom.json');
+    } = require(`../networks-${network}.json`);
 
     // Reserve addresses
     const reserve =
@@ -46,15 +48,16 @@ async function main() {
 
     const soldBondsLimit = '10000000000000000000000';
 
-    const useWhitelist = true;
-    const useCircuitBreaker = false;
+    const useWhitelist = false;
+    const useCircuitBreaker = true;
 
     // Get Reserve Token
     const ReserveToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     // Deploy Bond
-    const Bond = await ethers.getContractFactory('UsdbFhmBondDepository');
+    const Bond = await ethers.getContractFactory('UsdbFhmBurnBondDepository');
+    // const bond = await Bond.attach("0x612dbb6F62C85894066AbA987D7A4F5232F7E67E");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, daoAddress, usdbMinterAddress);
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -71,11 +74,14 @@ async function main() {
     await usdbToken.grantRoleMinter(bond.address);
     console.log(`grant minter of USDB to ${bond.address}`);
 
-    await bond.deposit('1000000000', '100', deployer.address);
+    await bond.deposit('1000000000', '8000', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${daoAddress}" "${usdbMinterAddress}"`);
 }
 
 main()

@@ -1052,11 +1052,11 @@ contract UsdbFhmBurnBondDepository is Ownable, ReentrancyGuard {
 
     /**
      *  @notice calculate interest due for new bond
-     *  @param _value uint
-     *  @return uint
+     *  @param _fhmValue uint fhm value
+     *  @return uint usdb value
      */
-    function payoutFor(uint _value) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+    function payoutFor(uint _fhmValue) public view returns ( uint ) {
+        return _fhmValue.mul(bondPrice()).mul(1e7);
     }
 
     /**
