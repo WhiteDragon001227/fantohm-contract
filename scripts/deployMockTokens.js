@@ -29,6 +29,16 @@ async function main() {
     await mim.mint( deployer.address, initialMint );
     console.log(`Minted MIM`)
     console.log( "MIM: " + mim.address );
+
+    // Deploy Lqdr
+    const Lqdr = await ethers.getContractFactory('Lqdr');
+    const lqdr = await Lqdr.deploy( 0 );
+    console.log(`Deployed Lqdr to: ${lqdr.address}`)
+
+    // Deploy 10,000,000 mock Lqdr
+    await lqdr.mint( deployer.address, initialMint );
+    console.log(`Minted Lqdr`)
+    console.log( "Lqdr: " + lqdr.address );
 }
 
 main()

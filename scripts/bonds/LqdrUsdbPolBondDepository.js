@@ -5,6 +5,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -15,9 +17,9 @@ async function main() {
         usdbMinterAddress,
         uniswapRouterAddress,
         lqdrUsdbLPAddress,
-        xFhmAddress,
+        xfhmAddress,
         treasuryHelperAddress,
-    } = require('../networks-rinkeby.json');
+    } = require(`../networks-${network}.json`);
 
 
     // Reserve addresses
@@ -69,11 +71,11 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('LqdrUsdbPolBondDepository');
-
-    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapRouterAddress, lqdrUsdbLPAddress, xFhmAddress, treasuryHelperAddress);
+    // const bond = await Bond.attach("0xFb43EED3760A2430e2E818Cf72d1328dDa07d7c3");
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapRouterAddress, lqdrUsdbLPAddress, xfhmAddress, treasuryHelperAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
-   
+
     // queue and toggle bond reserve depositor
     await treasury.queue('8', bond.address);
     console.log(`Queued ${reserve.name} Bond as reward manager`);
@@ -83,11 +85,11 @@ async function main() {
     // Set bond terms
     await bond.initializeBondTerms(bondVestingLengthSec, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt, soldBondsLimit, useCircuitBreaker);
     console.log(`Initialized terms for ${reserve.name} Bond`);
-    
+
     //Approve the treasury to spend deployer's reserve tokens
     await reserveToken.approve(treasury.address, largeApproval);
     console.log(`Approved treasury to spend deployer ${reserve.name}`);
-    
+
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
@@ -97,9 +99,9 @@ async function main() {
     await usdbToken.grantRoleMinter(bond.address);
     console.log(`grant minter of USDB to ${bond.address}`);
 
-    // Approve bonds to spend deployer's Xfhm tokens 
-    const XFHM = await ethers.getContractFactory('XFHM');
-    const xFHM = await XFHM.attach(xFhmAddress);
+    // Approve bonds to spend deployer's Xfhm tokens
+    const XFHM = await ethers.getContractFactory('XFhm');
+    const xFHM = await XFHM.attach(xfhmAddress);
     await xFHM.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer XFHM`);
 
@@ -108,6 +110,9 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasuryAddress}" "${daoAddress}" "${usdbMinterAddress}" "${uniswapRouterAddress}" "${lqdrUsdbLPAddress}" "${xfhmAddress}" "${treasuryHelperAddress}"`);
 }
 
 main()

@@ -2,6 +2,7 @@ require("@nomiclabs/hardhat-waffle");
 const { alchemyApiKey, privateKey, daoPrivateKey, etherscanApiKey, alchemyApiKeyProd } = require('./secrets.json');
 require('@nomiclabs/hardhat-ethers');
 require("@nomiclabs/hardhat-etherscan");
+require('@openzeppelin/hardhat-upgrades');
 // require('@symblox/hardhat-abi-gen');
 
 // This is a sample Hardhat task. To learn how to create your own go to
