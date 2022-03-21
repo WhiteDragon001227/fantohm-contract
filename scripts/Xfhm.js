@@ -9,13 +9,24 @@ async function main() {
         fhmAddress,
     } = require('./networks-fantom.json');
 
+    // Large number for approval for reserve tokens
+    const largeApproval = '100000000000000000000000000000000';
+
     // XFHM
     const XFhm = await ethers.getContractFactory('XFHM');
-    const xfhm = await upgrades.deployProxy(XFhm, fhmAddress);
+    const xfhm = await upgrades.deployProxy(XFhm);
     await xfhm.deployed();
     console.log(`Deployed XFHM to: ${xfhm.address}`);
 
-    await xfhm.deposit('1000000000000000000000');
+    await xfhm.initialize(fhmAddress);
+    console.log(`Initialized XFHM`);
+
+    const FhmToken = await ethers.getContractFactory('FantohmERC20Token');
+    const fhmToken = await FhmToken.attach(fhmAddress);
+    await fhmToken.approve(xfhm.address, largeApproval);
+    console.log(`Approved FHM to be spent by XFHM`);
+
+    await xfhm.deposit('1000000000');
     console.log(`Deposited from deployer to XFHM address: ${xfhm.address}`);
 
 }

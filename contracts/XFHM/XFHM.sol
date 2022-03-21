@@ -110,10 +110,10 @@ contract XFhm is
     event Unstaked(address indexed user, uint256 indexed amount);
     event Claimed(address indexed user, uint256 indexed amount);
 
-    constructor(
+    function initialize(
         address _fhm
-    ) {
-        require(address(_fhm) != address(0), 'zero address');
+    ) public initializer {
+        require(_fhm != address(0), 'zero address');
 
         // Initialize XFhm
         __ERC20_init('Fantohm Venom', 'XFhm');
@@ -322,17 +322,6 @@ contract XFhm is
         fhm.safeTransfer(msg.sender, _amount);
 
         emit Unstaked(msg.sender, _amount);
-    }
-    function burn(uint256 amount) public virtual {
-        uint256 userXFhmBalance = balanceOf(msg.sender);
-        require(userXFhmBalance >= amount, "Burn exceed the amount of user");
-        _burn(msg.sender, amount);
-    }
-    function burnFrom(address _user, uint256 amount) public virtual {
-        uint256 userXFhmBalance = balanceOf(_user);
-        require(userXFhmBalance >= amount, "Burn exceed the amount of user");
-        _approve(_user, msg.sender, amount);
-        _burn(_user, amount);
     }
 
     /// @notice get votes for xFhm
