@@ -14,6 +14,9 @@ async function main() {
     // Large number for approval for reserve tokens
     const largeApproval = '100000000000000000000000000000000';
 
+    const generationRate = 10000000000000;
+    // const generationRate = 53; // prod
+
     const Whitelist = await ethers.getContractFactory('Whitelist');
     const whitelist = await Whitelist.deploy();
     await whitelist.deployed();
@@ -28,7 +31,7 @@ async function main() {
     console.log(`Deployed XFHM to: ${xfhm.address}`);
 
     await xfhm.initialize(fhmAddress);
-    // await xfhm.setGenerationRate(10000000000);
+    await xfhm.setGenerationRate(generationRate);
     console.log(`Initialized XFHM`);
 
     await xfhm.setWhitelist(whitelist.address);
