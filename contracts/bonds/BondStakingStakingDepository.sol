@@ -602,6 +602,7 @@ interface IsFHM {
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
     function claim( address _recipient ) external;
+    function checkBefore(uint _amount, address _recipient) external view;
 }
 
 interface IFHUDMinter {
@@ -618,11 +619,15 @@ interface IwsFHM {
     function wsFHMValue(uint _amount) external view returns (uint);
 }
 interface IStakingStaking {
-    function deposit(address _to, uint _amount) external;
+    function returnBorrow(address _user, uint _amount) external;
     function withdraw(address _to, uint256 _amount, bool _force) external;
+    function approve(address _spender, uint _amount) external;
+    function claimable(address _user, uint _claimPageSize) external view returns (uint, uint);
+    function claim(uint _claimPageSize) external;
+    function grantRoleBorrower(address _account) external;
 }
 
-contract FantohmBondStakingPoolDepository is Ownable {
+contract BondStakingStakingDepository is Ownable {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -645,18 +650,18 @@ contract FantohmBondStakingPoolDepository is Ownable {
 
     address public immutable FHM; // reward from treasury which is staked for the time of the bond
     address public immutable sFHM; // token given as payment for bond
+    address public immutable wsFHM; // wsfhm token 
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // FHUD minter
     address public immutable fhmCirculatingSupply; // FHM circulating supply
-    address public immutable stakingStaking; //6,6 pool
-    address public immutable wsFHM; // wsfhm token 
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
 
     address public staking; // to auto-stake payout
+    address public stakingStaking; //6,6 pool
 
     Terms public terms; // stores terms for new bonds
     Adjust public adjustment; // stores adjustment to BCV data
@@ -665,7 +670,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
-
+    uint public claimPageSize; // maximum iteration threshold
 
 
     /* ======== STRUCTS ======== */
@@ -673,6 +678,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
     // Info for creating new bonds
     struct Terms {
         uint controlVariable; // scaling variable for price
+        uint vestingTermSeconds; // in seconds
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
         uint maximumDiscount; // in hundreds of a %, 500 = 5%
@@ -684,10 +690,13 @@ contract FantohmBondStakingPoolDepository is Ownable {
     // Info for bond holder
     struct Bond {
         uint gonsPayout; // sFHM remaining to be paid
+        uint wsfhmPayout; // wsfhm real payout to be paid 
         uint fhmPayout; // FHM payout in time of creation
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
+        uint vestingSeconds; // Blocks left to vest
+        uint lastTimestamp; // Last interaction
     }
 
     // Info for incremental adjustments to control variable
@@ -707,14 +716,13 @@ contract FantohmBondStakingPoolDepository is Ownable {
     constructor (
         address _FHM,
         address _sFHM,
+        address _wsFHM,
         address _principle,
         address _treasury,
         address _DAO,
         address _bondCalculator,
         address _fhudMinter,
-        address _fhmCirculatingSupply,
-        address _stakingStaking,
-        address _wsFHM
+        address _fhmCirculatingSupply
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -730,8 +738,6 @@ contract FantohmBondStakingPoolDepository is Ownable {
         fhudMinter = _fhudMinter;
         require( _fhmCirculatingSupply != address(0) );
         fhmCirculatingSupply = _fhmCirculatingSupply;
-        require( _stakingStaking != address(0) );
-        stakingStaking = _stakingStaking;
         require( _wsFHM != address(0) );
         wsFHM = _wsFHM;
         // bondCalculator should be address(0) if not LP bond
@@ -742,6 +748,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
     /**
      *  @notice initializes bond parameters
      *  @param _controlVariable uint
+     *  @param _vestingTermSeconds uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maximumDiscount uint
@@ -752,6 +759,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
      */
     function initializeBondTerms(
         uint _controlVariable,
+        uint _vestingTermSeconds,
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maximumDiscount,
@@ -762,6 +770,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
     ) external onlyPolicy() {
         terms = Terms ({
         controlVariable: _controlVariable,
+        vestingTermSeconds: _vestingTermSeconds,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
         maximumDiscount: _maximumDiscount,
@@ -778,7 +787,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE, VESTING_SECONDS }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -798,6 +807,8 @@ contract FantohmBondStakingPoolDepository is Ownable {
             terms.maxDebt = _input;
         }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
             terms.minimumPrice = _input;
+        }  else if ( _parameter == PARAMETER.VESTING_SECONDS ) { // 5
+            terms.vestingTermSeconds = _input;
         }
     }
 
@@ -830,6 +841,14 @@ contract FantohmBondStakingPoolDepository is Ownable {
     function setStaking( address _staking ) external onlyPolicy() {
         require( _staking != address(0) );
         staking = _staking;
+    }
+    /**
+     *  @notice set contract for auto stakeStake
+     *  @param _stakingStaking address
+     */
+    function setStakingStaking( address _stakingStaking ) external onlyPolicy() {
+        require( _stakingStaking != address(0) );
+        stakingStaking = _stakingStaking;
     }
 
     /* ======== USER FUNCTIONS ======== */
@@ -882,6 +901,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
         // total debt is increased
         totalDebt = totalDebt.add( value );
 
+        IStakingStaking(stakingStaking).claim(claimPageSize);
         IERC20( FHM ).approve( staking, payout );
         IStaking( staking ).stake( payout, address(this) );
         uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
@@ -890,9 +910,12 @@ contract FantohmBondStakingPoolDepository is Ownable {
         _bondInfo[ _depositor ] = Bond({
         gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
         fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
+        wsfhmPayout: _bondInfo[_depositor].wsfhmPayout,
         vesting: terms.vestingTerm,
         lastBlock: block.number,
-        pricePaid: priceInUSD
+        pricePaid: priceInUSD,
+        vestingSeconds: terms.vestingTermSeconds,
+        lastTimestamp: block.timestamp    
         });
 
         // indexed events are emitted
@@ -909,6 +932,8 @@ contract FantohmBondStakingPoolDepository is Ownable {
     function move(address _depositor) external returns(uint) {
         Bond memory info = _bondInfo[_depositor];
 
+        //check warmup period
+        IStaking(staking).checkBefore(info.fhmPayout, address(this));
         // have sfhm tokens
         IStaking( staking ).claim( address(this) );
 
@@ -916,9 +941,15 @@ contract FantohmBondStakingPoolDepository is Ownable {
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
         uint _wsFHMamount = IwsFHM(wsFHM).wrap(_amount);
 
+        IStakingStaking(stakingStaking).claim(claimPageSize);
+        //use whitelisted
+        IStakingStaking(stakingStaking).grantRoleBorrower(address(this));
+        //approve as spender
+        IStakingStaking(stakingStaking).approve(stakingStaking, _wsFHMamount);
         //deposit token to the pool
-        IStakingStaking(stakingStaking).deposit(address(this), _wsFHMamount);
+        IStakingStaking(stakingStaking).returnBorrow(address(this), _wsFHMamount);
 
+        info.wsfhmPayout = info.wsfhmPayout.add(_wsFHMamount);
         return _wsFHMamount;
     }
     /**
@@ -930,19 +961,22 @@ contract FantohmBondStakingPoolDepository is Ownable {
     function redeem( address _recipient, bool _stake ) external returns ( uint ) {
         Bond memory info = _bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+        uint percentVestedBlocks = percentVestedBlocksFor(_recipient); // (blocks since last interaction / vesting term remaining)
 
         require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require ( percentVestedBlocks >= 10000 , "Wait for end of bond") ;
 
         //calculate wsfhm amount
-        uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
-        uint _wsFHMamount = IwsFHM(wsFHM).wsFHMValue(_amount);
-
+        uint _wsFHMamount = info.wsfhmPayout;
+        (uint allClaimed, ) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+        IStakingStaking(stakingStaking).claim(claimPageSize);
         //withdraw deposit tokens from pool
         IStakingStaking(stakingStaking).withdraw(address(this), _wsFHMamount, false );
         delete _bondInfo[ _recipient ]; // delete user info
 
         //return the bond payout to the user
-        _amount = IwsFHM(wsFHM).unwrap(_wsFHMamount);
+        uint _amount = IwsFHM(wsFHM).unwrap(_wsFHMamount);
+        _amount = _amount.add(allClaimed);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
 
         IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
@@ -1123,13 +1157,30 @@ contract FantohmBondStakingPoolDepository is Ownable {
         }
     }
 
+    
+    /**
+     *  @notice calculate how far into vesting a depositor is
+     *  @param _depositor address
+     *  @return percentVested_ uint
+     */
+    function percentVestedFor( address _depositor) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _bondInfo[_depositor];
+        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
+        uint vestingSeconds = bond.vestingSeconds;
+
+        if ( vestingSeconds > 0 ) {
+            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
+        } else {
+            percentVested_ = 0;
+        }
+    }
 
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
+    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = _bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
@@ -1140,6 +1191,7 @@ contract FantohmBondStakingPoolDepository is Ownable {
             percentVested_ = 0;
         }
     }
+   
 
     /**
      *  @notice calculate amount of FHM available for claim by depositor
@@ -1148,8 +1200,8 @@ contract FantohmBondStakingPoolDepository is Ownable {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        uint payout = IsFHM( sFHM ).balanceForGons( _bondInfo[ _depositor ].gonsPayout );
-
+        (uint allClaimed, ) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+        uint payout = IsFHM( sFHM ).balanceForGons( _bondInfo[ _depositor ].gonsPayout.add(allClaimed) );
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
         } else {
@@ -1157,7 +1209,9 @@ contract FantohmBondStakingPoolDepository is Ownable {
         }
     }
 
-
+    function setClaimPageSize(uint _claimPageSize) external {
+        claimPageSize = _claimPageSize;
+    }
 
     /* ======= AUXILLIARY ======= */
 
