@@ -1203,7 +1203,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
         (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _recipient);
-        require(_amount >= lpTokenAmount, "Exceed the deposit amount");
+        require(_amount <= lpTokenAmount, "Exceed the deposit amount");
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
