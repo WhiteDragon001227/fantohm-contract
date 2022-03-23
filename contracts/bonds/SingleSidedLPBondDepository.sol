@@ -1194,7 +1194,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
-        require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
+        require(_amount <= info.lpTokenAmount, "Exceed the deposit amount");
         // (blocks since last interaction / vesting term remaining)
         uint percentVested = percentVestedFor(_recipient);
 
@@ -1203,7 +1203,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IMasterChef _masterChef = IMasterChef(masterChef);
         uint poolId = _masterChef.getPoolIdForLpToken(IERC20(lpToken));
         (uint lpTokenAmount,) = _masterChef.userInfo(poolId, _recipient);
-        require(_amount >= lpTokenAmount, "Exceed the deposit amount");
+        require(_amount <= lpTokenAmount, "Exceed the deposit amount");
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
@@ -1397,7 +1397,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         return FixedPoint.fraction(_usdbValue, getMarketPrice()).decode112with18().div(1e16).div(1e9);
     }
 
-
     /**
      *  @notice calculate current bond premium
      *  @return price_ uint
@@ -1417,7 +1416,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     function bondPriceInUSD() public view returns (uint price_) {
         price_ = bondPrice().mul(10 ** IERC20(principle).decimals()).div(10 ** 2);
     }
-
     /**
      *  @notice calculate current ratio of debt to USDB supply
      *  @return debtRatio_ uint
