@@ -1194,7 +1194,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
-        require(_amount >= info.lpTokenAmount, "Exceed the deposit amount");
+        require(_amount <= info.lpTokenAmount, "Exceed the deposit amount");
         // (blocks since last interaction / vesting term remaining)
         uint percentVested = percentVestedFor(_recipient);
 
@@ -1395,16 +1395,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     function payoutInFhmFor(uint _usdbValue) public view returns (uint) {
         return FixedPoint.fraction(_usdbValue, getMarketPrice()).decode112with18().div(1e16).div(1e9);
-    }
-    function userBondInfo(address _depositor) public view returns ( uint payout, uint lpTokenAmount, uint vesting,uint lastBlock,uint pricePaid, uint ilProtectionAmountInUsd, uint ilProtectionUnlockBlock) {
-        Bond memory info = bondInfo[_depositor];
-        payout = info.payout;
-        lpTokenAmount = info.lpTokenAmount;
-        vesting = info.vesting;
-        lastBlock = info.lastBlock;
-        pricePaid = info.pricePaid;
-        ilProtectionAmountInUsd = info.ilProtectionAmountInUsd;
-        ilProtectionUnlockBlock = info.ilProtectionUnlockBlock;
     }
 
     /**
