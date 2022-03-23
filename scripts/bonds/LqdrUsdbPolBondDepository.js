@@ -17,6 +17,7 @@ async function main() {
         usdbMinterAddress,
         uniswapRouterAddress,
         lqdrUsdbLPAddress,
+        lqdrUsdbMultisigAddress,
         xfhmAddress,
         treasuryHelperAddress,
     } = require(`../networks-${network}.json`);
@@ -71,8 +72,8 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('LqdrUsdbPolBondDepository');
-    // const bond = await Bond.attach("0xc5443a49cCe289A09B6D0D2d625e9f51a19547d6");
-    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapRouterAddress, lqdrUsdbLPAddress, xfhmAddress, treasuryHelperAddress);
+    // const bond = await Bond.attach("0x4f06EC6079BB6F6B39aF11010d764f1B4747E3eC");
+    const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, uniswapRouterAddress, lqdrUsdbLPAddress, xfhmAddress, treasuryHelperAddress, lqdrUsdbMultisigAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
@@ -105,6 +106,12 @@ async function main() {
     await xFHM.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer XFHM`);
 
+    const LPToken = await ethers.getContractFactory('contracts/fwsFHM.sol:ERC20'); // Doesn't matter which ERC20
+    const lpToken = await LPToken.attach(lqdrUsdbLPAddress);
+
+    await lpToken.approve(bond.address, largeApproval);
+    console.log(`Approved bond to spend vaults LP token`);
+
     await bond.deposit('1000000000000000000', '1000000000000000000', deployer.address);
     console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
@@ -112,7 +119,7 @@ async function main() {
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
 
     console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
-        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasuryAddress}" "${daoAddress}" "${usdbMinterAddress}" "${uniswapRouterAddress}" "${lqdrUsdbLPAddress}" "${xfhmAddress}" "${treasuryHelperAddress}"`);
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasuryAddress}" "${daoAddress}" "${usdbMinterAddress}" "${uniswapRouterAddress}" "${lqdrUsdbLPAddress}" "${xfhmAddress}" "${treasuryHelperAddress}" "${lqdrUsdbMultisigAddress}"`);
 }
 
 main()

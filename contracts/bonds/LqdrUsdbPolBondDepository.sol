@@ -773,6 +773,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     address public immutable DAO; // receives profit share from bond
     address public immutable usdbMinter; // receives profit share from bond
     address public immutable XFHM; // XFHM 
+    address public immutable vault; // multisig address
 
     address public immutable poolRouter; // spooky/sprit to add/remove LPs
     address public lpToken; // USDB/principle LP token
@@ -811,6 +812,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     struct Bond {
         uint payout; // minimal principle to be paid
         uint lpTokenAmount; // amount of lp token
+        uint withdrawLpTokenAmount; // can withdraw up to 66.6% lp token
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
@@ -834,7 +836,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         address _poolRouter,
         address _lpToken,
         address _XFHM,
-        address _treasuryHelper
+        address _treasuryHelper,
+        address _vault
     ) {
         require(_FHM != address(0));
         FHM = _FHM;
@@ -858,6 +861,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         XFHM = _XFHM;
         require(_treasuryHelper != address(0));
         treasuryHelper = _treasuryHelper;
+        require(_vault != address(0));
+        vault = _vault;
         boostFactor = 100;
         whitelist[msg.sender] = true;
 
@@ -978,6 +983,9 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
         uint _lpTokenAmount = createLP(_amount, payoutInUsdb);
 
+        // transfer to shared vault
+        IERC20(lpToken).transfer(vault, _lpTokenAmount);
+
         if (fee != 0) {// fee is transferred to dao
             IERC20(FHM).safeTransfer(DAO, fee);
         }
@@ -992,6 +1000,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         bondInfo[_depositor] = Bond({
         payout : bondInfo[_depositor].payout.add(_amount),
         lpTokenAmount : bondInfo[_depositor].lpTokenAmount.add(_lpTokenAmount),
+        withdrawLpTokenAmount: bondInfo[_depositor].withdrawLpTokenAmount,
         vesting : terms.vestingTerm,
         lastBlock : block.number,
         pricePaid : lqdrPriceInUSD
@@ -1045,6 +1054,13 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
         require(percentVested >= 10000, "Wait for end of bond");
 
+        info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
+        info.withdrawLpTokenAmount = info.withdrawLpTokenAmount.add(_amount);
+        require(info.withdrawLpTokenAmount <= info.lpTokenAmount.add(info.withdrawLpTokenAmount).mul(667).div(1000), "ALL_LP_ALREADY_WITHDRAWN");
+
+        // transfer from shared vault
+        IERC20(lpToken).transferFrom(vault, address(this), _amount);
+
         // disassemble LP into tokens
         (uint _usdbAmount, uint _principleAmount) = removeLP(_amount);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
@@ -1058,8 +1074,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         } else {
             info.payout = 0;
         }
-
-        info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
 
         // delete user info
         if (info.lpTokenAmount == 0) {
@@ -1291,7 +1305,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         uint percentVested = percentVestedFor(_depositor);
 
         if (percentVested >= 10000) {
-            pendingPayout_ = balanceOfPooled(_depositor);
+            Bond memory info = bondInfo[_depositor];
+            pendingPayout_ = balanceOfPooled(_depositor).add(info.withdrawLpTokenAmount).mul(667).div(1000);
         } else {
             pendingPayout_ = 0;
         }

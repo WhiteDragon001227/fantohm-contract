@@ -26,5 +26,6 @@
 	"daiPriceFeedAddress" : "0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF",
 	"xfhmAddress" : "0xcd9703c30454D9a9113cf0cC2e2762E237d8AaA9",
 	"lqdrUsdbLPAddress" : "0xF1AF8B78eAB2E33e59a4D487fb9CF9dCCEF65427",
+	"lqdrUsdbMultisigAddress" : "0x3381e86306145b062cEd14790b01AC5384D23D82",
 	"treasuryHelperAddress" : "0xf41286C6fBF79d6f9f74336aC4deca98aC8b30d7"
 }
