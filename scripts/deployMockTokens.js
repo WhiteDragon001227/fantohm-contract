@@ -39,6 +39,16 @@ async function main() {
     await lqdr.mint( deployer.address, initialMint );
     console.log(`Minted Lqdr`)
     console.log( "Lqdr: " + lqdr.address );
+
+    // Deploy Usdc
+    const Usdc = await ethers.getContractFactory('Usdc');
+    const usdc = await Usdc.deploy( 0 );
+    console.log(`Deployed Usdc to: ${usdc.address}`)
+
+    // Deploy 10,000,000 mock Usdc
+    await usdc.mint( deployer.address, initialMint );
+    console.log(`Minted Usdc`)
+    console.log( "Usdc: " + usdc.address );
 }
 
 main()
