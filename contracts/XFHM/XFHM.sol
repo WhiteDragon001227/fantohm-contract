@@ -344,7 +344,8 @@ contract XFhm is
     }
 
     function balanceOfVotingToken(address _account) external virtual override view returns (uint) {
-        return getVotes(_account);
+        // xFHM is 18 decimals, FHM is 9
+        return getVotes(_account).div(1e9);
     }
 
     /// @notice Been able to recover any token which is sent to contract by mistake
