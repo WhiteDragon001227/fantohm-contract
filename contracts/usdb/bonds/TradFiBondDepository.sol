@@ -1062,18 +1062,21 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         uint _finalAmount = 0;
         uint _length = _userBondInfo.length;
 
-        for (uint index = 0; index < _length; index++) {
+        uint index = 0;
+        while(index < _length) {
             uint percentVested = percentVestedFor(_depositor, index); // (seconds since last interaction / vesting term remaining)
             uint percentVestedBlocks = percentVestedBlocksFor(_depositor, index); // (blocks since last interaction / vesting term remaining)
 
             if (percentVested >= 10000 && percentVestedBlocks >= 10000) {
                 Bond memory removeMe;
                 removeMe = _userBondInfo[index];
-                _userBondInfo[index] = _userBondInfo[_userBondInfo.length - 1];
-                _userBondInfo[_userBondInfo.length - 1] = removeMe;
+                _userBondInfo[index] = _userBondInfo[_length - 1];
+                _userBondInfo[_length - 1] = removeMe;
                 _userBondInfo.pop();
                 _finalAmount = _finalAmount.add(removeMe.payout);
                 _length --;
+            } else {
+                index ++;
             }
         }
         if (_length == 0) {
