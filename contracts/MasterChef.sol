@@ -202,7 +202,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
             uint fhmReward = multiplier.mul(fhmPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
             accFhmPerShare = accFhmPerShare.add(fhmReward.mul(1e12).div(lpSupply));
         }
-        return user.amount.mul(accFhmPerShare).div(1e12).sub(user.rewardDebt);
+        return user.amount.mul(accFhmPerShare).div(1e12).sub(user.rewardDebt).div(1e9 /* FHM has 9 decimals */);
     }
 
     /// @notice Update reward variables for all pools. Be careful of gas spending!
@@ -236,8 +236,8 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         uint multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint fhmReward = multiplier.mul(fhmPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         //Mint Fhm rewards.
-        ITreasury(treasuryAddress).mintRewards(feeAddress, fhmReward.div(12));
-        ITreasury(treasuryAddress).mintRewards(address(this), fhmReward);
+        ITreasury(treasuryAddress).mintRewards(feeAddress, fhmReward.div(12).div(1e9 /* FHM has 9 decimals */));
+        ITreasury(treasuryAddress).mintRewards(address(this), fhmReward.div(1e9 /* FHM has 9 decimals */));
         pool.accFhmPerShare = pool.accFhmPerShare.add(fhmReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -249,7 +249,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
 
         updatePool(_pid);
         if (user.amount > 0) {
-            uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
+            uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt).div(1e9 /* FHM has 9 decimals */);
             if (pending > 0) {
                 safeFhmTransfer(_claimable, pending);
             }
@@ -280,7 +280,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         }
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt);
+        uint pending = user.amount.mul(pool.accFhmPerShare).div(1e12).sub(user.rewardDebt).div(1e9 /* FHM has 9 decimals */);
         if (pending > 0) {
             safeFhmTransfer(_claimable, pending);
         }
@@ -310,7 +310,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         // this would  be the amount if the user joined right from the start of the farm
         uint256 accumulatedFhm = user.amount.mul(pool.accFhmPerShare).div(1e12);
         // subtracting the rewards the user is not eligible for
-        uint256 eligibleFhm = accumulatedFhm - user.rewardDebt;
+        uint256 eligibleFhm = accumulatedFhm.sub(user.rewardDebt).div(1e9 /* FHM has 9 decimals */);
 
         // we set the new rewardDebt to the current accumulated amount of rewards for his amount of LP token
         user.rewardDebt = accumulatedFhm;

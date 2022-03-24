@@ -66,7 +66,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-    // const bond = await Bond.attach( "0x860D498ABBfBF1e99fA907d79e2719d9636d2d77" );
+    // const bond = await Bond.attach( "0x98B853A6310EB136532E2B99f327b16F8730a978" );
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress, masterChefAddress, daiPriceFeedAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);

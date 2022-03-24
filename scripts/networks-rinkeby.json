@@ -23,10 +23,10 @@
 	"uniswapRouterAddress" : "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
 	"balancerVaultAddress" : "0xF07513C68C55A31337E3b58034b176A15Dce16eD",
 	"usdbDaiLpAddress" : "0x67b694d556879b8cac9ae751209c43c85a1ebd2e",
-	"masterChefAddress" : "0x74999396c2504A2926E75088899460AF51FCAFdF",
+	"masterChefAddress" : "0xa742025b8137b71BEc3A3242cE50A052E1F85D22",
 	"daiPriceFeedAddress" : "0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF",
 	"usdcPriceFeedAddress" : "0xa24de01df22b63d23Ebc1882a5E3d4ec0d907bFB",
-	"xfhmAddress" : "0xcd9703c30454D9a9113cf0cC2e2762E237d8AaA9",
+	"xfhmAddress" : "0x9597Cc20C59AdB0c9113151Cd1f3B974557c7F87",
 	"lqdrUsdbLPAddress" : "0xF1AF8B78eAB2E33e59a4D487fb9CF9dCCEF65427",
 	"lqdrUsdbMultisigAddress" : "0x3381e86306145b062cEd14790b01AC5384D23D82",
 	"treasuryHelperAddress" : "0xf41286C6fBF79d6f9f74336aC4deca98aC8b30d7"

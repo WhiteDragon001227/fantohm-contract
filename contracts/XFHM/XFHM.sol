@@ -54,8 +54,8 @@ interface IVotingEscrow {
 }
 
 /// @title XFhm
-/// @notice Fhm Venom: the staking contract for Fhm, as well as the token used for governance.
-/// Note Venom does not seem to hurt the Fhm, it only makes it stronger.
+/// @notice xFhm: the staking contract for Fhm, as well as the token used for governance.
+/// Note xFhm does not seem to hurt the Fhm, it only makes it stronger.
 /// Allows depositing/withdraw of fhm
 /// Here are the rules of the game:
 /// If you stake fhm, you generate xfhm at the current `generationRate` until you reach `maxCap`
@@ -118,13 +118,13 @@ contract XFhm is
         require(_fhm != address(0), 'zero address');
 
         // Initialize XFhm
-        __ERC20_init('Fantohm Venom', 'XFhm');
+        __ERC20_init('xFantohm', 'XFhm');
         __Ownable_init();
         __ReentrancyGuard_init_unchained();
         __Pausable_init_unchained();
 
-        // set generationRate (XFhm per sec per Fhm staked)
-        generationRate = 53000000000;
+        // set generationRate (XFhm per sec per Fhm staked) xFHM 18 decimals, FHM 9
+        generationRate = 53 * 1e9;
 
         // set maxCap
         maxCap = 100;
