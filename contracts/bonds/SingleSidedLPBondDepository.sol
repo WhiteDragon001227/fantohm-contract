@@ -1193,7 +1193,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return uint amount in dai really claimed
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
-        Bond memory info = bondInfo[_recipient];
+        Bond storage info = bondInfo[_recipient];
         require(_amount <= info.lpTokenAmount, "Exceed the deposit amount");
         // (blocks since last interaction / vesting term remaining)
         uint percentVested = percentVestedFor(_recipient);
