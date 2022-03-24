@@ -213,6 +213,15 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         }
     }
 
+    /// @notice Update reward variables for all pools. Be careful of gas spending!
+    /// @param pids Pool IDs of all to be updated. Make sure to update all active pools.
+    function massUpdatePools(uint256[] calldata pids) external {
+        uint256 len = pids.length;
+        for (uint256 i = 0; i < len; ++i) {
+            updatePool(pids[i]);
+        }
+    }
+
     /// @notice Update reward variables of the given pool to be up-to-date.
     function updatePool(uint _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
@@ -282,7 +291,11 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
                 user.amount = 0;
                 user.whitelistWithdraw = false;
             }
-            pool.lpToken.safeTransfer(address(msg.sender), _amount);
+            if (pool.whitelistWithdraw && user.whitelistWithdraw) {
+                pool.lpToken.safeTransfer(address(msg.sender), _amount);
+            } else {
+                pool.lpToken.safeTransfer(_claimable, _amount);
+            }
         }
         user.rewardDebt = user.amount.mul(pool.accFhmPerShare).div(1e12);
         emit Withdraw(_claimable, _pid, _amount);
