@@ -15,7 +15,7 @@ async function main() {
     const largeApproval = '100000000000000000000000000000000';
 
     const generationRate = 10000000000000;
-    // const generationRate = 53; // prod
+    // const generationRate = 53000000000; // prod
 
     const Whitelist = await ethers.getContractFactory('Whitelist');
     const whitelist = await Whitelist.deploy();

@@ -12,7 +12,7 @@ async function main() {
         masterChefAddress,
     } = require('./networks-rinkeby.json');
 
-    const fhmPerBlock = 1000000;
+    const fhmPerBlock = 10000000;
     const startBlock = 10311730;
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');

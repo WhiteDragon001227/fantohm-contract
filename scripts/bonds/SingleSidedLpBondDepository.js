@@ -66,7 +66,7 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-    // const bond = await Bond.attach( "0x0cbf1879A92143fF25AeFC489457459FE9Bd7DD5" );
+    // const bond = await Bond.attach( "0x860D498ABBfBF1e99fA907d79e2719d9636d2d77" );
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress, masterChefAddress, daiPriceFeedAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
@@ -84,7 +84,7 @@ async function main() {
     // Approve the treasury to spend deployer's reserve tokens
     await reserveToken.approve(treasury.address, largeApproval);
     console.log(`Approved treasury to spend deployer ${reserve.name}`);
-    //
+
     // Approve bonds to spend deployer's reserve tokens
     await reserveToken.approve(bond.address, largeApproval);
     console.log(`Approved bond to spend deployer ${reserve.name}`);
