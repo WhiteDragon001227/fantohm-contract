@@ -1260,11 +1260,23 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function payoutFor( uint _value ) public view returns ( uint ) {
-        return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+        return FixedPoint.fraction( _value, bondPriceInUSD() ).decode112with18();
     }
 
     function payoutInFhmFor( uint _usdbValue) public view returns ( uint ) {
         return FixedPoint.fraction( _usdbValue, getMarketPrice()).decode112with18().div( 1e16 ).div(1e9);
+    }
+
+    /**
+    *  @notice converts bond price to DAI value
+     *  @return price_ uint
+     */
+    function bondPriceInUSD() public view returns ( uint price_ ) {
+        uint _originalPrice = 1;
+        _originalPrice = _originalPrice.mul( 10 ** 18 );
+
+        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
+        price_ = _originalPrice.sub(_discount);
     }
 
 
@@ -1273,19 +1285,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @return price_ uint
      */
     function bondPrice() public view returns ( uint price_ ) {
-        uint _originalPrice = 1;
-        _originalPrice = _originalPrice.mul( 10 ** 2 );
-
-        uint _discount = _originalPrice.mul(terms.discount).div(10 ** 5);
-        price_ = _originalPrice.sub(_discount);
-    }
-
-    /**
-     *  @notice converts bond price to DAI value
-     *  @return price_ uint
-     */
-    function bondPriceInUSD() public view returns ( uint price_ ) {
-        price_ = bondPrice().mul( 10 ** IERC20( principle ).decimals() ).div(10 ** 2);
+       return bondPriceInUSD().div(1e16);
     }
 
     /**

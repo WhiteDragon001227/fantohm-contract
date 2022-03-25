@@ -2,11 +2,16 @@ const {ethers} = require("hardhat");
 
 // npx hardhat console --network rinkeby
 // const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0x8fae7a5f94960e0b64e346918160f6276f232445" }})
-// const projectX = await ProjectX.attach("0x52b27846dd773C8E16Fc8e75E2d1D6abd4e8C48A")
+// const projectX = await ProjectX.attach("0x65C0cA99697E1746A55DE416f7642234FCcDF778")
 // npx hardhat verify --network rinkeby 0x52b27846dd773C8E16Fc8e75E2d1D6abd4e8C48A "0x9DC084Fd82860cDb4ED2b2BF59F1076F47B03Bd6" "0xE827c1D2da22496A09055140c2454c953710751C" "0xfa1FBb8Ef55A4855E5688C0eE13aC3f202486286" "0x686AcF5A89d09D936B09e5a5a64Dd6B241CD20c6" "0x3381e86306145b062cEd14790b01AC5384D23D82" "0x05db87C4Cbb198717F590AabA613cdD2180483Ce"
 
 // npx hardhat console --network fantom_testnet
 // const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0x1eFF5569aDBc45A7e15b3CC5701A93FF0ea8D761" }})
+// const projectX = await ProjectX.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc")
+// npx hardhat verify --network fantom_testnet 0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc "0x4B209fd2826e6880e9605DCAF5F8dB0C2296D6d2" "0xD40f6eDc014b42cF678D7eeF4A1310EEe229C50f" "0x05db87C4Cbb198717F590AabA613cdD2180483Ce" "0xB58E41fadf1bebC1089CeEDbbf7e5E5e46dCd9b9" "0x3381e86306145b062cEd14790b01AC5384D23D82" "0xc7330002761E52034efDC0cAe69B5Bd20D69aD38"
+
+// npx hardhat console --network fantom
+// const ProjectX = await ethers.getContractFactory("TradFiBondDepository",{ libraries: { IterableMapping: "0xc36b7E732A7DDbadF66f7d8B56b8E07e51bf42C7" }})
 // const projectX = await ProjectX.attach("0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc")
 // npx hardhat verify --network fantom_testnet 0x6f1d572B01fABA437297235f6D3C4e05Fb65eAfc "0x4B209fd2826e6880e9605DCAF5F8dB0C2296D6d2" "0xD40f6eDc014b42cF678D7eeF4A1310EEe229C50f" "0x05db87C4Cbb198717F590AabA613cdD2180483Ce" "0xB58E41fadf1bebC1089CeEDbbf7e5E5e46dCd9b9" "0x3381e86306145b062cEd14790b01AC5384D23D82" "0xc7330002761E52034efDC0cAe69B5Bd20D69aD38"
 
@@ -17,6 +22,7 @@ async function main() {
 
     const network = "rinkeby";
     // const network = "fantom_testnet";
+    // const network = "fantom";
     const {
         daoAddress,
         zeroAddress,
@@ -45,13 +51,18 @@ async function main() {
     // const bondVestingSecondsLength = '600';
     const bondVestingSecondsLength = '1200';
 
+    // const bondVestingSecondsLength = '7776000'; // 3m
+    // const bondVestingSecondsLength = '15552000'; // 6m
+
     // 6 weeks/2 = 3628800/2 * 0.867 = 1573084
-    // const bondVestingLength = '1573084';
     // const bondVestingLength = '10';
     const bondVestingLength = '20';
 
-    // const maxDiscount = '5000';
-    const maxDiscount = '10000';
+    // const bondVestingLength = '3738461'; // 1/2 3m
+    // const bondVestingLength = '7476923';
+
+    // const maxDiscount = '4762'; // 3m
+    const maxDiscount = '13044'; //6m
 
     // Max bond payout
     const maxBondPayout = '100000'
@@ -80,7 +91,8 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     const Library = await ethers.getContractFactory("IterableMapping");
-    // const library = await Library.attach("0x5942708419f2822A76C210c71a42944c1a9F2D20");
+    // const library = await Library.attach("0xc36b7E732A7DDbadF66f7d8B56b8E07e51bf42C7"); // prod
+    // const library = await Library.attach("0xA6E6e8720C70f4715a34783381d6745a7aC32652"); // rinkeby
     const library = await Library.deploy();
     await library.deployed();
     console.log(`Deployed library to: ${library.address}`);
@@ -91,7 +103,7 @@ async function main() {
             IterableMapping: library.address,
         },
     });
-    // const bond = await Bond.attach("0xE12f6082D3137521a6098A9114309FA9Fd95C4dF");
+    const bond = await Bond.attach("0xd7686f04D8c72054Bbc934ED951C919A87833C49");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
