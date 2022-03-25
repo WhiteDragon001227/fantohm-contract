@@ -15,6 +15,8 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
+    const network = "rinkeby";
+    // const network = "fantom_testnet";
     const {
         daoAddress,
         zeroAddress,
@@ -23,7 +25,7 @@ async function main() {
         usdbAddress,
         treasuryAddress,
         usdbMinterAddress,
-    } = require('../../networks-fantom_testnet.json');
+    } = require(`../../networks-${network}.json`);
 
     // Reserve addresses
     const reserve =
@@ -40,13 +42,16 @@ async function main() {
 
     // 6 weeks ~ 3628800
     // const bondVestingSecondsLength = '3628800';
-    const bondVestingSecondsLength = '600';
+    // const bondVestingSecondsLength = '600';
+    const bondVestingSecondsLength = '1200';
 
     // 6 weeks/2 = 3628800/2 * 0.867 = 1573084
     // const bondVestingLength = '1573084';
-    const bondVestingLength = '10';
+    // const bondVestingLength = '10';
+    const bondVestingLength = '20';
 
-    const maxDiscount = '5000';
+    // const maxDiscount = '5000';
+    const maxDiscount = '10000';
 
     // Max bond payout
     const maxBondPayout = '100000'
@@ -64,7 +69,7 @@ async function main() {
 
     const useWhitelist = false;
     const useCircuitBreaker = true;
-    const prematureReturnRate = 500;
+    const prematureReturnRate = 9500;
     const limitBondAmount = 10;
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
@@ -75,7 +80,7 @@ async function main() {
     const reserveToken = await ReserveToken.attach(reserve.address);
 
     const Library = await ethers.getContractFactory("IterableMapping");
-    // const library = await Library.attach("0x8fae7a5f94960e0b64e346918160f6276f232445");
+    // const library = await Library.attach("0x5942708419f2822A76C210c71a42944c1a9F2D20");
     const library = await Library.deploy();
     await library.deployed();
     console.log(`Deployed library to: ${library.address}`);
@@ -86,8 +91,9 @@ async function main() {
             IterableMapping: library.address,
         },
     });
-    // const bond = await Bond.attach("0x52b27846dd773C8E16Fc8e75E2d1D6abd4e8C48A");
+    // const bond = await Bond.attach("0xE12f6082D3137521a6098A9114309FA9Fd95C4dF");
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress);
+    await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
@@ -118,6 +124,9 @@ async function main() {
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
+
+    console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+
+        `${bond.address} "${fhmAddress}" "${usdbAddress}" "${reserve.address}" "${treasuryAddress}" "${daoAddress}" "${usdbMinterAddress}"`);
 
     // redeemAll
     const pageSize = 1000;

@@ -1114,7 +1114,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
         Bond storage info = infos[index];
         uint possiblePayout = info.payout;
-        uint _deposit = possiblePayout.mul(info.pricePaid).div(100);
+        uint _deposit = possiblePayout.mul(info.pricePaid).div(1e18);
         forfeited = _deposit.mul(terms.prematureReturnRate).div(10000);
 
         require( _deposit >= forfeited, "prematureReturnRate is too big." );
