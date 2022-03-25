@@ -794,7 +794,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
 
     event BondCreated( uint deposit, uint indexed payout, uint indexed expiresTimestamp, uint expiresBlock, uint indexed priceInUSD );
     event BondRedeemed( address indexed recipient, uint payout, uint remainingSeconds, uint remainingBlocks );
-    event BondCancelled( address indexed recipient, uint indexed index, uint indexed principlePayout );
+    event BondCancelled( address indexed recipient, uint index, uint deposit, uint possiblePayout, uint forfeited);
 
 
 
@@ -1099,6 +1099,46 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
+     *  @notice returns asset when depositor wants to cancel bond
+     *  @param _depositor address
+     *  @param index uint
+     *  @return forfeited uint
+     */
+    function cancelBond( address _depositor, uint index ) public onlyDepositor(_depositor) returns (uint forfeited) {
+        Bond[] storage infos = depositors.values[_depositor];
+        uint _length = infos.length;
+        require(index < _length, "INDEX_OUT_OF_BOUNDS");
+
+        uint percentVested = percentVestedFor( _depositor, index );
+        require( percentVested < 10000, "Current bond is already finished." );
+
+        Bond storage info = infos[index];
+        uint possiblePayout = info.payout;
+        uint _deposit = possiblePayout.mul(info.pricePaid).div(100);
+        forfeited = _deposit.mul(terms.prematureReturnRate).div(10000);
+
+        require( _deposit >= forfeited, "prematureReturnRate is too big." );
+
+        uint remainingBalance = possiblePayout.sub(forfeited);
+
+        if (_length >= 2 && index != _length - 1) {
+            infos[index] = infos[_length - 1];
+            infos[_length - 1] = info;
+            infos.pop();
+        } else if (_length >= 2 && index == _length - 1) {
+            infos.pop();
+        } else {
+            depositors.remove(_depositor);
+        }
+
+        IERC20( USDB ).transfer(_depositor, forfeited);
+        IERC20( USDB ).transfer(DAO, remainingBalance);
+
+        emit BondCancelled(_depositor, index, _deposit, possiblePayout, forfeited);
+    }
+
+
+    /**
      *  @notice return bond info
      *  @param _depositor address
      *  @param index uint
@@ -1344,30 +1384,6 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
             pendingPayout_ = 0;
         }
     }
-
-    /**
- *  @notice returns asset when depositor wants to cancel bond
-     *  @param _depositor address
-     *  @param index uint
-     *  @return assetPayout_ uint
-     */
-    function cancelBond( address _depositor, uint index ) public onlyDepositor(_depositor) returns ( uint assetPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor, index );
-        uint payout = depositors.get(_depositor, index).payout;
-
-        require( payout > 0, "depositor or index is not correct." );
-        require( percentVested < 10000, "Current bond is already finished." );
-
-        assetPayout_ = payout.mul(terms.prematureReturnRate).div(10000);
-        require( payout >= assetPayout_, "prematureReturnRate is too big." );
-        uint remainingBalance = payout.sub(assetPayout_);
-        IERC20( USDB ).transfer(_depositor, assetPayout_ );
-        IERC20( USDB ).transfer(DAO, remainingBalance );
-        emit BondCancelled( _depositor, index, assetPayout_ );
-    }
-
-
-
 
     /* ======= AUXILLIARY ======= */
 
