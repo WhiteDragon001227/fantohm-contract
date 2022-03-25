@@ -28,7 +28,8 @@ module.exports = {
       accounts: [`${privateKey}`]
     },
     mainnet: {
-      url: `https://eth-mainnet.alchemyapi.io/v2/${alchemyApiKeyProd}`,
+      // url: `https://eth-mainnet.alchemyapi.io/v2/${alchemyApiKeyProd}`,
+      url: `https://cloudflare-eth.com`,
       accounts: [`${privateKey}`]
     },
     bsc: {
