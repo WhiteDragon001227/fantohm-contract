@@ -821,6 +821,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
     SoldBonds[] public soldBondsInHour;
     Bond public _bondInfo;
     uint public usersCount;
+    uint public limitBondCount; //limit bond counts users can deposit
 
     /* ======== STRUCTS ======== */
 
@@ -882,6 +883,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
      *  @param _useWhitelist bool
      *  @param _useCircuitBreaker bool
      *  @param _prematureReturnRate uint
+     *  @param _limitBondCount uint
      */
     function initializeBondTerms(
         uint _vestingTermSeconds,
@@ -894,7 +896,8 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         uint _soldBondsLimitUsd,
         bool _useWhitelist,
         bool _useCircuitBreaker,
-        uint _prematureReturnRate
+        uint _prematureReturnRate,
+        uint _limitBondCount
     ) external onlyPolicy() {
         terms = Terms ({
         vestingTermSeconds: _vestingTermSeconds,
@@ -910,6 +913,7 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         lastDecay = block.number;
         useWhitelist = _useWhitelist;
         useCircuitBreaker = _useCircuitBreaker;
+        limitBondCount = _limitBondCount;
     }
 
 
@@ -955,6 +959,9 @@ contract TradFiBondDepository is Ownable, ReentrancyGuard {
         address _depositor
     ) external nonReentrant returns ( uint ) {
         require( _depositor != address(0), "Invalid address" );
+        //check the user's bond count
+        Bond[] memory _userBondInfo = depositors.values[_depositor];
+        require(_userBondInfo.length < limitBondCount, "Exceed the limit amounts of bond");
         // allow only whitelisted contracts
         if (useWhitelist) require(whitelist[msg.sender], "SENDER_IS_NOT_IN_WHITELIST");
 
