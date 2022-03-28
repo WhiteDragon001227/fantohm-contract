@@ -602,7 +602,8 @@ interface IsFHM {
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
     function claim( address _recipient ) external;
-    function checkBefore(uint _amount, address _recipient) external view;
+    function epoch() external view returns (uint,uint,uint,uint);
+    function warmupPeriod() external view returns (uint);
 }
 
 interface IFHUDMinter {
@@ -625,6 +626,7 @@ interface IStakingStaking {
     function claimable(address _user, uint _claimPageSize) external view returns (uint, uint);
     function claim(uint _claimPageSize) external;
     function grantRoleBorrower(address _account) external;
+    function userBalance(address _user) external view returns (uint, uint, uint);
 }
 
 contract BondStakingStakingDepository is Ownable {
@@ -645,7 +647,7 @@ contract BondStakingStakingDepository is Ownable {
 
 
 
-
+    uint internal constant max = type(uint).max;
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // reward from treasury which is staked for the time of the bond
@@ -671,7 +673,8 @@ contract BondStakingStakingDepository is Ownable {
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
     uint public claimPageSize; // maximum iteration threshold
-
+    uint public totalwsfhmDeposit;
+    uint public totalRewards;
 
     /* ======== STRUCTS ======== */
 
@@ -722,7 +725,8 @@ contract BondStakingStakingDepository is Ownable {
         address _DAO,
         address _bondCalculator,
         address _fhudMinter,
-        address _fhmCirculatingSupply
+        address _fhmCirculatingSupply,
+        address _stakingStaking
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -740,9 +744,14 @@ contract BondStakingStakingDepository is Ownable {
         fhmCirculatingSupply = _fhmCirculatingSupply;
         require( _wsFHM != address(0) );
         wsFHM = _wsFHM;
+        require( _stakingStaking != address(0) );
+        stakingStaking = _stakingStaking;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
+
+        //approve as spender
+        IStakingStaking(stakingStaking).approve(stakingStaking, max);
     }
 
     /**
@@ -930,27 +939,33 @@ contract BondStakingStakingDepository is Ownable {
       *  @param _depositor address
      */
     function move(address _depositor) external returns(uint) {
-        Bond memory info = _bondInfo[_depositor];
+        Bond storage info = _bondInfo[_depositor];
 
         //check warmup period
-        IStaking(staking).checkBefore(info.fhmPayout, address(this));
-        // have sfhm tokens
-        IStaking( staking ).claim( address(this) );
+        (,uint epochNumber,,) = IStaking(staking).epoch();
+        uint warmupPeriod = IStaking(staking).warmupPeriod();
+
+        // really can call claim which does something, claiming for everyone else
+        if (epochNumber >= info.lastBlock.add(warmupPeriod)) {
+            // have sfhm tokens
+            IStaking(staking).claim(address(this));
+        }
 
         //calculate sFHM amounts and wrap sFHM
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
-        uint _wsFHMamount = IwsFHM(wsFHM).wrap(_amount);
-
+        uint _wsfhmDeposit = IwsFHM(wsFHM).wrap(_amount);
+        //rewards for all users
+        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+        //calc totalRewards
+        totalRewards = totalRewards.add(allClaimable);
+        //calc userRewardss
+        uint userRewards = totalRewards.mul(_wsfhmDeposit).div(totalwsfhmDeposit);
         IStakingStaking(stakingStaking).claim(claimPageSize);
-        //use whitelisted
-        IStakingStaking(stakingStaking).grantRoleBorrower(address(this));
-        //approve as spender
-        IStakingStaking(stakingStaking).approve(stakingStaking, _wsFHMamount);
         //deposit token to the pool
-        IStakingStaking(stakingStaking).returnBorrow(address(this), _wsFHMamount);
-
-        info.wsfhmPayout = info.wsfhmPayout.add(_wsFHMamount);
-        return _wsFHMamount;
+        IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
+        info.wsfhmPayout = info.wsfhmPayout.add(_wsfhmDeposit.add(userRewards));
+        totalwsfhmDeposit = totalwsfhmDeposit.add(info.wsfhmPayout);
+        return _wsfhmDeposit;
     }
     /**
      *  @notice redeem bond for user
@@ -966,17 +981,23 @@ contract BondStakingStakingDepository is Ownable {
         require ( percentVested >= 10000 , "Wait for end of bond") ;
         require ( percentVestedBlocks >= 10000 , "Wait for end of bond") ;
 
+        IStakingStaking(stakingStaking).claim(claimPageSize);
         //calculate wsfhm amount
         uint _wsFHMamount = info.wsfhmPayout;
-        (uint allClaimed, ) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        IStakingStaking(stakingStaking).claim(claimPageSize);
+    
+        uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
         //withdraw deposit tokens from pool
-        IStakingStaking(stakingStaking).withdraw(address(this), _wsFHMamount, false );
+        IStakingStaking(stakingStaking).withdraw(address(this), _wsFHMamount.add(userRewards), false );
+        
+        //calc totalwsfhmdeposit and total rewards 
+        totalwsfhmDeposit = totalwsfhmDeposit.sub(_wsFHMamount);
+        totalRewards = totalRewards.sub(userRewards);
+
         delete _bondInfo[ _recipient ]; // delete user info
 
         //return the bond payout to the user
         uint _amount = IwsFHM(wsFHM).unwrap(_wsFHMamount);
-        _amount = _amount.add(allClaimed);
+        _amount = _amount.add(userRewards);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
 
         IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
@@ -1200,8 +1221,12 @@ contract BondStakingStakingDepository is Ownable {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        (uint allClaimed, ) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        uint payout = IsFHM( sFHM ).balanceForGons( _bondInfo[ _depositor ].gonsPayout.add(allClaimed) );
+        Bond memory info = _bondInfo[_depositor];
+        uint _wsFHMamount = info.wsfhmPayout;
+
+        uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
+        uint claimed = IwsFHM(wsFHM).sFHMValue(_wsFHMamount.add(userRewards));
+        uint payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
         } else {
@@ -1212,7 +1237,6 @@ contract BondStakingStakingDepository is Ownable {
     function setClaimPageSize(uint _claimPageSize) external {
         claimPageSize = _claimPageSize;
     }
-
     /* ======= AUXILLIARY ======= */
 
     /**
