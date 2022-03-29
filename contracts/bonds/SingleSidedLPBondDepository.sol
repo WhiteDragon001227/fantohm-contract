@@ -1210,11 +1210,11 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         (uint _usdbAmount, uint _principleAmount) = exitPool(_amount - 1);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
+        /// @dev to test il protection redeem lets change _principleAmount to _principleAmount.div(2) in the line below
         uint ilUsdWorth = ilProtectionClaimable(_recipient, _amount, _principleAmount);
         if (ilUsdWorth > 0) {
-            Bond storage ilInfo = bondInfo[_recipient];
-            ilInfo.ilProtectionAmountInUsd = ilInfo.ilProtectionAmountInUsd.add(ilUsdWorth);
-            ilInfo.ilProtectionUnlockBlock = block.number + terms.ilProtectionRewardsVestingBlocks;
+            info.ilProtectionAmountInUsd = info.ilProtectionAmountInUsd.add(ilUsdWorth);
+            info.ilProtectionUnlockBlock = block.number + terms.ilProtectionRewardsVestingBlocks;
         }
 
         if (_principleAmount < info.payout) {
@@ -1226,7 +1226,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
 
         // delete user info if there is no IL
-        if (info.lpTokenAmount == 0 && bondInfo[_recipient].ilProtectionAmountInUsd == 0) {
+        if (info.lpTokenAmount == 0 && info.ilProtectionAmountInUsd == 0) {
             delete bondInfo[_recipient];
         }
 
