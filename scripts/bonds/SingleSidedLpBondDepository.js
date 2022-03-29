@@ -5,8 +5,9 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
-    const network = "rinkeby";
+    // const network = "rinkeby";
     // const network = "fantom_testnet";
+    const network = "fantom";
     const {
         daoAddress,
         zeroAddress,
@@ -49,13 +50,16 @@ async function main() {
     // Initial Bond debt
     const initialBondDebt = '0';
 
-    const soldBondsLimit = '10000000000000000000000';
+    // const soldBondsLimit = '10000000000000000000000';
+    const soldBondsLimit = '1000000000000000000000000';
 
     const useWhitelist = false;
     const useCircuitBreaker = true;
 
-    const ilProtectionMinBlocksFromDeposit = 10;
-    const ilProtectionRewardsVestingBlocks = 10;
+    // const ilProtectionMinBlocksFromDeposit = 10;
+    const ilProtectionMinBlocksFromDeposit = 43200; // 12h approx with 1s blockrate
+    // const ilProtectionRewardsVestingBlocks = 10;
+    const ilProtectionRewardsVestingBlocks = 3600; // 1h approx with 1s blockrate
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -66,13 +70,13 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-    // const bond = await Bond.attach( "0x8D36B8484459753a346e4274821EdBC6DeA39F3f" );
+    // const bond = await Bond.attach( "0x798A542724651Ea1d2b75e068FA7B39299eA09d5" );
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress, masterChefAddress, daiPriceFeedAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
-    await treasury.queue('8', bond.adress);
+    await treasury.queue('8', bond.address);
     console.log(`Queued ${reserve.name} Bond as reward manager`);
     await treasury.toggle('8', bond.address, zeroAddress);
     console.log(`Toggled ${reserve.name} Bond as reward manager`);

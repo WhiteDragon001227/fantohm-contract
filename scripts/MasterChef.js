@@ -5,8 +5,9 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
-    const network = "rinkeby";
+    // const network = "rinkeby";
     // const network = "fantom_testnet";
+    const network = "fantom";
     const {
         daoAddress,
         zeroAddress,
@@ -15,8 +16,10 @@ async function main() {
         masterChefAddress,
     } = require(`./networks-${network}.json`);
 
-    const fhmPerBlock = 100000000000;
-    const startBlock = 10383396;
+    // const fhmPerBlock = 100000000000;
+    const fhmPerBlock = 422000000000;
+    // const startBlock = 10383396;
+    const startBlock = 34698426;
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
     // const masterChefV2 = await MasterChefV2.attach(masterChefAddress);

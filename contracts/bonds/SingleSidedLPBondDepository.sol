@@ -1210,7 +1210,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         (uint _usdbAmount, uint _principleAmount) = exitPool(_amount - 1);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
-        /// @dev to test il protection redeem lets change _principleAmount to _principleAmount.div(2) in the line below
+        // @dev to test il protection redeem lets change _principleAmount to _principleAmount.div(2) in the line below
         uint ilUsdWorth = ilProtectionClaimable(_recipient, _amount, _principleAmount);
         if (ilUsdWorth > 0) {
             info.ilProtectionAmountInUsd = info.ilProtectionAmountInUsd.add(ilUsdWorth);
