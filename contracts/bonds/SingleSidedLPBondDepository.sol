@@ -895,6 +895,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
+    uint public dustRounding;
 
     bool public useWhitelist;
     bool public useCircuitBreaker;
@@ -972,6 +973,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         IERC20(_principle).approve(_balancerVault, max);
         IERC20(_USDB).approve(_balancerVault, max);
         IERC20(_lpToken).approve(_masterChef, max);
+        IERC20(_lpToken).approve(_balancerVault, max);
     }
 
     /**
@@ -1207,7 +1209,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount - 1);
+        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount.sub(dustRounding));
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
         // @dev to test il protection redeem lets change _principleAmount to _principleAmount.div(2) in the line below
@@ -1522,14 +1524,20 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         return 0;
     }
 
+    /// @notice sets amount which is still consider a dust
+    function setDustRounding(uint _dustRounding) external onlyPolicy {
+        require(_dustRounding <= 1000, "DUST_ROUNDING_TOO_BIG");
+        dustRounding = _dustRounding;
+    }
+
 
     /* ======= AUXILLIARY ======= */
 
     /**
-     *  @notice allow anyone to send lost tokens (excluding principle or FHM) to the DAO
+     *  @notice allow to send lost tokens (excluding principle or FHM) to the DAO
      *  @return bool
      */
-    function recoverLostToken(address _token) external returns (bool) {
+    function recoverLostToken(address _token) external onlyPolicy returns (bool) {
         require(_token != FHM);
         require(_token != USDB);
         require(_token != principle);
