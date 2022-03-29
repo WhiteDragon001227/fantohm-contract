@@ -1064,7 +1064,6 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         decayDebt();
         require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
-        uint priceInUSD = bondPriceInUSD();
         // Stored in bond info
         uint nativePrice = bondPrice();
 
@@ -1081,7 +1080,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         // size protection because there is no slippage
         require(!circuitBreakerActivated(payout), "CIRCUIT_BREAKER_ACTIVE");
 
-        uint payoutInFhm = payoutInFhmFor(payout);
+        uint _usdbAmount = usdbAmountForPrinciple(_amount);
+        uint payoutInFhm = payoutInFhmFor(_usdbAmount);
 
         // profits are calculated
         uint fee = payoutInFhm.mul(terms.fee).div(10000);
@@ -1091,12 +1091,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         ITreasury(treasury).mintRewards(address(this), payoutInFhm.add(fee));
 
         // mint USDB with guaranteed discount
-        IMintable(USDB).mint(address(this), _amount);
+        IMintable(USDB).mint(address(this), _usdbAmount);
 
         // burn whatever FHM got from treasury in current market price
         IBurnable(FHM).burn(payoutInFhm);
 
-        uint _lpTokenAmount = joinPool(_amount);
+        uint _lpTokenAmount = joinPool(_amount, _usdbAmount);
         uint poolId = IMasterChef(masterChef).getPoolIdForLpToken(IERC20(lpToken));
         IMasterChef(masterChef).deposit(poolId, _lpTokenAmount, _depositor);
 
@@ -1116,13 +1116,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         lpTokenAmount : bondInfo[_depositor].lpTokenAmount.add(_lpTokenAmount),
         vesting : terms.vestingTerm,
         lastBlock : block.number,
-        pricePaid : priceInUSD,
+        pricePaid : bondPriceInUSD(),
         ilProtectionAmountInUsd: bondInfo[_depositor].ilProtectionAmountInUsd,
         ilProtectionUnlockBlock: bondInfo[_depositor].ilProtectionUnlockBlock
         });
 
         // indexed events are emitted
-        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), priceInUSD);
+        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), bondPriceInUSD());
 
         return payout;
     }
@@ -1137,13 +1137,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         }
     }
 
-    function joinPool(uint _principleAmount) private returns (uint _lpTokenAmount) {
+    function joinPool(uint _principleAmount, uint _usdbAmount) private returns (uint _lpTokenAmount) {
         // https://dev.balancer.fi/resources/joins-and-exits/pool-joins
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/master/pkg/balancer-js/src/pool-stable/encoder.ts
-        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
+        (IERC20[] memory tokens,) = getPoolTokens();
 
         uint[] memory rawAmounts = new uint[](2);
-        rawAmounts[0] = _principleAmount;
+        rawAmounts[0] = _usdbAmount;
         rawAmounts[1] = _principleAmount;
 
         bytes memory userDataEncoded = abi.encode(1 /* EXACT_TOKENS_IN_FOR_BPT_OUT */, rawAmounts, 0);
@@ -1163,7 +1163,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     }
 
     function exitPool(uint _lpTokensAmount) private returns (uint _usdbAmount, uint _principleAmount) {
-        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
+        (IERC20[] memory tokens,) = getPoolTokens();
 
         // https://dev.balancer.fi/resources/joins-and-exits/pool-exits
         uint[] memory minAmountsOut = new uint[](2);
@@ -1522,6 +1522,18 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         }
 
         return 0;
+    }
+
+    /// @notice count amount of usdb for given amount in principle to create LP token from
+    /// @dev D / U = d / u => u = d * U / D
+    function usdbAmountForPrinciple(uint _principleAmount) public view returns (uint) {
+        (IERC20[] memory tokens, uint[] memory totalBalances) = getPoolTokens();
+
+        if (address(tokens[0]) == principle) {
+            return _principleAmount.mul(totalBalances[1]).div(totalBalances[0]);
+        } else {
+            return _principleAmount.mul(totalBalances[0]).div(totalBalances[1]);
+        }
     }
 
     /// @notice sets amount which is still consider a dust
