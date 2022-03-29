@@ -765,6 +765,7 @@ contract BondStakingStakingDepository is Ownable {
      *  @param _fee uint
      *  @param _maxDebt uint
      *  @param _initialDebt uint
+     *  @param _claimPageSize uint
      */
     function initializeBondTerms(
         uint _controlVariable,
@@ -775,7 +776,8 @@ contract BondStakingStakingDepository is Ownable {
         uint _maxPayout,
         uint _fee,
         uint _maxDebt,
-        uint _initialDebt
+        uint _initialDebt,
+        uint _claimPageSize,
     ) external onlyPolicy() {
         terms = Terms ({
         controlVariable: _controlVariable,
@@ -789,6 +791,7 @@ contract BondStakingStakingDepository is Ownable {
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
+        claimPageSize = _claimPageSize;
     }
 
 
@@ -851,6 +854,7 @@ contract BondStakingStakingDepository is Ownable {
         require( _staking != address(0) );
         staking = _staking;
     }
+
     /**
      *  @notice set contract for auto stakeStake
      *  @param _stakingStaking address
@@ -919,7 +923,7 @@ contract BondStakingStakingDepository is Ownable {
         _bondInfo[ _depositor ] = Bond({
         gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
         fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
-        wsfhmPayout: _bondInfo[_depositor].wsfhmPayout,
+        wsfhmPayout: _bondInfo[_depositor].wsfhmPayout, // wsfhmPayout is changed in second step
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD,
@@ -934,6 +938,7 @@ contract BondStakingStakingDepository is Ownable {
         adjust(); // control variable is adjusted
         return payout;
     }
+
     /**
       *  @notice deposit sfhm token to the pool
       *  @param _depositor address
@@ -954,6 +959,14 @@ contract BondStakingStakingDepository is Ownable {
         //calculate sFHM amounts and wrap sFHM
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
         uint _wsfhmDeposit = IwsFHM(wsFHM).wrap(_amount);
+
+        // FIXME here i would do it nonReentrant and call claim() all the time, only thing you need is to count totalDeposits
+        // everything else are rewards. user cannot premeaturely close it, so its true
+        // 1. IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit)
+        // 2. info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit)
+        // no need to call claimable, you dont cate here
+        // no need to call claim as its doing in returnBorrow inside
+
         //rewards for all users
         (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
         //calc totalRewards
@@ -967,6 +980,7 @@ contract BondStakingStakingDepository is Ownable {
         totalwsfhmDeposit = totalwsfhmDeposit.add(info.wsfhmPayout);
         return _wsfhmDeposit;
     }
+
     /**
      *  @notice redeem bond for user
      *  @param _recipient address
@@ -982,7 +996,12 @@ contract BondStakingStakingDepository is Ownable {
         require ( percentVestedBlocks >= 10000 , "Wait for end of bond") ;
 
         IStakingStaking(stakingStaking).claim(claimPageSize);
-        //calculate wsfhm amount
+
+        // FIXME i would remember not wsfhmPayout but wsFhmDeposit in move step
+        // then you need to count whats recipients payout = wsFhmDeposit + wsFhmRewards
+        // totalRewards needs to be counted from 6,6 pool claimable() and totalWsfhmDeposit
+
+        // calculate wsfhm amount
         uint _wsFHMamount = info.wsfhmPayout;
     
         uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
@@ -995,11 +1014,13 @@ contract BondStakingStakingDepository is Ownable {
 
         delete _bondInfo[ _recipient ]; // delete user info
 
-        //return the bond payout to the user
+        // FIXME need to unwrap wsFhmDeposit+wsFhmRewards of recipient
+        // return the bond payout to the user
         uint _amount = IwsFHM(wsFHM).unwrap(_wsFHMamount);
         _amount = _amount.add(userRewards);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
 
+        // here we can send wsFHM or sFHM, sFHM can be easier for UI, wsFHM can be more sexy...
         IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
         return _amount;
     }
@@ -1126,8 +1147,10 @@ contract BondStakingStakingDepository is Ownable {
      *  @return lastBlock uint
      *  @return pricePaid uint
      */
-    function bondInfo(address _depositor) public view returns ( uint payout,uint vesting,uint lastBlock,uint pricePaid ) {
+    // FIXME we need to have same signature as TradFi or ISO, we need to send vestingSeconds to UI
+    function bondInfo(address _depositor) public view returns ( uint payout, uint vesting, uint lastBlock, uint pricePaid ) {
         Bond memory info = _bondInfo[ _depositor ];
+        // FIXME can we count correct payout from wsFHM and rewards from 6,6 pool?
         payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout );
         vesting = info.vesting;
         lastBlock = info.lastBlock;
@@ -1224,6 +1247,7 @@ contract BondStakingStakingDepository is Ownable {
         Bond memory info = _bondInfo[_depositor];
         uint _wsFHMamount = info.wsfhmPayout;
 
+        // FIXME you need to ask 6,6 pool whats your claimable tokens, then according to your TVL to split it
         uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
         uint claimed = IwsFHM(wsFHM).sFHMValue(_wsFHMamount.add(userRewards));
         uint payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
@@ -1234,9 +1258,6 @@ contract BondStakingStakingDepository is Ownable {
         }
     }
 
-    function setClaimPageSize(uint _claimPageSize) external {
-        claimPageSize = _claimPageSize;
-    }
     /* ======= AUXILLIARY ======= */
 
     /**
@@ -1246,6 +1267,7 @@ contract BondStakingStakingDepository is Ownable {
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != FHM);
         require( _token != sFHM);
+        require( _token != wsFHM);
         require( _token != principle );
         IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
         return true;
