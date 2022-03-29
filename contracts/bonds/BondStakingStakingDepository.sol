@@ -615,7 +615,7 @@ interface IFHMCirculatingSupply {
 }
 interface IwsFHM {
     function wrap(uint _amount) external returns (uint);
-    function unwrap(uint _amount) external returns (uint); 
+    function unwrap(uint _amount) external returns (uint);
     function sFHMValue(uint _amount) external view returns (uint);
     function wsFHMValue(uint _amount) external view returns (uint);
 }
@@ -652,7 +652,7 @@ contract BondStakingStakingDepository is Ownable {
 
     address public immutable FHM; // reward from treasury which is staked for the time of the bond
     address public immutable sFHM; // token given as payment for bond
-    address public immutable wsFHM; // wsfhm token 
+    address public immutable wsFHM; // wsfhm token
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
@@ -693,7 +693,7 @@ contract BondStakingStakingDepository is Ownable {
     // Info for bond holder
     struct Bond {
         uint gonsPayout; // sFHM remaining to be paid
-        uint wsfhmPayout; // wsfhm real payout to be paid 
+        uint wsfhmPayout; // wsfhm real payout to be paid
         uint fhmPayout; // FHM payout in time of creation
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
@@ -751,7 +751,7 @@ contract BondStakingStakingDepository is Ownable {
         isLiquidityBond = ( _bondCalculator != address(0) );
 
         // approve as spender
-        IERC20(wsFHM).approve(_stakingStaking, max);
+        IERC20(_wsFHM).approve(_stakingStaking, max);
     }
 
     /**
@@ -777,7 +777,7 @@ contract BondStakingStakingDepository is Ownable {
         uint _fee,
         uint _maxDebt,
         uint _initialDebt,
-        uint _claimPageSize,
+        uint _claimPageSize
     ) external onlyPolicy() {
         terms = Terms ({
         controlVariable: _controlVariable,
@@ -928,7 +928,7 @@ contract BondStakingStakingDepository is Ownable {
         lastBlock: block.number,
         pricePaid: priceInUSD,
         vestingSeconds: terms.vestingTermSeconds,
-        lastTimestamp: block.timestamp    
+        lastTimestamp: block.timestamp
         });
 
         // indexed events are emitted
@@ -1003,12 +1003,12 @@ contract BondStakingStakingDepository is Ownable {
 
         // calculate wsfhm amount
         uint _wsFHMamount = info.wsfhmPayout;
-    
+
         uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
         //withdraw deposit tokens from pool
         IStakingStaking(stakingStaking).withdraw(address(this), _wsFHMamount.add(userRewards), false );
-        
-        //calc totalwsfhmdeposit and total rewards 
+
+        //calc totalwsfhmdeposit and total rewards
         totalwsfhmDeposit = totalwsfhmDeposit.sub(_wsFHMamount);
         totalRewards = totalRewards.sub(userRewards);
 
@@ -1201,7 +1201,7 @@ contract BondStakingStakingDepository is Ownable {
         }
     }
 
-    
+
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
@@ -1235,7 +1235,7 @@ contract BondStakingStakingDepository is Ownable {
             percentVested_ = 0;
         }
     }
-   
+
 
     /**
      *  @notice calculate amount of FHM available for claim by depositor
