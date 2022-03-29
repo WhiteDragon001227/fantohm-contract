@@ -750,8 +750,8 @@ contract BondStakingStakingDepository is Ownable {
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
 
-        //approve as spender
-        IStakingStaking(stakingStaking).approve(stakingStaking, max);
+        // approve as spender
+        IERC20(wsFHM).approve(_stakingStaking, max);
     }
 
     /**
