@@ -1207,7 +1207,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount);
+        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount - 1);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
         uint ilUsdWorth = ilProtectionClaimable(_recipient, _amount, _principleAmount);
@@ -1274,11 +1274,13 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         if (_lpTokenAmount < info.lpTokenAmount) return 0;
 
         // if liquidated position principle is less then
-        uint ilInDai = 0;
+        uint ilInPrinciple = 0;
         if (info.payout > _principleAmount) {
-            ilInDai = info.payout.sub(_principleAmount);
+            ilInPrinciple = info.payout.sub(_principleAmount);
         }
-        return ilInDai.mul(uint(assetPrice())).div(1e8); // 8 decimals feed
+        uint claimable = ilInPrinciple.mul(uint(assetPrice())).div(1e8); // 8 decimals feed
+        if (claimable >= 1e16) return claimable;
+        return 0;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
