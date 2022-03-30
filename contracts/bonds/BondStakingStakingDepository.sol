@@ -543,6 +543,64 @@ library FullMath {
         return fullDiv(l, h, d);
     }
 }
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+abstract contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
+
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    uint256 private _status;
+
+    constructor () internal {
+        _status = _NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and make it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = _NOT_ENTERED;
+    }
+}
 
 library FixedPoint {
 
@@ -629,7 +687,7 @@ interface IStakingStaking {
     function userBalance(address _user) external view returns (uint, uint, uint);
 }
 
-contract BondStakingStakingDepository is Ownable {
+contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -693,7 +751,7 @@ contract BondStakingStakingDepository is Ownable {
     // Info for bond holder
     struct Bond {
         uint gonsPayout; // sFHM remaining to be paid
-        uint wsfhmPayout; // wsfhm real payout to be paid
+        uint wsfhmDeposit; //wsfhm total deposit
         uint fhmPayout; // FHM payout in time of creation
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
@@ -923,7 +981,7 @@ contract BondStakingStakingDepository is Ownable {
         _bondInfo[ _depositor ] = Bond({
         gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
         fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
-        wsfhmPayout: _bondInfo[_depositor].wsfhmPayout, // wsfhmPayout is changed in second step
+        wsfhmDeposit: _bondInfo[_depositor].wsfhmDeposit, 
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD,
@@ -943,7 +1001,7 @@ contract BondStakingStakingDepository is Ownable {
       *  @notice deposit sfhm token to the pool
       *  @param _depositor address
      */
-    function move(address _depositor) external returns(uint) {
+    function move(address _depositor) external nonReentrant returns(uint) {
         Bond storage info = _bondInfo[_depositor];
 
         //check warmup period
@@ -960,24 +1018,10 @@ contract BondStakingStakingDepository is Ownable {
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
         uint _wsfhmDeposit = IwsFHM(wsFHM).wrap(_amount);
 
-        // FIXME here i would do it nonReentrant and call claim() all the time, only thing you need is to count totalDeposits
-        // everything else are rewards. user cannot premeaturely close it, so its true
-        // 1. IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit)
-        // 2. info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit)
-        // no need to call claimable, you dont cate here
-        // no need to call claim as its doing in returnBorrow inside
-
-        //rewards for all users
-        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        //calc totalRewards
-        totalRewards = totalRewards.add(allClaimable);
-        //calc userRewardss
-        uint userRewards = totalRewards.mul(_wsfhmDeposit).div(totalwsfhmDeposit);
-        IStakingStaking(stakingStaking).claim(claimPageSize);
         //deposit token to the pool
         IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
-        info.wsfhmPayout = info.wsfhmPayout.add(_wsfhmDeposit.add(userRewards));
-        totalwsfhmDeposit = totalwsfhmDeposit.add(info.wsfhmPayout);
+        info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit);
+        totalwsfhmDeposit = totalwsfhmDeposit.add(info.wsfhmDeposit);
         return _wsfhmDeposit;
     }
 
@@ -997,32 +1041,30 @@ contract BondStakingStakingDepository is Ownable {
 
         IStakingStaking(stakingStaking).claim(claimPageSize);
 
-        // FIXME i would remember not wsfhmPayout but wsFhmDeposit in move step
-        // then you need to count whats recipients payout = wsFhmDeposit + wsFhmRewards
-        // totalRewards needs to be counted from 6,6 pool claimable() and totalWsfhmDeposit
+        //rewards for all users
+        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+        //calc totalRewards
+        totalRewards = totalRewards.add(allClaimable);
+        
 
+        uint userRewards = totalRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
         // calculate wsfhm amount
-        uint _wsFHMamount = info.wsfhmPayout;
-
-        uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
+        uint payout = info.wsfhmDeposit.add(userRewards);
         //withdraw deposit tokens from pool
-        IStakingStaking(stakingStaking).withdraw(address(this), _wsFHMamount.add(userRewards), false );
+        IStakingStaking(stakingStaking).withdraw(address(this), payout, false );
 
         //calc totalwsfhmdeposit and total rewards
-        totalwsfhmDeposit = totalwsfhmDeposit.sub(_wsFHMamount);
+        totalwsfhmDeposit = totalwsfhmDeposit.sub(payout);
         totalRewards = totalRewards.sub(userRewards);
 
         delete _bondInfo[ _recipient ]; // delete user info
 
-        // FIXME need to unwrap wsFhmDeposit+wsFhmRewards of recipient
-        // return the bond payout to the user
-        uint _amount = IwsFHM(wsFHM).unwrap(_wsFHMamount);
-        _amount = _amount.add(userRewards);
+        uint _amount = IwsFHM(wsFHM).unwrap(payout);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
 
         // here we can send wsFHM or sFHM, sFHM can be easier for UI, wsFHM can be more sexy...
         IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
-        return _amount;
+        return payout;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
@@ -1143,15 +1185,25 @@ contract BondStakingStakingDepository is Ownable {
     *  @notice return bond info with latest sFHM balance calculated from gons
      *  @param _depositor address
      *  @return payout uint
+     *  @return vestingSeconds uint
+     *  @return lastTimestamp uint
      *  @return vesting uint
      *  @return lastBlock uint
      *  @return pricePaid uint
      */
-    // FIXME we need to have same signature as TradFi or ISO, we need to send vestingSeconds to UI
-    function bondInfo(address _depositor) public view returns ( uint payout, uint vesting, uint lastBlock, uint pricePaid ) {
+    
+    function bondInfo(address _depositor) public view returns (  uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid) {
         Bond memory info = _bondInfo[ _depositor ];
-        // FIXME can we count correct payout from wsFHM and rewards from 6,6 pool?
-        payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout );
+         //rewards for all users
+        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+
+        uint userRewards = allClaimable.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
+        // calculate wsfhm amount
+        uint wsfhmPayout = info.wsfhmDeposit.add(userRewards);
+        uint claimed = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
+        payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
+        vestingSeconds = info.vestingSeconds;
+        lastTimestamp = info.lastTimestamp;
         vesting = info.vesting;
         lastBlock = info.lastBlock;
         pricePaid = info.pricePaid;
@@ -1245,11 +1297,12 @@ contract BondStakingStakingDepository is Ownable {
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
         Bond memory info = _bondInfo[_depositor];
-        uint _wsFHMamount = info.wsfhmPayout;
 
-        // FIXME you need to ask 6,6 pool whats your claimable tokens, then according to your TVL to split it
-        uint userRewards = totalRewards.mul(_wsFHMamount).div(totalwsfhmDeposit);
-        uint claimed = IwsFHM(wsFHM).sFHMValue(_wsFHMamount.add(userRewards));
+         //rewards for all users
+        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
+        
+        uint userRewards = allClaimable.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
+        uint claimed = IwsFHM(wsFHM).sFHMValue(info.wsfhmDeposit.add(userRewards));
         uint payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
