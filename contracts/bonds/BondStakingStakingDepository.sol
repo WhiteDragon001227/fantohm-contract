@@ -739,7 +739,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     // Info for creating new bonds
     struct Terms {
         uint controlVariable; // scaling variable for price
-        uint vestingTermSeconds; // in seconds
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
         uint maximumDiscount; // in hundreds of a %, 500 = 5%
@@ -756,7 +755,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
-        uint vestingSeconds; // Blocks left to vest
         uint lastTimestamp; // Last interaction
     }
 
@@ -815,7 +813,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice initializes bond parameters
      *  @param _controlVariable uint
-     *  @param _vestingTermSeconds uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maximumDiscount uint
@@ -827,7 +824,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function initializeBondTerms(
         uint _controlVariable,
-        uint _vestingTermSeconds,
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maximumDiscount,
@@ -839,7 +835,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     ) external onlyPolicy() {
         terms = Terms ({
         controlVariable: _controlVariable,
-        vestingTermSeconds: _vestingTermSeconds,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
         maximumDiscount: _maximumDiscount,
@@ -857,7 +852,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
     /* ======== POLICY FUNCTIONS ======== */
 
-    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE, VESTING_SECONDS }
+    enum PARAMETER { VESTING, PAYOUT, FEE, DEBT, MIN_PRICE }
     /**
      *  @notice set parameters for new bonds
      *  @param _parameter PARAMETER
@@ -877,8 +872,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
             terms.maxDebt = _input;
         }  else if ( _parameter == PARAMETER.MIN_PRICE ) { // 4
             terms.minimumPrice = _input;
-        }  else if ( _parameter == PARAMETER.VESTING_SECONDS ) { // 5
-            terms.vestingTermSeconds = _input;
         }
     }
 
@@ -935,7 +928,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         uint _amount,
         uint _maxPrice,
         address _depositor
-    ) external returns ( uint ) {
+    ) external nonReentrant returns ( uint ) {
         require( _depositor != address(0), "Invalid address" );
 
         decayDebt();
@@ -985,7 +978,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD,
-        vestingSeconds: terms.vestingTermSeconds,
         lastTimestamp: block.timestamp
         });
 
@@ -1031,7 +1023,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      *  @param _stake bool
      *  @return uint
      */
-    function redeem( address _recipient, bool _stake ) external returns ( uint ) {
+    function redeem( address _recipient, bool _stake ) external nonReentrant  returns ( uint ) {
         Bond memory info = _bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
         uint percentVestedBlocks = percentVestedBlocksFor(_recipient); // (blocks since last interaction / vesting term remaining)
@@ -1059,11 +1051,10 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
         delete _bondInfo[ _recipient ]; // delete user info
 
-        uint _amount = IwsFHM(wsFHM).unwrap(payout);
-        emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
+        emit BondRedeemed( _recipient, payout, 0 ); // emit bond data
 
         // here we can send wsFHM or sFHM, sFHM can be easier for UI, wsFHM can be more sexy...
-        IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
+        IERC20( wsFHM ).transfer( _recipient, payout ); // pay user everything due
         return payout;
     }
 
@@ -1185,25 +1176,22 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     *  @notice return bond info with latest sFHM balance calculated from gons
      *  @param _depositor address
      *  @return payout uint
-     *  @return vestingSeconds uint
-     *  @return lastTimestamp uint
      *  @return vesting uint
      *  @return lastBlock uint
      *  @return pricePaid uint
+     
      */
     
-    function bondInfo(address _depositor) public view returns (  uint payout, uint vestingSeconds, uint lastTimestamp, uint vesting,uint lastBlock,uint pricePaid) {
+    function bondInfo(address _depositor) public view returns ( uint payout,uint vesting,uint lastBlock,uint pricePaid) {
         Bond memory info = _bondInfo[ _depositor ];
          //rewards for all users
         (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-
-        uint userRewards = allClaimable.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
+        uint totalPayRewards = totalRewards.add(allClaimable);
+        uint userRewards = totalPayRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
         // calculate wsfhm amount
         uint wsfhmPayout = info.wsfhmDeposit.add(userRewards);
         uint claimed = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
         payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
-        vestingSeconds = info.vestingSeconds;
-        lastTimestamp = info.lastTimestamp;
         vesting = info.vesting;
         lastBlock = info.lastBlock;
         pricePaid = info.pricePaid;
@@ -1262,10 +1250,10 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     function percentVestedFor( address _depositor) public view returns ( uint percentVested_ ) {
         Bond memory bond = _bondInfo[_depositor];
         uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
-        uint vestingSeconds = bond.vestingSeconds;
+           uint vesting = bond.vesting;
 
-        if ( vestingSeconds > 0 ) {
-            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
+        if ( vesting > 0 ) {
+            percentVested_ = secondsSinceLast.mul( 10000 ).div(vesting);
         } else {
             percentVested_ = 0;
         }
@@ -1301,7 +1289,8 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
          //rewards for all users
         (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
         
-        uint userRewards = allClaimable.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
+        uint totalPayRewards = totalRewards.add(allClaimable);
+        uint userRewards = totalPayRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
         uint claimed = IwsFHM(wsFHM).sFHMValue(info.wsfhmDeposit.add(userRewards));
         uint payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
         if ( percentVested >= 10000 ) {
