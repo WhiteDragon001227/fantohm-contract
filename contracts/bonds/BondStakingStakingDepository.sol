@@ -699,7 +699,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     /* ======== EVENTS ======== */
 
     event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payout, uint remaining );
+    event BondRedeemed( address indexed recipient, uint payoutInWsFHM, uint remaining );
     event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
     event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
 
@@ -731,8 +731,8 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
     uint public claimPageSize; // maximum iteration threshold
-    uint public totalwsfhmDeposit;
-    uint public totalRewards;
+
+    uint public totalWsfhmDeposit; // total deposited (moved) wsFHM by this bond
 
     /* ======== STRUCTS ======== */
 
@@ -755,7 +755,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
-        uint lastTimestamp; // Last interaction
     }
 
     // Info for incremental adjustments to control variable
@@ -977,8 +976,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         wsfhmDeposit: _bondInfo[_depositor].wsfhmDeposit, 
         vesting: terms.vestingTerm,
         lastBlock: block.number,
-        pricePaid: priceInUSD,
-        lastTimestamp: block.timestamp
+        pricePaid: priceInUSD
         });
 
         // indexed events are emitted
@@ -996,13 +994,13 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     function move(address _depositor) external nonReentrant returns(uint) {
         Bond storage info = _bondInfo[_depositor];
 
+
         //check warmup period
         (,uint epochNumber,,) = IStaking(staking).epoch();
         uint warmupPeriod = IStaking(staking).warmupPeriod();
-
         // really can call claim which does something, claiming for everyone else
         if (epochNumber >= info.lastBlock.add(warmupPeriod)) {
-            // have sfhm tokens
+            // have sFHM tokens
             IStaking(staking).claim(address(this));
         }
 
@@ -1013,7 +1011,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         //deposit token to the pool
         IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
         info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit);
-        totalwsfhmDeposit = totalwsfhmDeposit.add(info.wsfhmDeposit);
+        totalWsfhmDeposit = totalWsfhmDeposit.add(_wsfhmDeposit);
         return _wsfhmDeposit;
     }
 
@@ -1026,35 +1024,29 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     function redeem( address _recipient, bool _stake ) external nonReentrant  returns ( uint ) {
         Bond memory info = _bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
-        uint percentVestedBlocks = percentVestedBlocksFor(_recipient); // (blocks since last interaction / vesting term remaining)
 
         require ( percentVested >= 10000 , "Wait for end of bond") ;
-        require ( percentVestedBlocks >= 10000 , "Wait for end of bond") ;
 
         IStakingStaking(stakingStaking).claim(claimPageSize);
 
-        //rewards for all users
-        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        //calc totalRewards
-        totalRewards = totalRewards.add(allClaimable);
-        
+        uint payout = balanceOfPooled(_recipient);
 
-        uint userRewards = totalRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
-        // calculate wsfhm amount
-        uint payout = info.wsfhmDeposit.add(userRewards);
-        //withdraw deposit tokens from pool
+        // withdraw deposit tokens from pool
         IStakingStaking(stakingStaking).withdraw(address(this), payout, false );
 
-        //calc totalwsfhmdeposit and total rewards
-        totalwsfhmDeposit = totalwsfhmDeposit.sub(payout);
-        totalRewards = totalRewards.sub(userRewards);
+        // calc totalWsfhmDeposit and total rewards
+        if (totalWsfhmDeposit > payout) {
+            totalWsfhmDeposit = totalWsfhmDeposit.sub(payout);
+        } else {
+            totalWsfhmDeposit = 0;
+        }
 
         delete _bondInfo[ _recipient ]; // delete user info
 
         emit BondRedeemed( _recipient, payout, 0 ); // emit bond data
 
-        // here we can send wsFHM or sFHM, sFHM can be easier for UI, wsFHM can be more sexy...
         IERC20( wsFHM ).transfer( _recipient, payout ); // pay user everything due
+
         return payout;
     }
 
@@ -1111,6 +1103,25 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function payoutFor( uint _value ) public view returns ( uint ) {
         return FixedPoint.fraction( _value, bondPrice() ).decode112with18().div( 1e16 );
+    }
+
+
+    /// @notice get actual balance of wsFHM deposited and rewarded for current user
+    /// @param _depositor user
+    /// @return wsFHM amount
+    function balanceOfPooled( address _depositor ) public view returns ( uint ) {
+        Bond memory info = _bondInfo[_depositor];
+
+        // total deposited and unclaimed rewards for all users
+        (uint stakedAndToClaim,,) = IStakingStaking(stakingStaking).userBalance(address(this));
+
+        // calculate wsFHM amount
+        uint totalRewards = 0;
+        if (stakedAndToClaim > totalWsfhmDeposit) {
+            totalRewards = stakedAndToClaim.sub(totalWsfhmDeposit);
+        }
+        uint userRewards = totalRewards.mul(info.wsfhmDeposit).div(totalWsfhmDeposit);
+        return info.wsfhmDeposit.add(userRewards);
     }
 
 
@@ -1176,22 +1187,20 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     *  @notice return bond info with latest sFHM balance calculated from gons
      *  @param _depositor address
      *  @return payout uint
+     *  @return payoutInWsFHM uint
      *  @return vesting uint
      *  @return lastBlock uint
      *  @return pricePaid uint
-     
      */
-    
-    function bondInfo(address _depositor) public view returns ( uint payout,uint vesting,uint lastBlock,uint pricePaid) {
+    function bondInfo(address _depositor) public view returns ( uint payout, uint payoutInWsFHM, uint vesting, uint lastBlock, uint pricePaid) {
         Bond memory info = _bondInfo[ _depositor ];
-         //rewards for all users
-        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        uint totalPayRewards = totalRewards.add(allClaimable);
-        uint userRewards = totalPayRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
-        // calculate wsfhm amount
-        uint wsfhmPayout = info.wsfhmDeposit.add(userRewards);
-        uint claimed = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
-        payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
+
+        uint wsfhmPayout = balanceOfPooled(_depositor);
+        uint sfhmPayout = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
+
+        // here we will show actual sFHM value of wsFHM will all rewards
+        payout = IsFHM( sFHM ).balanceForGons( sfhmPayout );
+        payoutInWsFHM = wsfhmPayout;
         vesting = info.vesting;
         lastBlock = info.lastBlock;
         pricePaid = info.pricePaid;
@@ -1241,30 +1250,12 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         }
     }
 
-
     /**
      *  @notice calculate how far into vesting a depositor is
      *  @param _depositor address
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor) public view returns ( uint percentVested_ ) {
-        Bond memory bond = _bondInfo[_depositor];
-        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
-           uint vesting = bond.vesting;
-
-        if ( vesting > 0 ) {
-            percentVested_ = secondsSinceLast.mul( 10000 ).div(vesting);
-        } else {
-            percentVested_ = 0;
-        }
-    }
-
-    /**
-     *  @notice calculate how far into vesting a depositor is
-     *  @param _depositor address
-     *  @return percentVested_ uint
-     */
-    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
+    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = _bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
@@ -1284,17 +1275,8 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        Bond memory info = _bondInfo[_depositor];
-
-         //rewards for all users
-        (uint allClaimable,) = IStakingStaking(stakingStaking).claimable(address(this), claimPageSize);
-        
-        uint totalPayRewards = totalRewards.add(allClaimable);
-        uint userRewards = totalPayRewards.mul(info.wsfhmDeposit).div(totalwsfhmDeposit);
-        uint claimed = IwsFHM(wsFHM).sFHMValue(info.wsfhmDeposit.add(userRewards));
-        uint payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout.add(claimed) );
         if ( percentVested >= 10000 ) {
-            pendingPayout_ = payout;
+            pendingPayout_ = balanceOfPooled(_depositor);
         } else {
             pendingPayout_ = 0;
         }
