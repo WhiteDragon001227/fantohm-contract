@@ -969,6 +969,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         priceFeed = AggregatorV3Interface(_priceFeed);
         useWhitelist = true;
         whitelist[msg.sender] = true;
+        dustRounding = 1;
 
         IERC20(_principle).approve(_balancerVault, max);
         IERC20(_USDB).approve(_balancerVault, max);
@@ -1195,6 +1196,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return uint amount in dai really claimed
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
+        // due to integer math there needs to be some dusting which is still considered as full withdraw
+        _amount = _amount.sub(dustRounding);
+
         Bond storage info = bondInfo[_recipient];
         require(_amount <= info.lpTokenAmount, "Exceed the deposit amount");
         // (blocks since last interaction / vesting term remaining)
@@ -1209,7 +1213,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         _masterChef.withdraw(poolId, _amount, _recipient);
 
         // disassemble LP into tokens
-        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount.sub(dustRounding));
+        (uint _usdbAmount, uint _principleAmount) = exitPool(_amount);
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
 
         // @dev to test il protection redeem lets change _principleAmount to _principleAmount.div(2) in the line below
@@ -1228,7 +1232,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         info.lpTokenAmount = info.lpTokenAmount.sub(_amount);
 
         // delete user info if there is no IL
-        if (info.lpTokenAmount == 0 && info.ilProtectionAmountInUsd == 0) {
+        if (info.lpTokenAmount <= dustRounding && info.ilProtectionAmountInUsd == 0) {
             delete bondInfo[_recipient];
         }
 
@@ -1253,7 +1257,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         ITreasury(treasury).mintRewards(_recipient, fhmAmount);
 
         // clean the user info
-        if (info.lpTokenAmount == 0) {
+        if (info.lpTokenAmount <= dustRounding) {
             delete bondInfo[_recipient];
         }
 
@@ -1273,7 +1277,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         // if there is not enough time between deposit and redeem
         if (block.number - info.lastBlock < terms.ilProtectionMinBlocksFromDeposit) return 0;
         // if there is something left in position
-        if (_lpTokenAmount < info.lpTokenAmount) return 0;
+        if (_lpTokenAmount < info.lpTokenAmount.sub(dustRounding)) return 0;
 
         // if liquidated position principle is less then
         uint ilInPrinciple = 0;
