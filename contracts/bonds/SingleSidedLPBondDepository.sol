@@ -1248,13 +1248,16 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     /// @notice claim IL protection rewards in FHM
     /// @param _recipient address which receive tokens
     /// @return amount in FHM which was redeemed
-    function ilProtectionRedeem(address _recipient) external returns (uint) {
-        Bond memory info = bondInfo[_recipient];
+    function ilProtectionRedeem(address _recipient) external nonReentrant returns (uint) {
+        Bond storage info = bondInfo[_recipient];
         require(info.ilProtectionAmountInUsd > 0, "NOT_ELIGIBLE");
         require(block.number >= info.ilProtectionUnlockBlock, "CLAIMING_TOO_SOON");
 
         uint fhmAmount = payoutInFhmFor(info.ilProtectionAmountInUsd);
         ITreasury(treasury).mintRewards(_recipient, fhmAmount);
+
+        info.ilProtectionAmountInUsd = 0;
+        info.ilProtectionUnlockBlock = 0;
 
         // clean the user info
         if (info.lpTokenAmount <= dustRounding) {
