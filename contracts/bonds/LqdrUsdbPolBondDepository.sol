@@ -1066,9 +1066,6 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         require(_principleAmount >= _amountMin, "Slippage limit: more than amountMin");
         // no IL protection here
 
-        IBurnable(USDB).burn(_usdbAmount);
-        IERC20(principle).transfer(_recipient, _principleAmount);
-
         if (_principleAmount < info.payout) {
             info.payout = info.payout.sub(_principleAmount);
         } else {
@@ -1082,6 +1079,9 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
         emit BondRedeemed(_recipient, _principleAmount, _amount, info.payout);
         // emit bond data
+
+        IBurnable(USDB).burn(_usdbAmount);
+        IERC20(principle).transfer(_recipient, _principleAmount);
 
         return _principleAmount;
     }
