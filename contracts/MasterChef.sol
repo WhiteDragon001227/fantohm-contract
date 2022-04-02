@@ -155,6 +155,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard, AccessControl {
         depositFeeBP : _depositFeeBP,
         whitelistWithdraw: _whitelistWithdraw
         }));
+        poolIdForLpAddress[_lpToken] = poolInfo.length - 1;
     }
 
     /// @notice Update the given pool's Fhm allocation point and deposit fee. Can only be called by the owner.

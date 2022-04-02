@@ -17,9 +17,9 @@ async function main() {
     } = require(`./networks-${network}.json`);
 
     // const fhmPerBlock = 100000000000;
-    const fhmPerBlock = 422000000000;
+    const fhmPerBlock = 1000000000;
     // const startBlock = 10383396;
-    const startBlock = 34698426;
+    const startBlock = 35073029;
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
     // const masterChefV2 = await MasterChefV2.attach(masterChefAddress);
