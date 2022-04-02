@@ -914,6 +914,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         uint soldBondsLimitUsd; //
         uint ilProtectionMinBlocksFromDeposit; // minimal blocks between deposit to apply IL protection
         uint ilProtectionRewardsVestingBlocks; // minimal blocks to wait between liquidation of the position and claiming IL protection rewards
+        uint ilProtectionMinimalLossInUsd; // minimal loss in usd
     }
 
     /// @notice Info for bond holder
@@ -988,6 +989,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @param _soldBondsLimitUsd uint
      *  @param _useWhitelist bool
      *  @param _useCircuitBreaker bool
+     *  @param _ilProtectionMinBlocksFromDeposit uint
+     *  @param _ilProtectionRewardsVestingBlocks uint
+     *  @param _ilProtectionMinimalLossInUsd uint
      */
     function initializeBondTerms(
         uint _vestingTerm,
@@ -1000,7 +1004,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         bool _useWhitelist,
         bool _useCircuitBreaker,
         uint _ilProtectionMinBlocksFromDeposit,
-        uint _ilProtectionRewardsVestingBlocks
+        uint _ilProtectionRewardsVestingBlocks,
+        uint _ilProtectionMinimalLossInUsd
     ) external onlyPolicy() {
         terms = Terms({
         vestingTerm : _vestingTerm,
@@ -1010,7 +1015,8 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
         maxDebt : _maxDebt,
         soldBondsLimitUsd : _soldBondsLimitUsd,
         ilProtectionMinBlocksFromDeposit: _ilProtectionMinBlocksFromDeposit,
-        ilProtectionRewardsVestingBlocks: _ilProtectionRewardsVestingBlocks
+        ilProtectionRewardsVestingBlocks: _ilProtectionRewardsVestingBlocks,
+        ilProtectionMinimalLossInUsd: _ilProtectionMinimalLossInUsd
         });
         totalDebt = _initialDebt;
         lastDecay = block.number;
@@ -1250,11 +1256,12 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     /// @return amount in FHM which was redeemed
     function ilProtectionRedeem(address _recipient) external nonReentrant returns (uint) {
         Bond storage info = bondInfo[_recipient];
-        require(info.ilProtectionAmountInUsd > 0, "NOT_ELIGIBLE");
-        require(block.number >= info.ilProtectionUnlockBlock, "CLAIMING_TOO_SOON");
 
-        uint fhmAmount = payoutInFhmFor(info.ilProtectionAmountInUsd);
-        ITreasury(treasury).mintRewards(_recipient, fhmAmount);
+        uint usdAmount = info.ilProtectionAmountInUsd;
+        uint fhmAmount = payoutInFhmFor(usdAmount);
+
+        require(usdAmount > 0, "NOT_ELIGIBLE");
+        require(block.number >= info.ilProtectionUnlockBlock, "CLAIMING_TOO_SOON");
 
         info.ilProtectionAmountInUsd = 0;
         info.ilProtectionUnlockBlock = 0;
@@ -1264,7 +1271,9 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             delete bondInfo[_recipient];
         }
 
-        emit BondIlProtectionRedeem(_recipient, fhmAmount, info.ilProtectionAmountInUsd);
+        emit BondIlProtectionRedeem(_recipient, fhmAmount, usdAmount);
+
+        ITreasury(treasury).mintRewards(_recipient, fhmAmount);
 
         return fhmAmount;
     }
@@ -1288,7 +1297,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             ilInPrinciple = info.payout.sub(_principleAmount);
         }
         uint claimable = ilInPrinciple.mul(uint(assetPrice())).div(1e8); // 8 decimals feed
-        if (claimable >= 1e16) return claimable;
+        if (claimable >= terms.ilProtectionMinimalLossInUsd) return claimable;
         return 0;
     }
 
