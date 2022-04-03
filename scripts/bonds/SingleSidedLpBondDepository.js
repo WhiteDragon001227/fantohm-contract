@@ -5,9 +5,9 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
-    const network = "rinkeby";
+    // const network = "rinkeby";
     // const network = "fantom_testnet";
-    // const network = "fantom";
+    const network = "fantom";
     const {
         daoAddress,
         zeroAddress,
@@ -50,18 +50,19 @@ async function main() {
     // Initial Bond debt
     const initialBondDebt = '0';
 
-    const soldBondsLimit = '10000000000000000000000';
-    // const soldBondsLimit = '1000000000000000000000000';
+    // const soldBondsLimit = '10000000000000000000000';
+    const soldBondsLimit = '1000000000000000000000000';
 
     const useWhitelist = false;
     const useCircuitBreaker = true;
 
-    const ilProtectionMinBlocksFromDeposit = 10;
-    // const ilProtectionMinBlocksFromDeposit = 43200; // 12h approx with 1s blockrate
-    const ilProtectionRewardsVestingBlocks = 10;
-    // const ilProtectionRewardsVestingBlocks = 3600; // 1h approx with 1s blockrate
+    // const ilProtectionMinBlocksFromDeposit = 10;
+    const ilProtectionMinBlocksFromDeposit = 86400; // 24h approx with 1s blockrate
+    // const ilProtectionRewardsVestingBlocks = 10;
+    const ilProtectionRewardsVestingBlocks = 3600; // 1h approx with 1s blockrate
 
     const ilProtectionMinimalLossInUsd = "10000000000000000";
+    const ilProtectionMaxCapInUsd = "10000000000000000000000";
 
     const Treasury = await ethers.getContractFactory('FantohmTreasury');
     const treasury = await Treasury.attach(treasuryAddress);
@@ -78,35 +79,35 @@ async function main() {
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
-    await treasury.queue('8', bond.address);
-    console.log(`Queued ${reserve.name} Bond as reward manager`);
-    await treasury.toggle('8', bond.address, zeroAddress);
-    console.log(`Toggled ${reserve.name} Bond as reward manager`);
+    // await treasury.queue('8', bond.address);
+    // console.log(`Queued ${reserve.name} Bond as reward manager`);
+    // await treasury.toggle('8', bond.address, zeroAddress);
+    // console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
     await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker, ilProtectionMinBlocksFromDeposit, ilProtectionRewardsVestingBlocks, ilProtectionMinimalLossInUsd);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
     // Approve the treasury to spend deployer's reserve tokens
-    await reserveToken.approve(treasury.address, largeApproval);
-    console.log(`Approved treasury to spend deployer ${reserve.name}`);
+    // await reserveToken.approve(treasury.address, largeApproval);
+    // console.log(`Approved treasury to spend deployer ${reserve.name}`);
 
     // Approve bonds to spend deployer's reserve tokens
-    await reserveToken.approve(bond.address, largeApproval);
-    console.log(`Approved bond to spend deployer ${reserve.name}`);
+    // await reserveToken.approve(bond.address, largeApproval);
+    // console.log(`Approved bond to spend deployer ${reserve.name}`);
 
-    const UsdbToken = await ethers.getContractFactory('USDB');
-    const usdbToken = await UsdbToken.attach(usdbAddress);
-    await usdbToken.grantRoleMinter(bond.address);
-    console.log(`grant minter of USDB to ${bond.address}`);
+    // const UsdbToken = await ethers.getContractFactory('USDB');
+    // const usdbToken = await UsdbToken.attach(usdbAddress);
+    // await usdbToken.grantRoleMinter(bond.address);
+    // console.log(`grant minter of USDB to ${bond.address}`);
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
     const masterChefV2 = await MasterChefV2.attach(masterChefAddress);
     await masterChefV2.grantRoleWhitelistWithdraw(bond.address);
     console.log(`grant WhitelistWithdraw of MasterChefV2 to ${bond.address}`);
 
-    await bond.deposit('1000000000000000000', '100', deployer.address);
-    console.log(`Deposited from deployer to Bond address: ${bond.address}`);
+    // await bond.deposit('1000000000000000000', '100', deployer.address);
+    // console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);

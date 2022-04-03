@@ -896,6 +896,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
     uint public dustRounding;
+    uint public ilProtectionMaxCapInUsd;
 
     bool public useWhitelist;
     bool public useCircuitBreaker;
@@ -1297,8 +1298,10 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
             ilInPrinciple = info.payout.sub(_principleAmount);
         }
         uint claimable = ilInPrinciple.mul(uint(assetPrice())).div(1e8); // 8 decimals feed
-        if (claimable >= terms.ilProtectionMinimalLossInUsd) return claimable;
-        return 0;
+
+        if (claimable < terms.ilProtectionMinimalLossInUsd) return 0;
+        else if (claimable >= ilProtectionMaxCapInUsd) return ilProtectionMaxCapInUsd;
+        else return claimable;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
@@ -1556,6 +1559,10 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
     function setDustRounding(uint _dustRounding) external onlyPolicy {
         require(_dustRounding <= 1000, "DUST_ROUNDING_TOO_BIG");
         dustRounding = _dustRounding;
+    }
+
+    function setIlProtectionMaxCapInUsd(uint _ilProtectionMaxCapInUsd) external onlyPolicy {
+        ilProtectionMaxCapInUsd = _ilProtectionMaxCapInUsd;
     }
 
 
