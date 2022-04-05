@@ -1205,6 +1205,7 @@ contract SingleSidedLPBondDepository is Ownable, ReentrancyGuard {
      *  @return uint amount in dai really claimed
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
+        require(_recipient == msg.sender, "CALL_FORBIDDEN");
         // due to integer math there needs to be some dusting which is still considered as full withdraw
         _amount = _amount.sub(dustRounding);
 
