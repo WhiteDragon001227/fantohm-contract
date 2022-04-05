@@ -664,7 +664,7 @@ interface IStaking {
     function warmupPeriod() external view returns (uint);
 }
 
-interface IFHUDMinter {
+interface IUSDBMinter {
     function getMarketPrice() external view returns (uint);
 }
 
@@ -714,7 +714,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     address public immutable principle; // token used to create bond
     address public immutable treasury; // mints FHM when receives principle
     address public immutable DAO; // receives profit share from bond
-    address public immutable fhudMinter; // FHUD minter
+    address public immutable usdbMinter; // `HUD minter
     address public immutable fhmCirculatingSupply; // FHM circulating supply
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
@@ -779,7 +779,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         address _treasury,
         address _DAO,
         address _bondCalculator,
-        address _fhudMinter,
+        address _usdbMinter,
         address _fhmCirculatingSupply,
         address _stakingStaking
     ) {
@@ -793,8 +793,8 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         treasury = _treasury;
         require( _DAO != address(0) );
         DAO = _DAO;
-        require( _fhudMinter != address(0) );
-        fhudMinter = _fhudMinter;
+        require( _usdbMinter != address(0) );
+        usdbMinter = _usdbMinter;
         require( _fhmCirculatingSupply != address(0) );
         fhmCirculatingSupply = _fhmCirculatingSupply;
         require( _wsFHM != address(0) );
@@ -995,18 +995,12 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         Bond storage info = _bondInfo[_depositor];
 
 
-        //check warmup period
-        (,uint epochNumber,,) = IStaking(staking).epoch();
-        uint warmupPeriod = IStaking(staking).warmupPeriod();
-        // really can call claim which does something, claiming for everyone else
-        if (epochNumber >= info.lastBlock.add(warmupPeriod)) {
-            // have sFHM tokens
-            IStaking(staking).claim(address(this));
-        }
+        IStaking(staking).claim(address(this));
 
         //calculate sFHM amounts and wrap sFHM
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
         uint _wsfhmDeposit = IwsFHM(wsFHM).wrap(_amount);
+
 
         //deposit token to the pool
         IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
@@ -1022,7 +1016,6 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function redeem( address _recipient, bool _stake ) external nonReentrant  returns ( uint ) {
-        Bond memory info = _bondInfo[ _recipient ];
         uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
         require ( percentVested >= 10000 , "Wait for end of bond") ;
@@ -1160,7 +1153,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     }
 
     function getMinimalBondPrice() public view returns (uint) {
-        uint marketPrice = IFHUDMinter(fhudMinter).getMarketPrice();
+        uint marketPrice = IUSDBMinter(usdbMinter).getMarketPrice();
         uint discount = marketPrice.mul(terms.maximumDiscount).div(10000);
         uint price = marketPrice.sub(discount);
 
