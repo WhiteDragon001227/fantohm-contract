@@ -73,41 +73,44 @@ async function main() {
 
     // Deploy Bond
     const Bond = await ethers.getContractFactory('SingleSidedLPBondDepository');
-    // const bond = await Bond.attach( "0x7f994aA6C6FEdd75f69d8339A7cE653161c967c8" );
+    // const bond = await Bond.attach( "0x78b0d7B61EBB1f6073cD66ED3A347a7E9debD836" );
     const bond = await Bond.deploy(fhmAddress, usdbAddress, reserve.address, treasury.address, daoAddress, usdbMinterAddress, balancerVaultAddress, usdbDaiLpAddress, masterChefAddress, daiPriceFeedAddress);
     await bond.deployed();
     console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
     // queue and toggle bond reserve depositor
-    // await treasury.queue('8', bond.address);
-    // console.log(`Queued ${reserve.name} Bond as reward manager`);
-    // await treasury.toggle('8', bond.address, zeroAddress);
-    // console.log(`Toggled ${reserve.name} Bond as reward manager`);
+    await treasury.queue('8', bond.address);
+    console.log(`Queued ${reserve.name} Bond as reward manager`);
+    await treasury.toggle('8', bond.address, zeroAddress);
+    console.log(`Toggled ${reserve.name} Bond as reward manager`);
 
     // Set bond terms
     await bond.initializeBondTerms(bondVestingLength, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, soldBondsLimit, useWhitelist, useCircuitBreaker, ilProtectionMinBlocksFromDeposit, ilProtectionRewardsVestingBlocks, ilProtectionMinimalLossInUsd);
     console.log(`Initialized terms for ${reserve.name} Bond`);
 
+    await bond.setIlProtectionMaxCapInUsd(ilProtectionMaxCapInUsd);
+    console.log(`Max cap set for ${reserve.name} Bond`);
+
     // Approve the treasury to spend deployer's reserve tokens
-    // await reserveToken.approve(treasury.address, largeApproval);
-    // console.log(`Approved treasury to spend deployer ${reserve.name}`);
+    await reserveToken.approve(treasury.address, largeApproval);
+    console.log(`Approved treasury to spend deployer ${reserve.name}`);
 
     // Approve bonds to spend deployer's reserve tokens
-    // await reserveToken.approve(bond.address, largeApproval);
-    // console.log(`Approved bond to spend deployer ${reserve.name}`);
+    await reserveToken.approve(bond.address, largeApproval);
+    console.log(`Approved bond to spend deployer ${reserve.name}`);
 
-    // const UsdbToken = await ethers.getContractFactory('USDB');
-    // const usdbToken = await UsdbToken.attach(usdbAddress);
-    // await usdbToken.grantRoleMinter(bond.address);
-    // console.log(`grant minter of USDB to ${bond.address}`);
+    const UsdbToken = await ethers.getContractFactory('USDB');
+    const usdbToken = await UsdbToken.attach(usdbAddress);
+    await usdbToken.grantRoleMinter(bond.address);
+    console.log(`grant minter of USDB to ${bond.address}`);
 
     const MasterChefV2 = await ethers.getContractFactory('MasterChefV2');
     const masterChefV2 = await MasterChefV2.attach(masterChefAddress);
     await masterChefV2.grantRoleWhitelistWithdraw(bond.address);
     console.log(`grant WhitelistWithdraw of MasterChefV2 to ${bond.address}`);
 
-    // await bond.deposit('1000000000000000000', '100', deployer.address);
-    // console.log(`Deposited from deployer to Bond address: ${bond.address}`);
+    await bond.deposit('1000000000000000000', '100', deployer.address);
+    console.log(`Deposited from deployer to Bond address: ${bond.address}`);
 
     // DONE
     console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
