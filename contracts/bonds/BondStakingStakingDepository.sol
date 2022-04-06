@@ -1104,6 +1104,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     /// @param _depositor user
     /// @return wsFHM amount
     function balanceOfPooled( address _depositor ) public view returns ( uint ) {
+        if(totalWsfhmDeposit == 0) return 0;
         Bond memory info = _bondInfo[_depositor];
 
         // total deposited and unclaimed rewards for all users
@@ -1188,7 +1189,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function bondInfo(address _depositor) public view returns ( uint payout, uint payoutInWsFHM, uint vesting, uint lastBlock, uint pricePaid) {
         Bond memory info = _bondInfo[ _depositor ];
-
+        
         uint wsfhmPayout = balanceOfPooled(_depositor);
         uint sfhmPayout = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
 
