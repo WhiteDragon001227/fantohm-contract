@@ -1007,6 +1007,10 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
         info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit);
         totalWsfhmDeposit = totalWsfhmDeposit.add(_wsfhmDeposit);
+        
+        //set the vesting period
+        info.vesting = terms.vestingTerm;
+        info.lastBlock = block.number;
         return _wsfhmDeposit;
     }
 
@@ -1194,7 +1198,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         uint sfhmPayout = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
 
         // here we will show actual sFHM value of wsFHM will all rewards
-        payout = IsFHM( sFHM ).balanceForGons( sfhmPayout );
+        payout = sfhmPayout;
         payoutInWsFHM = wsfhmPayout;
         vesting = info.vesting;
         lastBlock = info.lastBlock;
