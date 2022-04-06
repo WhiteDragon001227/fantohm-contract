@@ -807,6 +807,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
         // approve as spender
         IERC20(_wsFHM).approve(_stakingStaking, max);
+        IERC20(_sFHM).approve(_wsFHM, max);
     }
 
     /**
