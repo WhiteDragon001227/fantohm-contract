@@ -751,7 +751,7 @@ interface ITreasuryHelper {
 
 /// @notice FantOHM PRO 
 /// @dev based on xfhm
-contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
+contract FantohmProBondDepository is Ownable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -759,8 +759,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated(address indexed depositor, uint depositInLqdr, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
-    event BondRedeemed(address indexed recipient, uint payoutInLqdr, uint amountInLP, uint remainingLqdr);
+    event BondCreated(address indexed depositor, uint depositInPrinciple, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payoutInPrinciple, uint amountInLP, uint remainingPrinciple);
 
     uint internal constant max = type(uint).max;
 
@@ -935,7 +935,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
 
     /**
      *  @notice deposit bond
-     *  @param _amount uint amount in LQDR
+     *  @param _amount uint amount in principle
      *  @param _maxPrice uint should have 18 decimals
      *  @param _depositor address
      *  @return uint
@@ -951,8 +951,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         decayDebt();
         require(totalDebt <= terms.maxDebt, "Max capacity reached");
 
-        uint lqdrPriceInUSD = bondPriceInUSD();
-        require(_maxPrice >= lqdrPriceInUSD, "Slippage limit: more than max price");
+        uint principlePriceInUSD = bondPriceInUSD();
+        require(_maxPrice >= principlePriceInUSD, "Slippage limit: more than max price");
         // slippage protection
 
         uint payoutInUsdb = payoutFor(_amount);
@@ -1003,10 +1003,10 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         withdrawLpTokenAmount: bondInfo[_depositor].withdrawLpTokenAmount,
         vesting : terms.vestingTerm,
         lastBlock : block.number,
-        pricePaid : lqdrPriceInUSD
+        pricePaid : principlePriceInUSD
         });
         // indexed events are emitted
-        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), lqdrPriceInUSD);
+        emit BondCreated(_depositor, _amount, _lpTokenAmount, block.number.add(terms.vestingTerm), principlePriceInUSD);
 
         return payoutInUsdb;
     }
@@ -1042,8 +1042,8 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
      *  @notice redeem bond for user
      *  @param _recipient address
      *  @param _amount uint amount of lpToken
-     *  @param _amountMin uint slippage minimal amount in lqdr
-     *  @return uint amount in lqdr really claimed
+     *  @param _amountMin uint slippage minimal amount in principle
+     *  @return uint amount in principle really claimed
      */
     function redeem(address _recipient, uint _amount, uint _amountMin) external nonReentrant returns (uint) {
         Bond memory info = bondInfo[_recipient];
@@ -1156,7 +1156,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         return payout > terms.soldBondsLimitUsd;
     }
 
-    /// @notice LQDR market price
+    /// @notice principle market price
     function getMarketPrice() public view returns (uint256) {
         // FIXME (optional) can we move it away, if we for example have price oracle from DAI?
         // just to set different address, that's why there is usdb minter in here
@@ -1209,11 +1209,11 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         return ITreasuryHelper(treasuryHelper).bookValue();
     }
 
-    /// @dev lqdr_amount = 3.3 * xfhm_amount * boostFactor * bookValue_fhm => amount_xfhm = lqdr_amount / 3.3 / boostFactor / bookValue_fhm
-    /// @param _lqdrAmount amount in principle
+    /// @dev principle_amount = 3.3 * xfhm_amount * boostFactor * bookValue_fhm => amount_xfhm = principle_amount / 3.3 / boostFactor / bookValue_fhm
+    /// @param _principleAmount amount in principle
     /// @return uint amount in xfhm
-    function feeInXfhm(uint _lqdrAmount) public view returns (uint) {
-        return _lqdrAmount
+    function feeInXfhm(uint _principleAmount) public view returns (uint) {
+        return _principleAmount
         .mul(10).div(33)
         .mul(100).div(boostFactor) // 1/boostfactor
         .div(bookValueInFhm());
@@ -1297,7 +1297,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-     *  @notice calculate amount of LQDR available for claim by depositor
+     *  @notice calculate amount of principle available for claim by depositor
      *  @param _depositor address
      *  @return pendingPayout_ uint
      */
@@ -1316,7 +1316,7 @@ contract LqdrUsdbPolBondDepository is Ownable, ReentrancyGuard {
         boostFactor = _boostFactor;
     }
 
-    function setLqdrLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) external virtual onlyPolicy {
+    function setPrincipleLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) public onlyPolicy {
         lpToken = _lpToken;
         decimals = _decimals;
         doDiv = _doDiv;
