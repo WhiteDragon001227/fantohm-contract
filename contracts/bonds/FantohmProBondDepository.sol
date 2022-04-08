@@ -759,8 +759,8 @@ contract FantohmProBondDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated(address indexed depositor, uint depositInprinciple, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
-    event BondRedeemed(address indexed recipient, uint payoutInprinciple, uint amountInLP, uint remainingprinciple);
+    event BondCreated(address indexed depositor, uint depositInPrinciple, uint amountInLP, uint indexed expires, uint indexed priceInUSD);
+    event BondRedeemed(address indexed recipient, uint payoutInPrinciple, uint amountInLP, uint remainingPrinciple);
 
     uint internal constant max = type(uint).max;
 
@@ -1316,7 +1316,7 @@ contract FantohmProBondDepository is Ownable, ReentrancyGuard {
         boostFactor = _boostFactor;
     }
 
-    function setprincipleLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) external virtual onlyPolicy {
+    function setPrincipleLpAddress(address _lpToken, uint256 _decimals, bool _doDiv) public virtual onlyPolicy {
         lpToken = _lpToken;
         decimals = _decimals;
         doDiv = _doDiv;
