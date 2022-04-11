@@ -79,6 +79,7 @@ async function main() {
         const Bond = await ethers.getContractFactory('FantohmBondStakingDepository');
         // const bond = await Bond.attach("0xd96f833613b4a85c26D870f71F0450E07dc6Efc9");
         const bond = await Bond.deploy(fhmAddress, sfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply);
+        await bond.deployed();
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor
