@@ -968,13 +968,15 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         IStakingStaking(stakingStaking).claim(claimPageSize);
         IERC20( FHM ).approve( staking, payout );
         IStaking( staking ).stake( payout, address(this) );
-        uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
+
+        uint totalPayout = _bondInfo[_depositor].fhmPayout.add(payout);
 
         // depositor info is stored
-        _bondInfo[ _depositor ] = Bond({
-        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
-        fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
-        wsfhmDeposit: _bondInfo[_depositor].wsfhmDeposit, 
+        _bondInfo[_depositor] = Bond({
+        gonsPayout: IsFHM(sFHM).gonsForBalance(totalPayout),
+        fhmPayout: totalPayout,
+        // this is only temporary, real value is computed dynamically
+        wsfhmDeposit: _bondInfo[_depositor].wsfhmDeposit.add(IwsFHM(wsFHM).wsFHMValue(payout)),
         vesting: terms.vestingTerm,
         lastBlock: block.number,
         pricePaid: priceInUSD

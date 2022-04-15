@@ -39,7 +39,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     address public immutable wsFHM;
     address public immutable DAO;
     address public rewardsHolder;
-    uint public noFeeBlocks; // 30 days in blocks
+    uint public noFeeSeconds; // 30 days in seconds
     uint public unstakeFee; // 100 means 1%
     uint public claimPageSize; // maximum iteration threshold
 
@@ -61,8 +61,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         uint borrowed; // absolute number of wsFHM user agains user has borrowed something
 
-        uint lastStakeBlockNumber; // time of last stake from which is counting noFeeDuration
+        uint lastStakeTimestamp; // time of last stake from which is counting noFeeDuration
         uint lastClaimIndex; // index in rewardSamples last claimed
+        uint usersIndex; // index in users array
 
         mapping(address => uint) allowances;
     }
@@ -79,7 +80,11 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
     mapping(address => bool) public whitelist;
 
+    mapping(address => bool) public noFeeWhitelist;
+
     mapping(address => UserInfo) public userInfo;
+
+    address[] private users;
 
     SampleInfo[] public rewardSamples;
 
@@ -91,16 +96,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _from user who triggered the deposit
     /// @param _to user who is able to withdraw the deposited tokens
     /// @param _value deposited wsFHM value
-    /// @param _lastStakeBlockNumber block number of deposit
-    event StakingDeposited(address indexed _from, address indexed _to, uint _value, uint _lastStakeBlockNumber);
+    /// @param _lastStakeTimestamp unix timestamp of deposit
+    event StakingDeposited(address indexed _from, address indexed _to, uint _value, uint _lastStakeTimestamp);
 
     /// @notice withdraw event
     /// @param _owner user who triggered the withdrawal
     /// @param _to user who received the withdrawn tokens
     /// @param _unstaked amount in wsFHM token to be withdrawn
     /// @param _transferred amount in wsFHM token actually withdrawn - potential fee was applied
-    /// @param _unstakeBlock block number of event generated
-    event StakingWithdraw(address indexed _owner, address indexed _to, uint _unstaked, uint _transferred, uint _unstakeBlock);
+    /// @param _unstakeTimestamp unix timestamp of event generated
+    event StakingWithdraw(address indexed _owner, address indexed _to, uint _unstaked, uint _transferred, uint _unstakeTimestamp);
 
     /// @notice new rewards were sampled and prepared for claim
     /// @param _blockNumber  block number of event generated
@@ -132,22 +137,22 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _owner user whos account is used
     /// @param _spender calling smart contract
     /// @param _borrowed how borrowed against
-    /// @param _blockNumber block number of event generated
-    event Borrowed(address indexed _owner, address indexed _spender, uint _borrowed, uint _blockNumber);
+    /// @param _timestamp unix timestamp of event generated
+    event Borrowed(address indexed _owner, address indexed _spender, uint _borrowed, uint _timestamp);
 
     /// @notice borrow contract returned wsFHM to owner to the vault
     /// @param _owner user whos account is used
     /// @param _spender calling smart contract
     /// @param _returned how much returned from borrow against
-    /// @param _blockNumber block number of event generated
-    event BorrowReturned(address indexed _owner, address indexed _spender, uint _returned, uint _blockNumber);
+    /// @param _timestamp unix timestamp of event generated
+    event BorrowReturned(address indexed _owner, address indexed _spender, uint _returned, uint _timestamp);
 
     /// @notice borrow contract liquidated wsFHM to owner to the vault
     /// @param _owner user whos account is used
     /// @param _spender calling smart contract
     /// @param _liquidated how much was lost during borrow against
-    /// @param _blockNumber block number of event generated
-    event BorrowLiquidated(address indexed _owner, address indexed _spender, uint _liquidated, uint _blockNumber);
+    /// @param _timestamp unix timestamp of event generated
+    event BorrowLiquidated(address indexed _owner, address indexed _spender, uint _liquidated, uint _timestamp);
 
     /// @notice emergency token transferred
     /// @param _token ERC20 token
@@ -175,15 +180,15 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     }
 
     /// @notice suggested values:
-    /// @param _noFeeBlocks - 30 days in blocks
+    /// @param _noFeeSeconds - 30 days in seconds
     /// @param _unstakeFee - 3000 aka 30%
     /// @param _claimPageSize - 100/1000
     /// @param _useWhitelist - false (we can set it when we will test on production)
     /// @param _pauseNewStakes - false (you can set as some emergency leave precaution)
     /// @param _enableEmergencyWithdraw - false (you can set as some emergency leave precaution)
-    function setParameters(address _rewardsHolder, uint _noFeeBlocks, uint _unstakeFee, uint _claimPageSize, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
+    function setParameters(address _rewardsHolder, uint _noFeeSeconds, uint _unstakeFee, uint _claimPageSize, bool _useWhitelist, bool _pauseNewStakes, bool _enableEmergencyWithdraw) public onlyOwner {
         rewardsHolder = _rewardsHolder;
-        noFeeBlocks = _noFeeBlocks;
+        noFeeSeconds = _noFeeSeconds;
         unstakeFee = _unstakeFee;
         claimPageSize = _claimPageSize;
         useWhitelist = _useWhitelist;
@@ -209,6 +214,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
     }
 
+    function modifyNoFeeWhitelist(address user, bool add) external onlyOwner {
+        if (add) {
+            require(!noFeeWhitelist[user], "ALREADY_IN_WHITELIST");
+            noFeeWhitelist[user] = true;
+        } else {
+            require(noFeeWhitelist[user], "NOT_IN_WHITELIST");
+            delete noFeeWhitelist[user];
+        }
+    }
+
     /// @notice Insert _amount to the pool, add to your share, need to claim everything before new stake
     /// @param _to user onto which account we want to transfer money
     /// @param _amount how much wsFHM user wants to deposit
@@ -230,13 +245,18 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // persist it
         UserInfo storage info = userInfo[_to];
+        if (info.lastStakeTimestamp == 0) {
+            users.push(_to);
+            info.usersIndex = users.length - 1;
+        }
         info.staked = staked;
-        info.lastStakeBlockNumber = block.number;
+        info.lastStakeTimestamp = block.timestamp;
+
 
         totalStaking = totalStaking.add(_amount);
 
         // and record in history
-        emit StakingDeposited(msg.sender, _to, _amount, info.lastStakeBlockNumber);
+        emit StakingDeposited(msg.sender, _to, _amount, info.lastStakeTimestamp);
     }
 
     /// @notice Return current TVL of staking contract
@@ -263,6 +283,16 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return rewardSamples[rewardSamples.length - 1].totalRewarded;
     }
 
+    function getRewardSamplesLength() public view returns (uint) {
+        return rewardSamples.length;
+    }
+
+    function getRewardSample(uint i) public view returns (uint _blockNumber, uint _timestamp, uint _totalRewarded, uint _tvl) {
+        require(i <= rewardSamples.length - 1, "SAMPLE_NOT_FOUND");
+        SampleInfo memory info = rewardSamples[i];
+        return (info.blockNumber, info.timestamp, info.totalRewarded, info.tvl);
+    }
+
     /// @notice Return user balance
     /// @return 1 - staked and to claim from rewards, 2 - withdrawable, 3 - borrowed
     function userBalance(address _user) public view returns (uint, uint, uint) {
@@ -270,13 +300,13 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // count amount to withdraw from staked tokens except borrowed tokens
         uint toWithdraw = 0;
-        (uint allClaimable,) = claimable(_user, claimPageSize);
+        (uint allClaimable,,) = claimable(_user, claimPageSize);
         uint stakedAndToClaim = info.staked.add(allClaimable);
         if (stakedAndToClaim >= info.borrowed) {
             toWithdraw = stakedAndToClaim.sub(info.borrowed);
         }
 
-        uint withdrawable = getWithdrawableBalance(info.lastStakeBlockNumber, toWithdraw);
+        uint withdrawable = getWithdrawableBalance(info.lastStakeTimestamp, toWithdraw);
 
         return (stakedAndToClaim, withdrawable, info.borrowed);
     }
@@ -306,8 +336,13 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return IwsFHM(wsFHM).sFHMValue(stakedAndToClaim);
     }
 
-    function getWithdrawableBalance(uint lastStakeBlockNumber, uint _balanceWithdrawable) private view returns (uint) {
-        if (block.number < lastStakeBlockNumber.add(noFeeBlocks)) {
+    function isLocked(uint lastStakeTimestamp, uint currentTimestamp) public view returns (bool) {
+        return currentTimestamp <= lastStakeTimestamp.add(noFeeSeconds);
+    }
+
+    function getWithdrawableBalance(uint lastStakeTimestamp, uint _balanceWithdrawable) private view returns (uint) {
+        if (noFeeWhitelist[msg.sender]) return _balanceWithdrawable;
+        else if (isLocked(lastStakeTimestamp, block.timestamp)) {
             uint fee = _balanceWithdrawable.mul(unstakeFee).div(10 ** 4);
             _balanceWithdrawable = _balanceWithdrawable.sub(fee);
         }
@@ -346,19 +381,21 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @notice Counts claimable tokens from totalPendingClaim tokens for given user
     /// @param _user claiming user
     /// @param _claimPageSize page size for iteration loop
-    /// @return claimable amount up to the page size and last claim index
-    function claimable(address _user, uint _claimPageSize) private view returns (uint, uint){
+    /// @return claimable amount up to the page size, last claim index and amount which was not used to claim
+    function claimable(address _user, uint _claimPageSize) private view returns (uint, uint, uint){
         UserInfo storage info = userInfo[_user];
 
+        uint lastStakeTimestamp = info.lastStakeTimestamp;
         uint lastClaimIndex = info.lastClaimIndex;
         // last item already claimed
-        if (lastClaimIndex == rewardSamples.length - 1) return (0, rewardSamples.length - 1);
+        if (lastClaimIndex == rewardSamples.length - 1) return (0, rewardSamples.length - 1, 0);
 
         // start claiming with wsFHM staking previously
         uint allClaimed = 0;
+        uint allBlacklisted = 0;
 
         // new user considered as claimed last sample
-        if (info.lastStakeBlockNumber == 0) {
+        if (lastStakeTimestamp == 0) {
             lastClaimIndex = rewardSamples.length - 1;
         } else {
             uint staked = info.staked;
@@ -368,21 +405,28 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
             if (staked > 0) {
                 for (uint i = startIndex; i <= endIndex; i++) {
+                    SampleInfo memory sample = rewardSamples[i];
+
                     // compute share from current TVL, which means not yet claimed rewards are _counted_ to the APY
-                    if (rewardSamples[i].tvl > 0) {
+                    if (sample.tvl > 0) {
                         uint claimed = 0;
                         // 40 * 10 / 20000
                         uint share = staked.add(allClaimed);
                         uint wsfhm = rewardSamples[i].totalRewarded.mul(share);
                         claimed = wsfhm.div(rewardSamples[i].tvl);
-                        allClaimed = allClaimed.add(claimed);
+
+                        if (isLocked(lastStakeTimestamp, sample.timestamp)) {
+                            allClaimed = allClaimed.add(claimed);
+                        } else {
+                            allBlacklisted = allBlacklisted.add(claimed);
+                        }
                     }
                 }
             }
             lastClaimIndex = endIndex;
         }
 
-        return (allClaimed, lastClaimIndex);
+        return (allClaimed, lastClaimIndex, allBlacklisted);
     }
 
     function claim(uint _claimPageSize) external nonReentrant {
@@ -403,24 +447,30 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
         // otherwise collect rewards
         uint startIndex = info.lastClaimIndex + 1;
-        (uint allClaimed, uint lastClaimIndex) = claimable(_user, _claimPageSize);
+        (uint allClaimed, uint lastClaimIndex, uint allBlacklisted) = claimable(_user, _claimPageSize);
+        uint allClaimedAndBlacklisted = allClaimed.add(allBlacklisted);
 
         // persist it
-        info.staked = info.staked.add(allClaimed);
+        info.staked = info.staked.add(allClaimedAndBlacklisted);
         info.lastClaimIndex = lastClaimIndex;
 
-        totalStaking = totalStaking.add(allClaimed);
+        totalStaking = totalStaking.add(allClaimedAndBlacklisted);
+
         // remove it from total balance if is not last one
-        if (totalPendingClaim > allClaimed) {
-            totalPendingClaim = totalPendingClaim.sub(allClaimed);
+        if (totalPendingClaim > allClaimedAndBlacklisted) {
+            totalPendingClaim = totalPendingClaim.sub(allClaimedAndBlacklisted);
         } else {
             // wsfhm balance of last one is the same, so gons should be rounded
-            require(totalPendingClaim == allClaimed, "LAST_USER_NEED_BALANCE");
+            require(totalPendingClaim == allClaimedAndBlacklisted, "LAST_USER_NEED_BALANCE");
             totalPendingClaim = 0;
         }
 
         // and record in history
         emit RewardClaimed(_user, startIndex, info.lastClaimIndex, allClaimed);
+
+        if (allBlacklisted > 0) {
+            doTransfer(_user, DAO, allBlacklisted);
+        }
     }
 
     /// @notice Unstake _amount from staking pool. Automatically call claim.
@@ -428,7 +478,10 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _amount amount to withdraw
     /// @param _force force withdraw without claiming rewards
     function withdraw(address _to, uint256 _amount, bool _force) public nonReentrant {
-        address _owner = msg.sender;
+        return doWithdraw(msg.sender, _to, _amount, _force);
+    }
+
+    function doWithdraw(address _owner, address _to, uint256 _amount, bool _force) private {
         // auto claim before unstake
         if (!_force) doClaim(_owner, claimPageSize);
 
@@ -441,13 +494,14 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         uint maxToUnstake = info.staked.sub(info.borrowed);
         require(_amount <= maxToUnstake, "NOT_ENOUGH_USER_TOKENS");
 
-        uint transferring = getWithdrawableBalance(info.lastStakeBlockNumber, _amount);
+        uint transferring = getWithdrawableBalance(info.lastStakeTimestamp, _amount);
         // and more than we have
         require(transferring <= totalStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
 
         info.staked = info.staked.sub(_amount);
         if (info.staked == 0) {
             // if unstaking everything just delete whole record
+            users[info.usersIndex] = address(0);
             delete userInfo[_owner];
         }
 
@@ -470,21 +524,25 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
 
         // and record in history
-        emit StakingWithdraw(_owner, _to, _amount, transferring, block.number);
+        emit StakingWithdraw(_owner, _to, _amount, transferring, block.timestamp);
     }
 
     /// @notice transfers amount to different user with preserving lastStakedBlock
     /// @param _to user transferring amount to
     /// @param _amount wsfhm amount
     function transfer(address _to, uint _amount) external nonReentrant {
+        doTransfer(msg.sender, _to, _amount);
+    }
+
+    function doTransfer(address _from, address _to, uint _amount) private {
         // need to claim before any operation with staked amounts
         // use half of the page size to have same complexity
         uint halfPageSize = claimPageSize.div(2);
-        doClaim(msg.sender, halfPageSize);
+        doClaim(_from, halfPageSize);
         doClaim(_to, halfPageSize);
 
         // subtract from caller
-        UserInfo storage fromInfo = userInfo[msg.sender];
+        UserInfo storage fromInfo = userInfo[_from];
         require(fromInfo.staked.sub(fromInfo.borrowed) >= _amount, "NOT_ENOUGH_USER_TOKENS");
         fromInfo.staked = fromInfo.staked.sub(_amount);
 
@@ -492,10 +550,31 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         UserInfo storage toInfo = userInfo[_to];
         toInfo.staked = toInfo.staked.add(_amount);
         // act as normal deposit()
-        toInfo.lastStakeBlockNumber = Math.max(fromInfo.lastStakeBlockNumber, toInfo.lastStakeBlockNumber);
+        toInfo.lastStakeTimestamp = Math.max(fromInfo.lastStakeTimestamp, toInfo.lastStakeTimestamp);
 
         // and record in history
-        emit TokenTransferred(msg.sender, _to, _amount);
+        emit TokenTransferred(_from, _to, _amount);
+    }
+
+    function usersLength() external view returns (uint) {
+        return users.length;
+    }
+
+    function usersWithdrawNotLocked(uint _from, uint _to) external {
+        require(_from <= users.length && _to <= users.length && _from <= _to, "ILLEGAL_FROM_TO");
+
+        for (uint i = _from; i <= _to; i++) {
+            address user = users[i];
+            if (user == address(0)) continue;
+
+            UserInfo storage info = userInfo[user];
+            if (!isLocked(info.lastStakeTimestamp, block.timestamp)) {
+                (uint staked,uint withdrawable,) = userBalance(user);
+                require(withdrawable == staked, "WITHDRAWING_BEFORE_VESTING_PERIOD_END");
+
+                doWithdraw(user, user, staked, false);
+            }
+        }
     }
 
 
@@ -559,7 +638,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         IERC20(wsFHM).safeTransfer(msg.sender, _amount);
 
         // and record in history
-        emit Borrowed(_user, msg.sender, _amount, block.number);
+        emit Borrowed(_user, msg.sender, _amount, block.timestamp);
     }
 
     /// @notice return borrowed staked tokens
@@ -599,7 +678,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
 
         // and record in history
-        emit BorrowReturned(_user, msg.sender, _amount, block.number);
+        emit BorrowReturned(_user, msg.sender, _amount, block.timestamp);
     }
 
     /// @notice liquidation of borrowed staked tokens
@@ -670,7 +749,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         }
 
         // and record in history
-        emit BorrowLiquidated(_user, msg.sender, _amount, block.number);
+        emit BorrowLiquidated(_user, msg.sender, _amount, block.timestamp);
     }
 
     /* ///////////////////////////////////////////////////////////////
