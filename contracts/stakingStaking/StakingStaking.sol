@@ -133,6 +133,13 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
     /// @param _value how much he can borrow against
     event BorrowApproved(address indexed _owner, address indexed _spender, uint _value);
 
+    /// @notice newer staking pool contract transferred wsFHM of owner from the vault
+    /// @param _owner user whos account is used
+    /// @param _spender calling smart contract
+    /// @param _migrated how much was migrated
+    /// @param _timestamp unix timestamp of event generated
+    event Migrated(address indexed _owner, address indexed _spender, uint _migrated, uint _timestamp);
+
     /// @notice borrow contract transferred wsFHM of owner from the vault
     /// @param _owner user whos account is used
     /// @param _spender calling smart contract
@@ -252,11 +259,59 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         info.staked = staked;
         info.lastStakeTimestamp = block.timestamp;
 
-
         totalStaking = totalStaking.add(_amount);
 
         // and record in history
         emit StakingDeposited(msg.sender, _to, _amount, info.lastStakeTimestamp);
+    }
+
+    /// @notice whitelisted and approved by user contract can migrate all his funds into new contract
+    /// @param _owner user which we want to migrate
+    /// @param _amount amount to withdraw
+    /// @param _force force withdraw without claiming rewards
+    function migrateFrom(address _owner, uint _amount, bool _force) external nonReentrant {
+        require(hasRole(BORROWER_ROLE, msg.sender), "MISSING_BORROWER_ROLE");
+
+        uint approved = allowance(_owner, msg.sender);
+        require(approved >= _amount, "NOT_ENOUGH_BALANCE");
+
+        // auto claim before unstake
+        if (!_force) doClaim(_owner, claimPageSize);
+
+        UserInfo storage info = userInfo[_owner];
+
+        // unsure that user claim everything before unstaking
+        require(info.lastClaimIndex == rewardSamples.length - 1 || _force, "CLAIM_PAGE_TOO_SMALL");
+
+        uint maxToUnstake = info.staked.sub(info.borrowed);
+
+        require(_amount <= maxToUnstake, "NOT_ENOUGH_USER_TOKENS");
+        require(_amount <= totalStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
+
+        info.staked = info.staked.sub(_amount);
+
+        if (info.staked == 0) {
+            // if unstaking everything just delete whole record
+            users[info.usersIndex] = address(0);
+            delete userInfo[_owner];
+        } else {
+            // refresh allowance
+            info.allowances[msg.sender] = info.allowances[msg.sender].sub(_amount);
+        }
+
+        if (totalStaking > _amount) {
+            totalStaking = totalStaking.sub(_amount);
+        } else {
+            // wsfhm balance of last one is the same, so wsfhm should be rounded
+            require(totalStaking == _amount, "LAST_USER_NEED_BALANCE");
+            totalStaking = 0;
+        }
+
+        // and record in history
+        emit Migrated(_owner, msg.sender, _amount, block.timestamp);
+
+        // erc20 transfer of staked tokens
+        IERC20(wsFHM).safeTransfer(msg.sender, _amount);
     }
 
     /// @notice Return current TVL of staking contract
@@ -336,7 +391,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return IwsFHM(wsFHM).sFHMValue(stakedAndToClaim);
     }
 
-    function isLocked(uint lastStakeTimestamp, uint currentTimestamp) public view returns (bool) {
+    function isLocked(uint lastStakeTimestamp, uint currentTimestamp) private view returns (bool) {
         return currentTimestamp <= lastStakeTimestamp.add(noFeeSeconds);
     }
 
@@ -514,6 +569,9 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
             totalStaking = 0;
         }
 
+        // and record in history
+        emit StakingWithdraw(_owner, _to, _amount, transferring, block.timestamp);
+
         // actual erc20 transfer
         IERC20(wsFHM).safeTransfer(_to, transferring);
 
@@ -522,9 +580,6 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         if (fee > 0) {
             IERC20(wsFHM).safeTransfer(DAO, fee);
         }
-
-        // and record in history
-        emit StakingWithdraw(_owner, _to, _amount, transferring, block.timestamp);
     }
 
     /// @notice transfers amount to different user with preserving lastStakedBlock
@@ -569,10 +624,11 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
 
             UserInfo storage info = userInfo[user];
             if (!isLocked(info.lastStakeTimestamp, block.timestamp)) {
-                (uint staked,uint withdrawable,) = userBalance(user);
+                (uint staked,uint withdrawable,uint borrowed) = userBalance(user);
+                // never unstake user with fee
                 require(withdrawable == staked, "WITHDRAWING_BEFORE_VESTING_PERIOD_END");
 
-                doWithdraw(user, user, staked, false);
+                doWithdraw(user, user, staked.sub(borrowed), false);
             }
         }
     }
@@ -634,11 +690,11 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         // add it from total balance
         totalBorrowed = totalBorrowed.add(_amount);
 
-        // erc20 transfer of staked tokens
-        IERC20(wsFHM).safeTransfer(msg.sender, _amount);
-
         // and record in history
         emit Borrowed(_user, msg.sender, _amount, block.timestamp);
+
+        // erc20 transfer of staked tokens
+        IERC20(wsFHM).safeTransfer(msg.sender, _amount);
     }
 
     /// @notice return borrowed staked tokens
