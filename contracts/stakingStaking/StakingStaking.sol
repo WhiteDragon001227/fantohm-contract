@@ -306,7 +306,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
             toWithdraw = stakedAndToClaim.sub(info.borrowed);
         }
 
-        uint withdrawable = getWithdrawableBalance(info.lastStakeTimestamp, toWithdraw);
+        uint withdrawable = getWithdrawableBalance(_user, info.lastStakeTimestamp, toWithdraw);
 
         return (stakedAndToClaim, withdrawable, info.borrowed);
     }
@@ -340,8 +340,8 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         return currentTimestamp <= lastStakeTimestamp.add(noFeeSeconds);
     }
 
-    function getWithdrawableBalance(uint lastStakeTimestamp, uint _balanceWithdrawable) private view returns (uint) {
-        if (noFeeWhitelist[msg.sender]) return _balanceWithdrawable;
+    function getWithdrawableBalance(address _user, uint lastStakeTimestamp, uint _balanceWithdrawable) private view returns (uint) {
+        if (noFeeWhitelist[_user]) return _balanceWithdrawable;
         else if (isLocked(lastStakeTimestamp, block.timestamp)) {
             uint fee = _balanceWithdrawable.mul(unstakeFee).div(10 ** 4);
             _balanceWithdrawable = _balanceWithdrawable.sub(fee);
@@ -494,7 +494,7 @@ contract StakingStaking is Ownable, AccessControl, ReentrancyGuard, IVotingEscro
         uint maxToUnstake = info.staked.sub(info.borrowed);
         require(_amount <= maxToUnstake, "NOT_ENOUGH_USER_TOKENS");
 
-        uint transferring = getWithdrawableBalance(info.lastStakeTimestamp, _amount);
+        uint transferring = getWithdrawableBalance(_owner, info.lastStakeTimestamp, _amount);
         // and more than we have
         require(transferring <= totalStaking, "NOT_ENOUGH_TOKENS_IN_POOL");
 
