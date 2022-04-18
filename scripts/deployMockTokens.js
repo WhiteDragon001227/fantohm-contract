@@ -7,6 +7,7 @@ async function main() {
 
     // Initial mint for DAI (10,000,000)
     const initialMint = '10000000000000000000000000';
+    const initialMintUsdc = '10000000000000';
 
     // Deploy DAI
     const DAI = await ethers.getContractFactory('DAI');
@@ -46,7 +47,7 @@ async function main() {
     console.log(`Deployed Usdc to: ${usdc.address}`)
 
     // Deploy 10,000,000 mock Usdc
-    await usdc.mint( deployer.address, initialMint );
+    await usdc.mint( deployer.address, initialMintUsdc );
     console.log(`Minted Usdc`)
     console.log( "Usdc: " + usdc.address );
 }

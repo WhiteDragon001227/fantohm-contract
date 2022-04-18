@@ -85,7 +85,7 @@ contract Usdc is LibNote {
     string  public constant name     = "Usdc TOKEN";
     string  public constant symbol   = "Usdc";
     string  public constant version  = "1";
-    uint8   public constant decimals = 18;
+    uint8   public constant decimals = 6;
     uint256 public totalSupply;
     uint public dailyUsdcLimit;
 

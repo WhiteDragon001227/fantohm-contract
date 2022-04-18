@@ -26,20 +26,20 @@ async function main() {
 
     // Reserve addresses
     const reserves = [
-        {
-            name: 'DAI',
-            address: daiAddress,
-            bondBCV: '10000',
-            depositAmount: '100000000000000000000000',
-            depositProfit: '0',
-        },
         // {
-        //     name: 'USDC',
-        //     address: usdcAddress,
+        //     name: 'DAI',
+        //     address: daiAddress,
         //     bondBCV: '10000',
         //     depositAmount: '100000000000000000000000',
         //     depositProfit: '0',
         // },
+        {
+            name: 'USDC',
+            address: usdcAddress,
+            bondBCV: '10000',
+            depositAmount: '100000000000',
+            depositProfit: '0',
+        },
     ];
 
     // Large number for approval for reserve tokens
