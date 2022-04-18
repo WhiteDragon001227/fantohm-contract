@@ -657,11 +657,10 @@ interface IsFHM {
     function gonsForBalance( uint amount ) external view returns ( uint );
 }
 
-interface IStaking {
+interface IStakingWarmupManager {
     function stake( uint _amount, address _recipient ) external returns ( bool );
     function claim( address _recipient ) external;
-    function epoch() external view returns (uint,uint,uint,uint);
-    function warmupPeriod() external view returns (uint);
+    function getEpochNumber() external view returns (uint);
 }
 
 interface IUSDBMinter {
@@ -678,12 +677,9 @@ interface IwsFHM {
     function wsFHMValue(uint _amount) external view returns (uint);
 }
 interface IStakingStaking {
-    function returnBorrow(address _user, uint _amount) external;
+    function deposit(address _user, uint _amount) external;
     function withdraw(address _to, uint256 _amount, bool _force) external;
-    function approve(address _spender, uint _amount) external;
-    function claimable(address _user, uint _claimPageSize) external view returns (uint, uint);
     function claim(uint _claimPageSize) external;
-    function grantRoleBorrower(address _account) external;
     function userBalance(address _user) external view returns (uint, uint, uint);
 }
 
@@ -698,8 +694,10 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
     /* ======== EVENTS ======== */
 
-    event BondCreated( uint deposit, uint indexed payout, uint indexed expires, uint indexed priceInUSD );
-    event BondRedeemed( address indexed recipient, uint payoutInWsFHM, uint remaining );
+    event BondCreated( address indexed recipient, uint _tokenDeposited, uint _fhmDeposited, uint _wsfhmDeposited, uint _fhmInWarmup, uint _wsfhmInWarmup, uint indexed priceInUSD );
+    event BondMoved( address indexed _recipient, uint _fhmMoved, uint _wsfhmMoved, uint _expiresInSeconds, uint _expiresInBlocks);
+    event BondRedeemed( address indexed _recipient, uint _fhmRedeemed, uint _wsfhmRedeemed, uint _fhmInWarmup, uint _wsfhmInWarmup);
+
     event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
     event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
 
@@ -720,8 +718,9 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
 
-    address public staking; // to auto-stake payout
+    address public stakingWarmupManager; // to move from warmup to pool
     address public stakingStaking; //6,6 pool
+    uint public warmupPeriodCount; // just not hardcode it and dont have another dependency on staking
 
     Terms public terms; // stores terms for new bonds
     Adjust public adjustment; // stores adjustment to BCV data
@@ -739,6 +738,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     // Info for creating new bonds
     struct Terms {
         uint controlVariable; // scaling variable for price
+        uint vestingTermSeconds; // in seconds
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
         uint maximumDiscount; // in hundreds of a %, 500 = 5%
@@ -749,12 +749,16 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
     // Info for bond holder
     struct Bond {
-        uint gonsPayout; // sFHM remaining to be paid
-        uint wsfhmDeposit; //wsfhm total deposit
-        uint fhmPayout; // FHM payout in time of creation
+        uint gonsInWarmup; // sFHM deposited into warmup, needs to be moved
+        uint fhmDepositedInWarmup; // FHM deposited into warmup, needs to be moved
+        uint lastEpochNumber; // last epoch number of staked tokens in warmup
+        uint wsfhmInPool; // wsfhm in pool
+
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
+        uint vestingSeconds; // Blocks left to vest
+        uint lastTimestamp; // Last interaction
     }
 
     // Info for incremental adjustments to control variable
@@ -813,6 +817,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     /**
      *  @notice initializes bond parameters
      *  @param _controlVariable uint
+     *  @param _vestingTermSeconds uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maximumDiscount uint
@@ -824,6 +829,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function initializeBondTerms(
         uint _controlVariable,
+        uint _vestingTermSeconds,
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maximumDiscount,
@@ -836,6 +842,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         terms = Terms ({
         controlVariable: _controlVariable,
         vestingTerm: _vestingTerm,
+        vestingTermSeconds: _vestingTermSeconds,
         minimumPrice: _minimumPrice,
         maximumDiscount: _maximumDiscount,
         maxPayout: _maxPayout,
@@ -899,11 +906,12 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
 
     /**
      *  @notice set contract for auto stake
-     *  @param _staking address
+     *  @param _stakingWarmupManager address
      */
-    function setStaking( address _staking ) external onlyPolicy() {
-        require( _staking != address(0) );
-        staking = _staking;
+    function setStakingWarmupManager( address _stakingWarmupManager, uint _warmupPeriodCount ) external onlyPolicy() {
+        require( _stakingWarmupManager != address(0) );
+        stakingWarmupManager = _stakingWarmupManager;
+        warmupPeriodCount = _warmupPeriodCount;
     }
 
     /**
@@ -966,22 +974,27 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         totalDebt = totalDebt.add( value );
 
         IStakingStaking(stakingStaking).claim(claimPageSize);
-        IERC20( FHM ).approve( staking, payout );
-        IStaking( staking ).stake( payout, address(this) );
-        uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
+        IERC20( FHM ).approve( stakingWarmupManager, payout );
+        IStakingWarmupManager(stakingWarmupManager).stake( payout, address(this) );
+
+        uint fhmInWarmup = IsFHM(sFHM).balanceForGons(_bondInfo[_depositor].gonsInWarmup).add(payout);
 
         // depositor info is stored
-        _bondInfo[ _depositor ] = Bond({
-        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
-        fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
-        wsfhmDeposit: _bondInfo[_depositor].wsfhmDeposit, 
-        vesting: terms.vestingTerm,
-        lastBlock: block.number,
-        pricePaid: priceInUSD
+        _bondInfo[_depositor] = Bond({
+            gonsInWarmup: IsFHM(sFHM).gonsForBalance(fhmInWarmup),
+            fhmDepositedInWarmup: fhmInWarmup,
+            lastEpochNumber: IStakingWarmupManager(stakingWarmupManager).getEpochNumber(),
+
+            wsfhmInPool: _bondInfo[_depositor].wsfhmInPool,
+            vestingSeconds: terms.vestingTermSeconds,
+            vesting: terms.vestingTerm,
+            lastBlock: block.number,
+            lastTimestamp: block.timestamp,
+            pricePaid: priceInUSD
         });
 
         // indexed events are emitted
-        emit BondCreated( _amount, payout, block.number.add( terms.vestingTerm ), priceInUSD );
+        emit BondCreated( _depositor, _amount, payout, IwsFHM(wsFHM).wsFHMValue(payout), fhmInWarmup, IwsFHM(wsFHM).wsFHMValue(fhmInWarmup), priceInUSD );
         emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
         adjust(); // control variable is adjusted
@@ -993,24 +1006,41 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
       *  @param _depositor address
      */
     function move(address _depositor) external nonReentrant returns(uint) {
+        uint currentEpoch = IStakingWarmupManager(stakingWarmupManager).getEpochNumber();
         Bond storage info = _bondInfo[_depositor];
 
+        require(info.fhmDepositedInWarmup > 0, "NOTHING_TO_MOVE");
+        // cannot move if warmup is not ready yet
+        require(info.lastEpochNumber + warmupPeriodCount >= currentEpoch, "WARMUP_PERIOD_NOT_DONE");
 
-        IStaking(staking).claim(address(this));
+        IStakingWarmupManager(stakingWarmupManager).claim(address(this));
 
-        //calculate sFHM amounts and wrap sFHM
-        uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
+        //calculate sFHM amounts and wrap what was in warmup
+        uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsInWarmup);
         uint _wsfhmDeposit = IwsFHM(wsFHM).wrap(_amount);
 
-
-        //deposit token to the pool
-        IStakingStaking(stakingStaking).returnBorrow(address(this), _wsfhmDeposit);
-        info.wsfhmDeposit = info.wsfhmDeposit.add(_wsfhmDeposit);
+        // remember wsfhm deposited into the pool to count real balance
         totalWsfhmDeposit = totalWsfhmDeposit.add(_wsfhmDeposit);
         
-        //set the vesting period
+        // update balance in pool
+        info.wsfhmInPool = info.wsfhmInPool.add(_wsfhmDeposit);
+
+        // reset move statistics
+        info.gonsInWarmup = 0;
+        info.fhmDepositedInWarmup = 0;
+        info.lastEpochNumber = 0;
+
+        // update real vesting term
         info.vesting = terms.vestingTerm;
+        info.vestingSeconds = terms.vestingTermSeconds;
         info.lastBlock = block.number;
+        info.lastTimestamp = block.timestamp;
+
+        emit BondMoved(_depositor, IwsFHM(wsFHM).sFHMValue(_wsfhmDeposit), _wsfhmDeposit, block.timestamp.add(terms.vestingTermSeconds), block.number.add( terms.vestingTerm ));
+
+        // deposit token to the pool
+        IStakingStaking(stakingStaking).deposit(address(this), _wsfhmDeposit);
+
         return _wsfhmDeposit;
     }
 
@@ -1021,31 +1051,39 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      *  @return uint
      */
     function redeem( address _recipient, bool _stake ) external nonReentrant  returns ( uint ) {
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+        uint percentVested = percentVestedFor( _recipient ); // (seconds since last interaction / vesting term remaining)
+        uint percentVestedBlocks = percentVestedBlocksFor( _recipient ); // (blocks since last interaction / vesting term remaining)
 
-        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require ( percentVested >= 10000, "Wait for end timestamp of bond") ;
+        require ( percentVestedBlocks >= 10000, "Wait for end block of bond") ;
 
         IStakingStaking(stakingStaking).claim(claimPageSize);
 
-        uint payout = balanceOfPooled(_recipient);
+        uint wsfhmInPool = balanceOfPooled(_recipient);
 
         // withdraw deposit tokens from pool
-        IStakingStaking(stakingStaking).withdraw(address(this), payout, false );
+        IStakingStaking(stakingStaking).withdraw(address(this), wsfhmInPool, false );
 
         // calc totalWsfhmDeposit and total rewards
-        if (totalWsfhmDeposit > payout) {
-            totalWsfhmDeposit = totalWsfhmDeposit.sub(payout);
+        if (totalWsfhmDeposit > wsfhmInPool) {
+            totalWsfhmDeposit = totalWsfhmDeposit.sub(wsfhmInPool);
         } else {
             totalWsfhmDeposit = 0;
         }
 
-        delete _bondInfo[ _recipient ]; // delete user info
+        Bond storage info = _bondInfo[_recipient];
+        info.wsfhmInPool = 0;
 
-        emit BondRedeemed( _recipient, payout, 0 ); // emit bond data
+        // delete user info if there are no tokens in warmup
+        if (info.fhmDepositedInWarmup == 0) {
+            delete _bondInfo[ _recipient ];
+        }
 
-        IERC20( wsFHM ).transfer( _recipient, payout ); // pay user everything due
+        emit BondRedeemed( _recipient, IwsFHM(wsFHM).sFHMValue(wsfhmInPool), wsfhmInPool, info.fhmDepositedInWarmup, IwsFHM(wsFHM).wsFHMValue(info.fhmDepositedInWarmup)); // emit bond data
 
-        return payout;
+        IERC20( wsFHM ).transfer( _recipient, wsfhmInPool); // pay user everything due
+
+        return wsfhmInPool;
     }
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
@@ -1108,7 +1146,7 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     /// @param _depositor user
     /// @return wsFHM amount
     function balanceOfPooled( address _depositor ) public view returns ( uint ) {
-        if(totalWsfhmDeposit == 0) return 0;
+        if (totalWsfhmDeposit == 0) return 0;
         Bond memory info = _bondInfo[_depositor];
 
         // total deposited and unclaimed rewards for all users
@@ -1119,8 +1157,8 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
         if (stakedAndToClaim > totalWsfhmDeposit) {
             totalRewards = stakedAndToClaim.sub(totalWsfhmDeposit);
         }
-        uint userRewards = totalRewards.mul(info.wsfhmDeposit).div(totalWsfhmDeposit);
-        return info.wsfhmDeposit.add(userRewards);
+        uint userRewards = totalRewards.mul(info.wsfhmInPool).div(totalWsfhmDeposit);
+        return info.wsfhmInPool.add(userRewards);
     }
 
 
@@ -1183,26 +1221,34 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
     }
 
     /**
-    *  @notice return bond info with latest sFHM balance calculated from gons
+     *  @notice return bond info with latest sFHM balance calculated from gons
      *  @param _depositor address
-     *  @return payout uint
-     *  @return payoutInWsFHM uint
+     *  @return payout uint all fhm worth in warmup and in the pool
+     *  @return payoutInWsFHM uint all wsfhm worth in warmup and in the pool
      *  @return vesting uint
      *  @return lastBlock uint
      *  @return pricePaid uint
+     *  @return vestingSeconds uint
+     *  @return lastTimestamp uint
+     *  @return lastEpochNumber uint when its 0, nothing is in warmup
      */
-    function bondInfo(address _depositor) public view returns ( uint payout, uint payoutInWsFHM, uint vesting, uint lastBlock, uint pricePaid) {
+    function bondInfo(address _depositor) public view returns ( uint payout, uint payoutInWsFHM, uint vesting, uint lastBlock, uint pricePaid, uint vestingSeconds, uint lastTimestamp, uint lastEpochNumber) {
         Bond memory info = _bondInfo[ _depositor ];
-        
-        uint wsfhmPayout = balanceOfPooled(_depositor);
-        uint sfhmPayout = IwsFHM(wsFHM).sFHMValue(wsfhmPayout);
+
+        uint fhmInWarmup = IsFHM(sFHM).balanceForGons(info.gonsInWarmup);
+        uint wsfhmInWarmup = IwsFHM(wsFHM).wsFHMValue(fhmInWarmup);
+        uint wsfhmInPool = balanceOfPooled(_depositor);
+        uint fhmInPool = IwsFHM(wsFHM).sFHMValue(wsfhmInPool);
 
         // here we will show actual sFHM value of wsFHM will all rewards
-        payout = sfhmPayout;
-        payoutInWsFHM = wsfhmPayout;
+        payout = fhmInWarmup.add(fhmInPool);
+        payoutInWsFHM = wsfhmInWarmup.add(wsfhmInPool);
         vesting = info.vesting;
+        vestingSeconds = info.vestingSeconds;
         lastBlock = info.lastBlock;
+        lastTimestamp = info.lastTimestamp;
         pricePaid = info.pricePaid;
+        lastEpochNumber = info.lastEpochNumber;
     }
 
     /**
@@ -1256,6 +1302,18 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = _bondInfo[ _depositor ];
+        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
+        uint vestingSeconds = bond.vestingSeconds;
+
+        if ( vestingSeconds > 0 ) {
+            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
+        } else {
+            percentVested_ = 0;
+        }
+    }
+
+    function percentVestedBlocksFor( address _depositor ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _bondInfo[ _depositor ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1274,7 +1332,9 @@ contract BondStakingStakingDepository is Ownable, ReentrancyGuard {
      */
     function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
         uint percentVested = percentVestedFor( _depositor );
-        if ( percentVested >= 10000 ) {
+        uint percentVestedBlocks = percentVestedBlocksFor( _depositor );
+
+        if ( percentVested >= 10000 && percentVestedBlocks >= 10000) {
             pendingPayout_ = balanceOfPooled(_depositor);
         } else {
             pendingPayout_ = 0;
