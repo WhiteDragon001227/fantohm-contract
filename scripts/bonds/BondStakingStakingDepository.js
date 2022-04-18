@@ -7,10 +7,12 @@ async function main() {
 
     const network = "rinkeby";
     // const network = "fantom_testnet";
+    // const network = "fantom";
     const {
         daoAddress,
         zeroAddress,
         daiAddress,
+        usdcAddress,
         usdbAddress,
         fhmAddress,
         sfhmAddress,
@@ -32,8 +34,8 @@ async function main() {
             depositProfit: '0',
         },
         // {
-        //     name: 'USDB',
-        //     address: usdbAddress,
+        //     name: 'USDC',
+        //     address: usdcAddress,
         //     bondBCV: '10000',
         //     depositAmount: '100000000000000000000000',
         //     depositProfit: '0',
@@ -44,14 +46,15 @@ async function main() {
     const largeApproval = '100000000000000000000000000000000';
 
     // Bond vesting length in blocks. 33110 ~ 5 days
-    const bondVestingLength = '1'; // FTM testnet
-    // const bondVestingLength = '498300'; // FTM mainnet
+    const bondVestingLength = 1; // rinkeby testnet
+    const bondVestingSecondsLength = '501'; // rinkeby testnet
+    // const bondVestingLength = '2592000'; // FTM mainnet
     // const bondVestingLength = '29400'; // MOVR?
 
     // Min bond price
     const minBondPrice = '2000';
 
-    const maxDiscount = '800';
+    const maxDiscount = '0';
 
     // Max bond payout
     const maxBondPayout = '1000'
@@ -63,7 +66,7 @@ async function main() {
     const maxBondDebt = '50000000000000000000000';
 
     // Initial Bond debt
-    const intialBondDebt = '0';
+    const initialBondDebt = '0';
     //claimPageSize
     const claimPageSize = '1000';
 
@@ -80,8 +83,9 @@ async function main() {
 
         // Deploy Bond
         const Bond = await ethers.getContractFactory('BondStakingStakingDepository');
-        const bond = await Bond.attach("0x654ed8c0b2fd326c721056a88f51c44521EB8294");
-        // const bond = await Bond.deploy(fhmAddress, sfhmAddress, wsfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply, stakingStakingAddress);
+        // const bond = await Bond.attach("0x0D9b531C1e0AD04a7Da2d2E5Bc4a189aC0780118");
+        const bond = await Bond.deploy(fhmAddress, sfhmAddress, wsfhmAddress, reserve.address, treasury.address, daoAddress, zeroAddress, usdbMinterAddress, fhmCirculatingSupply, stakingStakingAddress);
+        await bond.deployed();
         console.log(`Deployed ${reserve.name} Bond to: ${bond.address}`);
 
         // queue and toggle bond reserve depositor
@@ -91,11 +95,11 @@ async function main() {
         console.log(`Toggled ${reserve.name} Bond as reserve depositor`);
 
         //Set bond terms
-        await bond.initializeBondTerms(reserve.bondBCV, bondVestingLength, minBondPrice, maxDiscount, maxBondPayout, bondFee, maxBondDebt, intialBondDebt,claimPageSize);
+        await bond.initializeBondTerms(reserve.bondBCV, bondVestingSecondsLength, bondVestingLength, minBondPrice, maxDiscount, maxBondPayout, bondFee, maxBondDebt, initialBondDebt, claimPageSize);
         console.log(`Initialized terms for ${reserve.name} Bond`);
 
         // Set staking for bond
-        await bond.setStaking(stakingWarmupManagerAddress);
+        await bond.setStakingWarmupManager(stakingWarmupManagerAddress, 2);
         console.log(`Set Staking for ${reserve.name} Bond`);
 
         // Approve the treasury to spend deployer's reserve tokens
@@ -106,10 +110,10 @@ async function main() {
         await reserveToken.approve(bond.address, largeApproval);
         console.log(`Approved bond to spend deployer ${reserve.name}`);
 
-        await bond.deposit('1000000000000000000000', '60000', deployer.address);
-        console.log(`Deposited from deployer to Bond address: ${bond.address}`);
+        // await bond.deposit('1000000000000000000000', '60000', deployer.address);
+        // console.log(`Deposited from deployer to Bond address: ${bond.address}`);
        
-        DONE
+        // DONE
         console.log(`${reserve.name} Bond: "${reserveToken.address}",`);
 
         console.log(`\nVerify:\nnpx hardhat verify --network ${network} `+

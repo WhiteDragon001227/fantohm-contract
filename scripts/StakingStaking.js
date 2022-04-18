@@ -42,7 +42,7 @@ async function main() {
     await rewardsHolder.setParameters(`${stakingStaking.address}`, blocksPerSample);
 
     // each 30 minutes without fee
-    await stakingStaking.setParameters(`${rewardsHolder.address}`, 2000, 3000, 1000, false, false, true);
+    await stakingStaking.setParameters(`${rewardsHolder.address}`, 500, 3000, 1000, false, false, true);
     // await stakingStaking.setParameters(`${rewardsHolder.address}`, (blocksPerSample * 4 * 30), 3000, 1000, false, false, true);
     // await stakingStaking.setParameters(`${rewardsHolder.address}`, 101567, 3000, 1000, true, false, true);
 
