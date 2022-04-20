@@ -21,7 +21,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
  *
  * Assumes that an owner cannot have more than 2**64 - 1 (max value of uint64) of supply.
  *
- * Assumes that the maximum token id cannot exceed 2**256 - 1 (max value of uint64).
+ * Assumes that the maximum token id cannot exceed 2**256 - 1 (max value of uint256).
  */
 contract ERC721A is Context, ERC165, IERC721, IERC721Metadata {
     using Address for address;
