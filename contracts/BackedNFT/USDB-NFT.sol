@@ -5,18 +5,18 @@ pragma solidity 0.7.5;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721Pausable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./NonBlockingReceiver.sol";
+import "./ERC721A.sol";
+import "./ERC721APausable.sol";
 
-abstract contract ERC721URIStorage is ERC721 {
+abstract contract ERC721URIStorage is ERC721A {
     using Strings for uint256;
 
     // Optional mapping for token URIs
-    mapping(uint256 => string) private _tokenURIs;
+    mapping(uint256 => string) internal _tokenURIs;
 
     /**
      * @dev See {IERC721Metadata-tokenURI}.
@@ -25,7 +25,7 @@ abstract contract ERC721URIStorage is ERC721 {
         require(_exists(tokenId), "ERC721URIStorage: URI query for nonexistent token");
 
         string memory _tokenURI = _tokenURIs[tokenId];
-        string memory base = baseURI();
+        string memory base = _baseURI();
 
         // If there is no base URI, return the token URI.
         if (bytes(base).length == 0) {
@@ -59,11 +59,11 @@ abstract contract ERC721URIStorage is ERC721 {
 }
 
 
-/// @title A LayerZero FantohmNonFungibleToken
+/// @title A LayerZero USDBNonFungibleToken
 /// @author Kris
 /// @notice You can use this to mint NFT and transfer across chain
 /// @dev All function calls are currently implemented without side effects
-contract FantohmNonFungibleToken is ERC721,ERC721URIStorage, ERC721Pausable, 
+contract USDBNFT is ERC721A,ERC721URIStorage, ERC721APausable, 
 Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     using SafeMath for uint256;
     using Address for address;
@@ -77,10 +77,17 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     string public baseTokenURI;
     uint256 maxMint;
 
-    receive() external payable {}
+    uint256 gas = 350000;
+
+    event ReceiveNFT(
+        uint16 _srcChainId,
+        address _from,
+        uint256 _tokenId,
+        uint256 counter
+    );
 
 
-    /// @notice Constructor for the FantohmNonFungibleToken
+    /// @notice Constructor for the USDBNonFungibleToken
     /// @param _baseTokenURI the Uniform Resource Identifier (URI) for tokenId token
     /// @param _layerZeroEndpoint handles message transmission across chains
     /// @param _maxMint the max number of mints on this chain
@@ -89,7 +96,7 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
         address _layerZeroEndpoint,
         uint256 _maxMint
     )
-    ERC721("FantohmNonFungibleToken", "FantohmNFT"){
+    ERC721A("USDB Backed NFT", "USDB-NFT"){
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(MINTER_ROLE, msg.sender);
 
@@ -105,16 +112,27 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     }
 
     /// @notice Get the base URI
-    function baseURI() override public view returns (string memory) {
+    function _baseURI() override public view returns (string memory) {
         return baseTokenURI;
     }
 
-    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {
+    function tokenURI(uint256 tokenId) public view override(ERC721A, ERC721URIStorage) returns (string memory) {
         return super.tokenURI(tokenId);
     }
+     /**
+     * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+     *
+     * Requirements:
+     *
+     * - `tokenId` must exist.
+     */
+    function setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
+        require(_exists(tokenId), "ERC721Metadata: URI set of nonexistent token");
+        _tokenURIs[tokenId] = _tokenURI;
+    }
 
-    function _beforeTokenTransfer(address from, address to, uint256 tokenId) internal whenNotPaused override(ERC721, ERC721Pausable) {
-        super._beforeTokenTransfer(from, to, tokenId);
+    function _beforeTokenTransfers(address from, address to, uint256 tokenId, uint256 quantity) internal whenNotPaused override(ERC721A, ERC721APausable) {
+        super._beforeTokenTransfers(from, to, tokenId, quantity);
     }
     /**
      * @dev Converts a `uint256` to its ASCII `string` decimal representation.
@@ -141,22 +159,21 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
         return string(buffer);
     }
 
-    /// @notice Mint your FantohmNonFungibleToken
-    function mint(address wallet) whenNotPaused external payable returns(uint256) {
-        require(hasRole(MINTER_ROLE, _msgSender()), "FantohmNFT: must have minter role to mint");
-        require(_totalSupply + 1 <= maxMint, "FantohmNFT: Max limit reached");
-        _tokenIds.increment();
+    /// @notice Mint your USDBNonFungibleToken
+    function mint(address wallet, string memory uri) whenNotPaused external returns(uint256) {
+        require(hasRole(MINTER_ROLE, _msgSender()), "USDBNFT: must have minter role to mint");
+        require(_totalSupply + 1 <= maxMint, "USDBNFT: Max limit reached");
         uint256 tokenId = _tokenIds.current();
-        _safeMint(wallet, tokenId);
+        _safeMint(wallet, 1);
 
-        string memory tokenURISuffix = string(abi.encodePacked(toString(tokenId),  ".json"));
-        _setTokenURI(tokenId, tokenURISuffix);
-
+        //string memory tokenURISuffix = string(abi.encodePacked(toString(tokenId),  ".json"));
+        setTokenURI(tokenId, uri);
+        _tokenIds.increment();
         _totalSupply = _totalSupply.add(1);
 
         return _tokenIds.current();
     }
-    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
+    function _burn(uint256 tokenId) internal override(ERC721A, ERC721URIStorage) {
         super._burn(tokenId);
     }
     function currentTokenId() external view returns (uint256) {
@@ -170,26 +187,27 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     function unpause() external onlyOwner {
         _unpause();
     }
-    /// @notice Burn FantohmNFT_tokenId on source chain and mint on destination chain
+    /// @notice Burn USDBNFT_tokenId on source chain and mint on destination chain
     /// @param _chainId the destination chain id you want to transfer too
-    /// @param FantohmNFT_tokenId the id of the FantohmNFT you want to transfer
-    function transferFantohmNFT(
+    /// @param USDBNFT_tokenId the id of the USDBNFT you want to transfer
+    function transferUsdbNft(
         uint16 _chainId,
-        uint256 FantohmNFT_tokenId
+        uint256 USDBNFT_tokenId
     ) public payable {
-        require(msg.sender == ownerOf(FantohmNFT_tokenId), "Message sender must own the FantohmNFT.");
+        require(msg.sender == ownerOf(USDBNFT_tokenId), "Message sender must own the USDBNFT.");
         require(trustedSourceLookup[_chainId].length != 0, "This chain is not a trusted source source.");
 
-        // burn FantohmNFT on source chain
-         _burn(FantohmNFT_tokenId);
+        // burn USDBNFT on source chain
+        _burn(USDBNFT_tokenId);
 
-        // encode payload w/ sender address and FantohmNFT token id
-        bytes memory payload = abi.encode(msg.sender, FantohmNFT_tokenId);
+        //sub counts of USDBNFT on source chain
+        _totalSupply = _totalSupply.sub(1);
+        // encode payload w/ sender address and USDBNFT token id
+        bytes memory payload = abi.encode(msg.sender, USDBNFT_tokenId);
 
         // encode adapterParams w/ extra gas for destination chain
         // This example uses 500,000 gas. Your implementation may need more.
         uint16 version = 1;
-        uint gas = 225000;
         bytes memory adapterParams = abi.encodePacked(version, gas);
 
         // use LayerZero estimateFees for cross chain delivery
@@ -213,10 +231,28 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     // @param _payload - the signed payload is the UA bytes has encoded to be sent
     /// @dev safe mints the ONFT on your destination chain
     function _LzReceive(uint16 _srcChainId, bytes memory _srcAddress, uint64 _nonce, bytes memory _payload) internal override  {
-        (address _dstFantohmNFTAddress, uint256 fantohmNFT_tokenId) = abi.decode(_payload, (address, uint256));
-        _safeMint(_dstFantohmNFTAddress, fantohmNFT_tokenId);
+        (address _dstUsdbNftAddress, uint256 usdbNft_tokenId) = abi.decode(_payload, (address, uint256));
+        // mint the tokens
+        _safeMint(_dstUsdbNftAddress, usdbNft_tokenId);
+        _totalSupply = _totalSupply.add(1);
+        emit ReceiveNFT(_srcChainId, _dstUsdbNftAddress, usdbNft_tokenId, _totalSupply);
     }
-
+    function estimateFees(
+        uint16 _dstChainId,
+        address _userApplication,
+        bytes calldata _payload,
+        bool _payInZRO,
+        bytes calldata _adapterParams
+    ) external view returns (uint256 nativeFee, uint256 zroFee) {
+        return
+            endpoint.estimateFees(
+                _dstChainId,
+                _userApplication,
+                _payload,
+                _payInZRO,
+                _adapterParams
+            );
+    }
     //---------------------------DAO CALL----------------------------------------
     // generic config for user Application
     function setConfig(

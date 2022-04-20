@@ -31,5 +31,6 @@
 	"lqdrUsdbMultisigAddress" : "0x3381e86306145b062cEd14790b01AC5384D23D82",
 	"treasuryHelperAddress" : "0xf41286C6fBF79d6f9f74336aC4deca98aC8b30d7",
 	"rewardsHolderAddress" : "0x00DBE15d83469807Daaf7141F924672aAE1a71D7",
-	"stakingStakingAddress" : "0x48C88154d966414E0d925187F7be803c28519957"
+	"stakingStakingAddress" : "0x48C88154d966414E0d925187F7be803c28519957",
+	"layerZeroEndpoint" : "0x79a63d6d8BBD5c6dfc774dA79bCcD948EAcb53FA" 
 }
