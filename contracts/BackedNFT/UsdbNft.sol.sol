@@ -190,6 +190,9 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
     function unpause() external onlyOwner {
         _unpause();
     }
+    function ownerOfNftToken(uint256 tokenId) public view returns(address) {
+        return ownerOf(tokenId);
+    }
     /// @notice Burn USDBNFT_tokenId on source chain and mint on destination chain
     /// @param _chainId the destination chain id you want to transfer too
     /// @param USDBNFT_tokenId the id of the USDBNFT you want to transfer

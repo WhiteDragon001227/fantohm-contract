@@ -587,6 +587,7 @@ library FixedPoint {
 interface ITreasury {
     function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ );
     function valueOf( address _token, uint _amount ) external view returns ( uint value_ );
+    function mintRewards( address _recipient, uint _amount ) external;
 }
 
 interface IBondCalculator {
@@ -619,9 +620,67 @@ interface IFHMCirculatingSupply {
 }
 interface IUSDBNFT {
     function mint(address wallet, string memory uri) external returns(uint256);
+    function ownerOfNftToken(uint256 tokenId) external view returns(address);
 }
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+abstract contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
 
-contract BackedNFTBondingDepository is Ownable {
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    uint256 private _status;
+
+    constructor () internal {
+        _status = _NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and make it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = _NOT_ENTERED;
+    }
+}
+contract UsdbNftBondDepository is Ownable, ReentrancyGuard{
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
@@ -636,7 +695,8 @@ contract BackedNFTBondingDepository is Ownable {
     event BondRedeemed( address indexed recipient, uint payout, uint remaining );
     event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
     event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
-
+   
+    event Migrated(address indexed _from, address indexed _to, uint _migrated);
 
 
     uint internal constant max = type(uint).max;
@@ -660,10 +720,10 @@ contract BackedNFTBondingDepository is Ownable {
     Terms public terms; // stores terms for new bonds
     Adjust public adjustment; // stores adjustment to BCV data
 
-    mapping( address => Bond ) public _bondInfo; // stores bond information for depositors
-
+    mapping( uint256 => Bond) public _nftInfo; // stores bond information into nft.
     uint public totalDebt; // total value of outstanding bonds; used for pricing
     uint public lastDecay; // reference block for debt decay
+    uint public totalDeposit; //total usdb Deposit
 
 
 
@@ -672,6 +732,7 @@ contract BackedNFTBondingDepository is Ownable {
     // Info for creating new bonds
     struct Terms {
         uint controlVariable; // scaling variable for price
+        uint vestingTermSeconds; // in seconds
         uint vestingTerm; // in blocks
         uint minimumPrice; // vs principle value
         uint maximumDiscount; // in hundreds of a %, 500 = 5%
@@ -684,9 +745,10 @@ contract BackedNFTBondingDepository is Ownable {
     struct Bond {
         uint gonsPayout; // sFHM remaining to be paid
         uint fhmPayout; // FHM payout in time of creation
-        uint nftTokenId; // NFT token Id
         uint vesting; // Blocks left to vest
         uint lastBlock; // Last interaction
+        uint vestingSeconds; // Blocks left to vest
+        uint lastTimestamp; // Last interaction
         uint pricePaid; // In DAI, for front end viewing
     }
 
@@ -742,6 +804,7 @@ contract BackedNFTBondingDepository is Ownable {
     /**
      *  @notice initializes bond parameters
      *  @param _controlVariable uint
+     *  @param _vestingTermSeconds uint
      *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maximumDiscount uint
@@ -752,6 +815,7 @@ contract BackedNFTBondingDepository is Ownable {
      */
     function initializeBondTerms(
         uint _controlVariable,
+        uint _vestingTermSeconds,
         uint _vestingTerm,
         uint _minimumPrice,
         uint _maximumDiscount,
@@ -762,6 +826,7 @@ contract BackedNFTBondingDepository is Ownable {
     ) external onlyPolicy() {
         terms = Terms ({
         controlVariable: _controlVariable,
+        vestingTermSeconds: _vestingTermSeconds,
         vestingTerm: _vestingTerm,
         minimumPrice: _minimumPrice,
         maximumDiscount: _maximumDiscount,
@@ -874,10 +939,8 @@ contract BackedNFTBondingDepository is Ownable {
             deposited into the treasury, returning (_amount - profit) FHM
          */
         IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
-        IERC20( principle ).approve( vault, _amount );
-        IERC20( principle ).safeTransferFrom( address(this), vault, _amount);
-        IERC20Mintable( FHM ).mint( address(this), value.sub(profit) );
-
+        ITreasury(treasury).mintRewards(address(this), value.sub(profit));
+        totalDeposit = totalDeposit.add(_amount);
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
@@ -888,16 +951,17 @@ contract BackedNFTBondingDepository is Ownable {
 
         IERC20( FHM ).approve( staking, payout );
         IStaking( staking ).stake( payout, address(this) );
-        uint stakedGons = IsFHM( sFHM ).gonsForBalance( payout );
         profit = IUSDBNFT(UsdbNftAddress).mint(msg.sender, _nftTokenUri);
 
+        uint fhmInWarmup = IsFHM(sFHM).balanceForGons(_nftInfo[profit].gonsPayout).add(payout);
         // depositor info is stored
-        _bondInfo[ _depositor ] = Bond({
-        gonsPayout: _bondInfo[ _depositor ].gonsPayout.add( stakedGons ),
-        fhmPayout: _bondInfo[ _depositor ].fhmPayout.add( payout ),
-        nftTokenId: profit,
+        _nftInfo[ profit ] = Bond({
+        gonsPayout:  IsFHM(sFHM).gonsForBalance(fhmInWarmup),
+        fhmPayout: _nftInfo[ profit ].fhmPayout.add( payout ),
+        vestingSeconds: terms.vestingTermSeconds,
         vesting: terms.vestingTerm,
         lastBlock: block.number,
+        lastTimestamp: block.timestamp,
         pricePaid: priceInUSD
         });
 
@@ -911,24 +975,48 @@ contract BackedNFTBondingDepository is Ownable {
 
     /**
      *  @notice redeem bond for user
-     *  @param _recipient address
+     *  @param _nftTokenId uint256
      *  @param _stake bool
      *  @return uint
      */
-    function redeem( address _recipient, bool _stake ) external returns ( uint ) {
-        Bond memory info = _bondInfo[ _recipient ];
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+    function redeem( uint256 _nftTokenId, bool _stake ) external returns ( uint ) {
+        Bond memory info = _nftInfo[ _nftTokenId ];
+        uint percentVested = percentVestedFor( _nftTokenId ); // (seconds since last interaction / vesting term remaining)
+        uint percentVestedBlocks = percentVestedBlocksFor( _nftTokenId ); // (blocks since last interaction / vesting term remaining)
 
-        require ( percentVested >= 10000 , "Wait for end of bond") ;
+        require ( percentVested >= 10000, "Wait for end timestamp of bond") ;
+        require ( percentVestedBlocks >= 10000, "Wait for end block of bond") ;
+
 
         IStaking( staking ).claim( address(this) );
 
-        delete _bondInfo[ _recipient ]; // delete user info
+        delete _nftInfo[ _nftTokenId ]; // delete user info
         uint _amount = IsFHM( sFHM ).balanceForGons(info.gonsPayout);
+        address _recipient = IUSDBNFT(UsdbNftAddress).ownerOfNftToken(_nftTokenId);
         emit BondRedeemed( _recipient, _amount, 0 ); // emit bond data
-        IERC20( sFHM ).transfer( _recipient, _amount ); // pay user everything due
+        IERC20( sFHM ).transfer(_recipient , _amount ); // pay user everything due
         return _amount;
     }
+     /// @notice all funds of bond into new contract
+    /// @param _newBondDepository new contract
+    /// @param _amount amount to migrate
+    function migrateFrom(address _newBondDepository, uint _amount) external onlyPolicy nonReentrant {
+        require(_amount <= totalDeposit, "NOT_ENOUGH_TOKENS");
+
+        if (totalDeposit > _amount) {
+            totalDeposit = totalDeposit.sub(_amount);
+        } else {
+            require(totalDeposit == _amount, "Exceed the amount");
+            totalDeposit = 0;
+        }
+
+        // and record in history
+        emit Migrated(address(this), _newBondDepository, _amount);
+
+        // erc20 transfer of principle tokens
+        IERC20(principle).safeTransfer(_newBondDepository, _amount);
+    }
+
 
     /* ======== INTERNAL HELPER FUNCTIONS ======== */
 
@@ -1046,15 +1134,17 @@ contract BackedNFTBondingDepository is Ownable {
 
     /**
     *  @notice return bond info with latest sFHM balance calculated from gons
-     *  @param _depositor address
-     *  @return payout uint
-     *  @return vesting uint
-     *  @return lastBlock uint
-     *  @return pricePaid uint
-     */
-    function bondInfo(address _depositor) public view returns ( uint payout,uint vesting,uint lastBlock,uint pricePaid ) {
-        Bond memory info = _bondInfo[ _depositor ];
+    *  @param _nftTokenId uint256
+    *  @return payout uint
+    *  @return vestingSeconds uint
+    *  @return vesting uint
+    *  @return lastBlock uint
+    *  @return pricePaid uint
+    */
+    function bondInfo(uint256 _nftTokenId) public view returns ( uint payout,uint vestingSeconds,uint vesting,uint lastBlock,uint pricePaid ) {
+        Bond memory info = _nftInfo[ _nftTokenId ];
         payout = IsFHM( sFHM ).balanceForGons( info.gonsPayout );
+        vestingSeconds = info.vestingSeconds;
         vesting = info.vesting;
         lastBlock = info.lastBlock;
         pricePaid = info.pricePaid;
@@ -1107,11 +1197,23 @@ contract BackedNFTBondingDepository is Ownable {
 
     /**
      *  @notice calculate how far into vesting a depositor is
-     *  @param _depositor address
+     *  @param _nftTokenId uint256
      *  @return percentVested_ uint
      */
-    function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
-        Bond memory bond = _bondInfo[ _depositor ];
+    function percentVestedFor( uint256 _nftTokenId ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _nftInfo[ _nftTokenId ];
+        uint secondsSinceLast = block.timestamp.sub( bond.lastTimestamp );
+        uint vestingSeconds = bond.vestingSeconds;
+
+        if ( vestingSeconds > 0 ) {
+            percentVested_ = secondsSinceLast.mul( 10000 ).div(vestingSeconds);
+        } else {
+            percentVested_ = 0;
+        }
+    }
+
+    function percentVestedBlocksFor( uint256 _nftTokenId ) public view returns ( uint percentVested_ ) {
+        Bond memory bond = _nftInfo[ _nftTokenId ];
         uint blocksSinceLast = block.number.sub( bond.lastBlock );
         uint vesting = bond.vesting;
 
@@ -1121,15 +1223,14 @@ contract BackedNFTBondingDepository is Ownable {
             percentVested_ = 0;
         }
     }
-
     /**
      *  @notice calculate amount of FHM available for claim by depositor
-     *  @param _depositor address
+     *  @param _nftTokenId uint256
      *  @return pendingPayout_ uint
      */
-    function pendingPayoutFor( address _depositor ) external view returns ( uint pendingPayout_ ) {
-        uint percentVested = percentVestedFor( _depositor );
-        uint payout = IsFHM( sFHM ).balanceForGons( _bondInfo[ _depositor ].gonsPayout );
+    function pendingPayoutFor( uint256 _nftTokenId ) external view returns ( uint pendingPayout_ ) {
+        uint percentVested = percentVestedFor( _nftTokenId );
+        uint payout = IsFHM( sFHM ).balanceForGons( _nftInfo[ _nftTokenId ].gonsPayout );
 
         if ( percentVested >= 10000 ) {
             pendingPayout_ = payout;
