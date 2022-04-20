@@ -608,6 +608,12 @@ interface IFHUDMinter {
     function getMarketPrice() external view returns (uint);
 }
 
+interface IERC20Mintable {
+    function mint( uint256 amount_ ) external;
+
+    function mint( address account_, uint256 ammount_ ) external;
+}
+
 interface IFHMCirculatingSupply {
     function OHMCirculatingSupply() external view returns ( uint );
 }
@@ -633,7 +639,7 @@ contract BackedNFTBondingDepository is Ownable {
 
 
 
-
+    uint internal constant max = type(uint).max;
     /* ======== STATE VARIABLES ======== */
 
     address public immutable FHM; // reward from treasury which is staked for the time of the bond
@@ -643,7 +649,8 @@ contract BackedNFTBondingDepository is Ownable {
     address public immutable DAO; // receives profit share from bond
     address public immutable fhudMinter; // FHUD minter
     address public immutable fhmCirculatingSupply; // FHM circulating supply
-    address public immutable UsdbNftAddress;
+    address public immutable UsdbNftAddress; // usdbnft address
+    address public immutable vault; // vault address
 
     bool public immutable isLiquidityBond; // LP and Reserve bonds are treated slightly different
     address public immutable bondCalculator; // calculates value of LP tokens
@@ -706,7 +713,8 @@ contract BackedNFTBondingDepository is Ownable {
         address _bondCalculator,
         address _fhudMinter,
         address _fhmCirculatingSupply,
-        address _usdbnftAddress
+        address _usdbnftAddress,
+        address _vault
     ) {
         require( _FHM != address(0) );
         FHM = _FHM;
@@ -724,6 +732,8 @@ contract BackedNFTBondingDepository is Ownable {
         fhmCirculatingSupply = _fhmCirculatingSupply;
         require( _usdbnftAddress != address(0) );
         UsdbNftAddress = _usdbnftAddress;
+        require( _vault != address(0));
+        vault = _vault;
         // bondCalculator should be address(0) if not LP bond
         bondCalculator = _bondCalculator;
         isLiquidityBond = ( _bondCalculator != address(0) );
@@ -864,8 +874,10 @@ contract BackedNFTBondingDepository is Ownable {
             deposited into the treasury, returning (_amount - profit) FHM
          */
         IERC20( principle ).safeTransferFrom( msg.sender, address(this), _amount );
-        IERC20( principle ).approve( address( treasury ), _amount );
-        ITreasury( treasury ).deposit( _amount, principle, profit );
+        IERC20( principle ).approve( vault, _amount );
+        IERC20( principle ).safeTransferFrom( address(this), vault, _amount);
+        IERC20Mintable( FHM ).mint( address(this), value.sub(profit) );
+
 
         if ( fee != 0 ) { // fee is transferred to dao
             IERC20( FHM ).safeTransfer( DAO, fee );
