@@ -5,10 +5,10 @@ async function main() {
     let [deployer] = await ethers.getSigners();
     console.log('Deploying contracts with the account: ' + deployer.address);
 
-    const network = "rinkeby";
+    // const network = "rinkeby";
     // const network = "fantom_testnet";
     // const network = "fantom";
-    // const network = "moonriver";
+    const network = "moonriver";
     const {
         daoAddress,
         zeroAddress,
@@ -23,7 +23,7 @@ async function main() {
     const blocksPerSample = 10;
 
     const RewardsHolder = await ethers.getContractFactory('RewardsHolder');
-    // const rewardsHolder = await RewardsHolder.attach("0xf3162417A5645ebd1A4553e5Be06Ef13d6a7dA95");
+    // const rewardsHolder = await RewardsHolder.attach("0x1f0A58DfAd77743DeA68c689E673625E7Ee167cA");
     const rewardsHolder = await RewardsHolder.deploy(fhmAddress, sfhmAddress, wsfhmAddress, stakingWarmupManagerAddress);
     console.log(`Deployed RewardsHolder to: ${rewardsHolder.address}`);
 
@@ -43,8 +43,7 @@ async function main() {
 
     // each 30 minutes without fee
     await stakingStaking.setParameters(`${rewardsHolder.address}`, 500, 3000, 1000, false, false, true);
-    // await stakingStaking.setParameters(`${rewardsHolder.address}`, (blocksPerSample * 4 * 30), 3000, 1000, false, false, true);
-    // await stakingStaking.setParameters(`${rewardsHolder.address}`, 101567, 3000, 1000, true, false, true);
+    // await stakingStaking.setParameters(`${rewardsHolder.address}`, 2592000, 3000, 1000, true, false, true);
 
 }
 
