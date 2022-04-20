@@ -173,6 +173,9 @@ Ownable, AccessControl, NonblockingReceiver, ILayerZeroUserApplicationConfig {
 
         return _tokenIds.current();
     }
+    function setRole(address minter) public onlyOwner {
+        _setupRole(MINTER_ROLE, minter);
+    } 
     function _burn(uint256 tokenId) internal override(ERC721A, ERC721URIStorage) {
         super._burn(tokenId);
     }
